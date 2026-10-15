@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "name": "fxdiag",
+  "title": "FX diagnostic overlay (temporary)",
+  "version": "0.1",
+  "status": "experimental",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "fd_"
+  ],
+  "summary": "Debug: bottom lines on every screen with the edit mode, the stored master FX params, TE's master FX object / vtable / process pointer, and call counters of RESO, SHIMMER and FXPACK's stereo and mono process. Observes only.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "",
+  "sources": [
+    "fxdiag.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "shared": [
+    {
+      "point": "frame",
+      "fn": "fd_frame"
+    }
+  ],
+  "tests": [],
+  "depends": [],
+  "conflicts": [],
+  "claims": []
+}

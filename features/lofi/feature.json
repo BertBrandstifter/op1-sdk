@@ -1,0 +1,145 @@
+{
+  "schema": 1,
+  "name": "lofi",
+  "title": "LOFI synth engine (chiptune + bytebeat)",
+  "version": "0.7",
+  "status": "sim-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "lf_"
+  ],
+  "summary": "Pick LOFI in the engine list: chiptune waves (pulse, stepped triangle, saw, noise, metal, 4 wavetables) and 16 pitch-tracking bytebeat formulas, with shape, crush, bits, bend, arpeggio/loop, sweep and tone. 8 values (knob push = page 1/2) saved in the preset; TE's envelope, FX and LFO apply. The preset stays a pulse preset (loads on stock firmware as pulse).",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "lofi.c",
+    "lofi_core.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "lf_key",
+      "mode": "filter"
+    },
+    {
+      "point": "on_knob",
+      "fn": "lf_knob",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "lf_frame"
+    },
+    {
+      "point": "engine_name",
+      "fn": "lf_te_type_fetched"
+    }
+  ],
+  "hooks": {
+    "pointers": [
+      {
+        "addr": "0x019111e0",
+        "expect": "0xffa04b88",
+        "c": "lf_te_render",
+        "what": "pulse voice render"
+      },
+      {
+        "addr": "0x019111e8",
+        "expect": "0x01a0dee4",
+        "c": "lf_te_note_on",
+        "what": "pulse voice note_on"
+      }
+    ],
+    "entry_hooks": [
+      {
+        "func": "0x01a1deb0",
+        "expect": "810c0418",
+        "to": "_lf_te_range_check",
+        "what": "synth knob range check (patch validator): accept LOFI values in pulse slots 5-8"
+      }
+    ]
+  },
+  "controls": [
+    "engine list: LOFI; preset browser: folder lofi (one preset, 'lofi'); the sounds are in the built-in bank (shift + blue turn)",
+    "LOFI sound: knob push flips page 1 (WAVE SHAPE CRUSH BITS) / page 2 (BEND ARP-LOOP SWEEP TONE)",
+    "LOFI sound: shift + blue turn browses the built-in bank (14 sounds)"
+  ],
+  "tests": [
+    "test_lofi_core.c",
+    "sim/run_lofitest.py"
+  ],
+  "depends": [],
+  "conflicts": [],
+  "status_note": "v0.7: one preset 'lofi' in folder lofi (preset browser entry back), shift + white push gesture removed; v0.6: bank",
+  "claims": [
+    {
+      "input": "blue_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "green_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "white_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "orange_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "blue_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "green_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "white_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "orange_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    }
+  ],
+  "content_sql": [
+    {
+      "file": "content/op1_factory.db",
+      "sql": [
+        "INSERT INTO synth_types (id, type, default_params) SELECT MAX(id) + 1, 'lofi', '[0, 0, 0, 0, -1, -1, -1, -1]' FROM synth_types",
+        "INSERT INTO synth_presets (patch, folder) VALUES ('{\"adsr\":[7232,9664,32767,8640,7167,4000,4000,4000],\"fx_active\":true,\"fx_params\":[8000,14368,9438,20044,0,0,0,0],\"fx_type\":\"delay\",\"knobs\":[655,16000,0,0,-1,-1,-1,-6001],\"lfo_active\":true,\"lfo_params\":[24158,1420,4991,4815,0,0,0,0],\"lfo_type\":\"tremolo\",\"name\":\"lofi\",\"octave\":1,\"synth_version\":1,\"type\":\"pulse\"}', 'lofi')"
+      ]
+    }
+  ]
+}

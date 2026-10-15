@@ -1,0 +1,9 @@
+{
+  "name": "midi_events",
+  "sources": ["entry.S", "midi.c"],
+  "boot_text": "op1sdk M",
+  "symbols": {"ORIG_DISPATCH_NEXT": "0x01a85c24"},
+  "entry_hooks": [
+    {"func": "0x01a85c20", "expect": "00e80400", "to": "_hook_midi"}
+  ]
+}

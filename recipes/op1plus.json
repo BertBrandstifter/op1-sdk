@@ -1,0 +1,17 @@
+{
+  "name": "op1plus",
+  "boot_text": "op1sdk +",
+  "features": [
+    "chordplus",
+    "lofi",
+    "wheel",
+    "warp",
+    "trio",
+    "reso",
+    "shimmer",
+    "fxpack",
+    "drumroll",
+    "requantize",
+    "engine_plus"
+  ]
+}

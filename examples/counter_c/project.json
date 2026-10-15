@@ -1,0 +1,9 @@
+{
+  "name": "counter_c",
+  "sources": ["entry.S", "counter.c"],
+  "boot_text": "op1sdk C",
+  "symbols": {"ORIG_SEQIDS": "0x01a42344"},
+  "call_sites": [
+    {"site": "0x01a42a2e", "expect": "0x01a42344", "to": "_hook_seqids"}
+  ]
+}

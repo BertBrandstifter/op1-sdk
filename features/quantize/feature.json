@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "name": "quantize",
+  "title": "Input quantizer",
+  "version": "1.10",
+  "status": "sim-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "q_"
+  ],
+  "summary": "Keyboard and MIDI notes are held and played on a musical grid that follows the OP-1 tempo (tape grid while the tape runs, metronome otherwise). QUEUE mode plays fast runs one note per step; the first note after a pause plays at once and anchors the grid; held lengths are kept. Synth and drum playmodes.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "quantize.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "shared": [
+    {
+      "point": "kb_note_on",
+      "fn": "q_kb_on",
+      "mode": "filter"
+    },
+    {
+      "point": "kb_note_off",
+      "fn": "q_kb_off",
+      "mode": "filter"
+    },
+    {
+      "point": "midi_note_on",
+      "fn": "q_midi_on",
+      "mode": "filter"
+    },
+    {
+      "point": "midi_note_off",
+      "fn": "q_midi_off",
+      "mode": "filter"
+    },
+    {
+      "point": "seq_tick",
+      "fn": "q_tick"
+    },
+    {
+      "point": "on_key",
+      "fn": "q_key",
+      "mode": "filter"
+    },
+    {
+      "point": "on_knob",
+      "fn": "q_knob",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "q_frame"
+    }
+  ],
+  "hooks": {},
+  "controls": [
+    "shift + insert: cycle off, 1/16, 1/8, 1/4, 1/2, 1/32, 1/8T, 1/16T, 1/32T",
+    "tempo screen + shift + white knob: choose grid",
+    "tempo screen + shift + orange knob: left SNAP, right QUEUE",
+    "blinking dot top right while on (green on beats)"
+  ],
+  "tests": [
+    "sim/run_quanttest.py"
+  ],
+  "depends": [
+    "quantcore"
+  ],
+  "conflicts": [],
+  "status_note": "1.10: core moved to the library feature quantcore; live quantize removed from op1plus (user, 2026-10-13)",
+  "claims": [
+    {
+      "input": "insert_press",
+      "shift": "yes",
+      "screen": "any"
+    },
+    {
+      "input": "white_turn",
+      "shift": "yes",
+      "screen": "tempo"
+    },
+    {
+      "input": "orange_turn",
+      "shift": "yes",
+      "screen": "tempo"
+    }
+  ]
+}

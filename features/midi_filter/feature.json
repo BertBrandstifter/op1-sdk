@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "name": "midi_filter",
+  "title": "MIDI CC filter (example)",
+  "version": "1.0",
+  "status": "sim-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": "filter_",
+  "summary": "Drops incoming MIDI CC 12 before TE sees it and counts what passes. Example of a filtering MIDI feature with a one-time init.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "",
+  "sources": [
+    "filter.c"
+  ],
+  "init": "filter_init",
+  "shared": [
+    {
+      "point": "midi_in",
+      "fn": "filter_midi",
+      "mode": "filter"
+    }
+  ],
+  "hooks": {},
+  "controls": [
+    "none"
+  ],
+  "tests": [],
+  "depends": [],
+  "conflicts": [],
+  "claims": []
+}

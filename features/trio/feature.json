@@ -1,0 +1,130 @@
+{
+  "schema": 1,
+  "name": "trio",
+  "title": "TRIO synth engine (8-bit chip trio)",
+  "version": "0.1",
+  "status": "device-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "tr_"
+  ],
+  "summary": "Pick TRIO in the engine list or the 'trio' preset: three chip oscillators (triangle, saw, pulse, pitched noise, AND-combined waves) in 16 sets with ring modulation and hard sync, intervals and detune, into a gritty LP/BP/HP/notch filter with its own envelope, drive and noise. Page 1 (wave, cutoff, resonance, pulse width) can be moved by TE's LFO. Shift + blue turn browses 16 built-in sounds; page 4 = the sound's FX knobs. Presets stay drwave presets with in-range values.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "trio.c",
+    "trio_core.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "init": "tr_init",
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "tr_key",
+      "mode": "filter"
+    },
+    {
+      "point": "on_knob",
+      "fn": "tr_knob",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "tr_frame"
+    },
+    {
+      "point": "engine_name",
+      "fn": "tr_engine_name"
+    }
+  ],
+  "hooks": {},
+  "controls": [
+    "engine list: TRIO; preset browser: folder trio (one preset, 'trio'); sounds: shift + blue turn (16)",
+    "TRIO sound: knob push cycles page 1 (WAVE CUTOFF RES PW) / 2 (INT2 INT3 DETUNE MODE) / 3 (F.ENV F.DECAY DRIVE NOISE) / 4 (FX knobs)"
+  ],
+  "tests": [
+    "test_trio_core.c",
+    "sim/run_triotest.py"
+  ],
+  "depends": [
+    "enginehost"
+  ],
+  "conflicts": [],
+  "claims": [
+    {
+      "input": "blue_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "green_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "white_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "orange_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "blue_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "green_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "white_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "orange_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    }
+  ],
+  "content_sql": [
+    {
+      "file": "content/op1_factory.db",
+      "sql": [
+        "INSERT INTO synth_types (id, type, default_params) SELECT MAX(id) + 1, 'trio', '[3584,  5734,  6553,  6553,  17189,  17932,  16780,  16384]' FROM synth_types",
+        "INSERT INTO synth_presets (patch, folder) VALUES ('{\"adsr\":[64,8128,24575,4000,4000,64,4000,4000],\"fx_active\":true,\"fx_params\":[8000,14368,9438,20044,0,0,0,0],\"fx_type\":\"delay\",\"knobs\":[3584,5734,6553,6553,17189,17932,16780,16384],\"lfo_active\":false,\"lfo_params\":[24172,3068,0,16000,0,0,0,0],\"lfo_type\":\"tremolo\",\"name\":\"trio\",\"octave\":-1,\"synth_version\":1,\"type\":\"drwave\"}', 'trio')"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "firmware": "R246",
+      "date": "2026-10-13",
+      "what": "device: engine list, bank, pages (image ff71a2ed; user: 'all really nice')"
+    }
+  ]
+}

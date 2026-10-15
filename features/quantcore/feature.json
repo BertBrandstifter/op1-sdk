@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "name": "quantcore",
+  "title": "Quantizer core (library)",
+  "version": "1.0",
+  "status": "sim-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "qz_"
+  ],
+  "summary": "Grid maths, timing rule, queue and note-off ordering shared by the live quantizer and requantize. No hooks, no inputs: a library other features depend on.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "quant_core.c"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "shared": [],
+  "hooks": {},
+  "tests": [
+    "test_quant_core.c"
+  ],
+  "depends": [],
+  "conflicts": [],
+  "claims": []
+}

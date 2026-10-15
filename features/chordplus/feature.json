@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "name": "chordplus",
+  "title": "CHORD+ chord keyboard",
+  "version": "0.3",
+  "status": "device-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "cp_"
+  ],
+  "summary": "Shift + insert turns the synth keyboard into a chord keyboard: white keys play the seven chords of the chosen key and scale (C = I ... B = vii), held black keys change the next chord (C# major/minor, D# 7th, F# sus4, G# 9th, A# inversion). Panel (shown when turned on): KEY, SCALE (7 modes), VOICING (close, voice-leading, open, bass), STRUM. Chord notes pass through the rest of the keyboard chain, so the quantizer still applies (not to strummed chords). MIDI and sequencers get the plain keys.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "chordplus.c",
+    "cp_core.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "shared": [
+    {
+      "point": "kb_note_on",
+      "fn": "cp_kb_on",
+      "mode": "filter",
+      "order": "first"
+    },
+    {
+      "point": "kb_note_off",
+      "fn": "cp_kb_off",
+      "mode": "filter",
+      "order": "first"
+    },
+    {
+      "point": "seq_tick",
+      "fn": "cp_tick"
+    },
+    {
+      "point": "on_key",
+      "fn": "cp_key",
+      "mode": "filter"
+    },
+    {
+      "point": "on_knob",
+      "fn": "cp_knob",
+      "mode": "filter",
+      "order": "first"
+    },
+    {
+      "point": "frame",
+      "fn": "cp_frame",
+      "order": "last"
+    }
+  ],
+  "hooks": {},
+  "controls": [
+    "shift + insert: CHORD+ on (panel opens) / panel again / off (while the panel is open)",
+    "panel: blue KEY, green SCALE, white VOICING, orange STRUM",
+    "synth keyboard while on: white keys = chords, held black keys = modifiers (no sound)"
+  ],
+  "tests": [
+    "test_cp_core.c",
+    "sim/run_cptest.py"
+  ],
+  "depends": [],
+  "conflicts": [],
+  "claims": [
+    {
+      "input": "insert_press",
+      "shift": "yes",
+      "screen": "any"
+    },
+    {
+      "input": "blue_turn",
+      "shift": "any",
+      "screen": "any",
+      "modal": true
+    },
+    {
+      "input": "green_turn",
+      "shift": "any",
+      "screen": "any",
+      "modal": true
+    },
+    {
+      "input": "white_turn",
+      "shift": "any",
+      "screen": "any",
+      "modal": true
+    },
+    {
+      "input": "orange_turn",
+      "shift": "any",
+      "screen": "any",
+      "modal": true
+    }
+  ],
+  "status_note": "v0.3 device-verified (user: 'chord+ is nice'); v0.3 bigger panel, v0.2 shift + insert",
+  "evidence": [
+    {
+      "firmware": "R246",
+      "date": "2026-10-13",
+      "what": "device: chords, black-key modifiers, panel (image 3fcfcfc9, shift + insert; user: 'chord+ is nice')"
+    }
+  ]
+}

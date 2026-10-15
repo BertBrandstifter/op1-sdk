@@ -1,0 +1,152 @@
+{
+  "schema": 1,
+  "name": "fxpack",
+  "title": "FXPACK: phaser, flanger, fold, fuzz, DJ filter, transient shaper, texture",
+  "version": "0.4",
+  "status": "sim-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "fp_"
+  ],
+  "summary": "One FX-list row FX MIX with seven small effects (pick with the blue knob on page 1): PHASER (4-8 allpass stages), FLANGER (+/- feedback), FOLD (triangle/sine wavefolder), FUZZ (5 curves + gate), DJ FILTER (one knob LP/off/HP, 12/24 dB, wobble), TRANSIENT (attack/sustain shaper) and TEXTURE (vinyl, tape, rain, wind, radio, room bed with breath and duck). Page 1: TYPE + the effect's first three knobs; page 2 (knob push): MIX + three more. Synth, drum and master FX (master: per channel, LFO spread). Hosted on phone with an in-range marker in fx_params 5-8: presets pass TE's checks and load on stock firmware as phone.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "fxpack.c",
+    "fxpack_core.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "fp_key",
+      "mode": "filter"
+    },
+    {
+      "point": "on_knob",
+      "fn": "fp_knob",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "fp_frame"
+    },
+    {
+      "point": "fx_name",
+      "fn": "fp_te_fx_fetched"
+    },
+    {
+      "point": "master_fx_name",
+      "fn": "fp_te_master_fetched"
+    },
+    {
+      "point": "fx_patch",
+      "fn": "fp_te_fx_patch"
+    },
+    {
+      "point": "fx_current_name",
+      "fn": "fp_te_fx_current"
+    },
+    {
+      "point": "master_fx_current_name",
+      "fn": "fp_te_master_current"
+    }
+  ],
+  "hooks": {
+    "pointers": [
+      {
+        "addr": "0x01911308",
+        "expect": "0x01a1bb74",
+        "c": "fp_te_mono",
+        "what": "phone mono process (synth / drum FX)"
+      },
+      {
+        "addr": "0x01911328",
+        "expect": "0x01a1c25c",
+        "c": "fp_te_stereo",
+        "what": "phone stereo process (master FX)"
+      }
+    ]
+  },
+  "content_sql": [
+    {
+      "file": "content/op1_factory.db",
+      "sql": [
+        "INSERT INTO fx_types (id, type, default_params) SELECT MAX(id) + 1, 'fx mix', '[7300, 13107, 7680, 32767, 25161, 28671, 27852, 28671]' FROM fx_types"
+      ]
+    }
+  ],
+  "controls": [
+    "FX list: FX MIX (one row); page 1 blue picks PHASER FLANGER FOLD FUZZ DJ FILTER TRANSIENT TEXTURE",
+    "synth FX screen, FXPACK: knob push flips page 1 (blue: TYPE, one effect per click; green/white/orange: the effect's first three values) / page 2 (blue: MIX; green/white/orange: the page-2 values)",
+    "mixer FX page (master FX = FX MIX, on): same pages, knob push = page 2"
+  ],
+  "tests": [
+    "test_fxpack_core.c",
+    "sim/run_fptest.py"
+  ],
+  "depends": [],
+  "conflicts": [],
+  "status_note": "v0.4: TYPE first on page 1, MIX moved to page 2 (all knobs edited by FXPACK); v0.3: own page + page 2 (incl. TYPE) on the mixer's master FX page too; v0.2: one FX-list row 'fx mix', TYPE loads per-effect defaults, browsers keep the row; v0.1: seven rows on phone",
+  "claims": [
+    {
+      "input": "blue_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "green_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "white_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "orange_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "blue_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "green_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "white_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "orange_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    }
+  ]
+}

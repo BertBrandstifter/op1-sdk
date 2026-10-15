@@ -1,0 +1,24 @@
+# local toolchain (rebuild from README) and its sources
+toolchain/
+# build outputs
+examples/*/build/
+sim/**/*.o
+sim/**/*.elf
+sim/**/*.bin
+sim/**/*.out
+__pycache__/
+# never commit TE firmware or anything derived from it
+*.op1
+*.ldr
+# disassembly / strings of TE code: regenerate locally (tools/memimage.py + objdump + tools/xref.py)
+analysis/
+hooks_op1r10.json
+features.db
+build/
+# editor backups
+*.bak
+# local-only binary sheets
+op-1 key mapping/op-1 keys.xlsx
+op-1 key mapping/op_1 key layout and mapping.png
+# macOS folder metadata
+.DS_Store

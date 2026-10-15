@@ -1,0 +1,164 @@
+{
+  "schema": 1,
+  "name": "requantize",
+  "title": "Requantize a tape take",
+  "version": "3.2",
+  "status": "sim-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": "rq_",
+  "summary": "shift + blue knob press starts a take (notes + TE's record range logged); shift + blue press again opens the requantize screen on the tape screen: the take as a piano roll, grid / SNAP/QUEUE/STRICT / target track in its header, preview, commit. Commit onto the take's own track lifts the original clip (to TE's clipboard, drop restores it) and records the quantized notes over exactly the original range; onto another track it records there and mutes the original. Green press flips the knobs between the notes (select, move / resize / transpose / delete / quantize one by one or as a selection) and the take settings (grid, mode, track, zoom, commit, all notes back to AUTO); AUTO notes follow grid + mode, edited notes keep theirs.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "requant.c",
+    "rq_core.c",
+    "rq_roll.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "depends": [
+    "quantcore"
+  ],
+  "shared": [
+    {
+      "point": "kb_note_on",
+      "fn": "rq_kb_on",
+      "mode": "filter",
+      "order": "first"
+    },
+    {
+      "point": "kb_note_off",
+      "fn": "rq_kb_off",
+      "mode": "filter",
+      "order": "first"
+    },
+    {
+      "point": "midi_note_on",
+      "fn": "rq_midi_on",
+      "mode": "observe"
+    },
+    {
+      "point": "midi_note_off",
+      "fn": "rq_midi_off",
+      "mode": "observe"
+    },
+    {
+      "point": "seq_tick",
+      "fn": "rq_tick"
+    },
+    {
+      "point": "on_key",
+      "fn": "rq_key",
+      "mode": "filter"
+    },
+    {
+      "point": "on_knob",
+      "fn": "rq_knob",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "rq_frame"
+    }
+  ],
+  "hooks": {},
+  "controls": [
+    "shift + blue knob press: start a take / end it (opens the panel) / exit the panel / abort a running preview or commit",
+    "requantize screen (tape screen) = piano roll + take settings header; click green flips the knobs between NOTES (default) and TAKE",
+    "NOTES: blue turn note / shift zoom, blue press select; green turn move (shift: grid step), press to TAKE / shift select all; white turn pitch (shift: octave), press preview / shift delete; orange turn length (shift: grid step), press quantize / shift as played <-> auto",
+    "TAKE: blue turn grid, green turn SNAP/QUEUE/STRICT, white turn target track, orange turn zoom; click green = NOTES, click white = preview (again = stop), click orange = commit (default: replace the take on its own track), shift + click orange = every note back to AUTO"
+  ],
+  "tests": [
+    "test_rq_core.c",
+    "test_rq_roll.c",
+    "sim/run_rqtest.py"
+  ],
+  "conflicts": [],
+  "status_note": "3.2: grids longest first, 1/4T added (flashed); 3.1 (device-tested, user: very nice): panel and piano roll are one screen (green press = knobs on notes / take settings); 3.0: piano roll (requantize-roll.md); v2.4: STRICT mode (notes/chords packed one grid step apart); v2.3: 1/32T grid; v2.2: commit record pass starts 0.25 s before the take (TE's record fade-in hits silence, not the first notes); v2.1: preview selects an unmuted track; v2.0: replace = lift + record pass (TE records overdub); v1.1 transport device-tested; 2.5: keyboard log runs as a never-consuming filter after CHORD+ (logs chord notes)",
+  "claims": [
+    {
+      "input": "blue_push",
+      "shift": "yes",
+      "screen": "any"
+    },
+    {
+      "input": "blue_turn",
+      "shift": "no",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "blue_push",
+      "shift": "any",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "green_turn",
+      "shift": "no",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "green_push",
+      "shift": "any",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "white_turn",
+      "shift": "no",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "white_push",
+      "shift": "any",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "orange_turn",
+      "shift": "no",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "orange_push",
+      "shift": "any",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "blue_turn",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "green_turn",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "white_turn",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "orange_turn",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    }
+  ]
+}

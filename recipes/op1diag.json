@@ -1,0 +1,14 @@
+{
+  "name": "op1diag",
+  "boot_text": "op1sdk +",
+  "features": [
+    "lofi",
+    "reso",
+    "shimmer",
+    "fxpack",
+    "quantize",
+    "requantize",
+    "engine_plus",
+    "fxdiag"
+  ]
+}

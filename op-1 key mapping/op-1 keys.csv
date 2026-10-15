@@ -1,0 +1,66 @@
+"OP - 1 
+Buttons and key values";;;;;;;;;;;;;;;;
+;;"Volume
+k = ?";;;;;;;;;;;;;;"mic
+k = 43"
+;;"speak buble
+k = 0";"metronom
+k = 1";"blue knob
+k = 59";"green knob
+k = 60";"white knob
+k = 61";"orange knob
+k = 62";;;;;;;;;"com
+k = 44"
+"synth
+k = 2";"drum
+k = 3";"tape
+k = 4";k = 5;"1
+k = 6";"2
+k = 7";"3
+k = 8";"4
+k = 9";"1
+k = 45";"2
+k = 46";"3
+k = 47";"4
+k = 16";"5
+k = 17";"6
+k = 18";"7
+k = 19";"8
+k = 20";"auto
+k = 21"
+"cut
+k = 10";"insert
+k = 11";"join
+k = 12";"F#
+k = 13";"G#
+k = 14";"A#
+k = 15";;"C#
+k = 32";"D#
+k = 22";;"F#
+k = 23";"G#
+k = 24";"A#
+k = 25";;"C#
+k = 26";"D#
+k = 27";
+"rec
+k = 33";"play
+k = 34";"stop
+k = 35";;;;;;;;;;;;;;
+"back
+k = 37";"forward
+k = 38";"shift
+k 39";"F
+k = 39";"G
+k = 40";"A
+k = 41";"B
+k = 42";"C
+k = 28";"D
+k = 29";"E
+k = 30";"F
+k = 31";"G
+k = 48";"A
+k = 49";"B
+k = 50";"C
+k = 51";"D
+k = 52";"E
+k = 53"

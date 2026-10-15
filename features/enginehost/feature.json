@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "name": "enginehost",
+  "title": "Engine host (SDK synth engines on drwave)",
+  "version": "1.0",
+  "status": "device-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "eh_"
+  ],
+  "summary": "Lets several SDK synth engines share TE's drwave engine: a drwave sound whose knob slots 5-8 carry an engine tag is rendered by that engine (WHEEL, WARP, ...), every other drwave sound by TE. Library feature: engines depend on it and register from their init.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "enginehost.c",
+    "eh_ui.c"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "shared": [],
+  "hooks": {
+    "pointers": [
+      {
+        "addr": "0x0190fb40",
+        "expect": "0x0197c870",
+        "c": "eh_te_render",
+        "what": "drwave voice render"
+      },
+      {
+        "addr": "0x0190fb48",
+        "expect": "0x0197a826",
+        "c": "eh_te_note_on",
+        "what": "drwave voice note_on"
+      }
+    ]
+  },
+  "tests": [],
+  "depends": [],
+  "conflicts": [],
+  "claims": [],
+  "libs": [
+    "gfx"
+  ],
+  "evidence": [
+    {
+      "firmware": "R246",
+      "date": "2026-10-13",
+      "what": "device: WHEEL (tag 5) + WARP (tag 6) on the host (image 335770d7; user: 'works great')"
+    }
+  ]
+}

@@ -1,0 +1,168 @@
+{
+  "schema": 1,
+  "name": "drumroll",
+  "title": "DRUM ROLL step sequencer",
+  "version": "0.8",
+  "status": "sim-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "dr_"
+  ],
+  "summary": "Channel-rack drum sequencer for the drum kit in a TE look: 8 lanes, each one drum sample with its own length (1-64 steps) and rate (1/4 .. 1/32, triplets), drawn to scale with bar / beat lines, loop lines and a playhead per lane. Every step has VEL, TONE (-24..+24 semitones), LEN (1/8 step .. 16 steps or FULL), NUDGE, PROB and RATCH; every sample a filter (LP / BP / HP, cutoff, resonance) and a level, also for keys played by hand. Follows the tape position while the tape runs, own clock otherwise, TE's tempo; 4 patterns, swing. Shift + green press on the drum screen opens it.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "drumroll.c",
+    "dr_core.c",
+    "dr_dsp.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "init": "dr_init",
+  "shared": [
+    {
+      "point": "seq_tick",
+      "fn": "dr_tick"
+    },
+    {
+      "point": "on_key",
+      "fn": "dr_key",
+      "mode": "filter"
+    },
+    {
+      "point": "on_knob",
+      "fn": "dr_knob",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "dr_frame"
+    }
+  ],
+  "hooks": {
+    "pointers": [
+      {
+        "addr": "0x0190fad8",
+        "expect": "0x019789ec",
+        "c": "dr_te_render",
+        "what": "drum sampler voice render"
+      },
+      {
+        "addr": "0x0190fae0",
+        "expect": "0x01978926",
+        "c": "dr_te_note_on",
+        "what": "drum sampler voice note_on"
+      }
+    ],
+    "entry_hooks": [
+      {
+        "func": "0x0193f86c",
+        "expect": "00e83000",
+        "c": "dr_te_drum_pick",
+        "filter": true,
+        "what": "drum engine pick: 'drum roll' row -> DRUM ROLL on the sound (TE skipped), dbox -> off"
+      }
+    ]
+  },
+  "controls": [
+    "drum engine list: 'drum roll' (next to dbox) turns DRUM ROLL on for the drum sound (its kit stays; kits picked afterwards are its sounds, dbox turns it off); DRUM ROLL is the sound's engine page (T1), T2-T4 stay TE's; shift + green press closes / opens it",
+    "tape screen (drum playmode): shift + white press = play / stop DRUM ROLL (to record it; it follows the tape position while the tape runs); not while the requantize screen is open",
+    "knob turn = the value under that knob, green press = next page, shift + blue turn = browse lanes; blue press = cursor step on / off (any page); white press = hear the cursor step",
+    "P1 STEP: step / ON / VEL / PROB; P2 NOTE: step / TONE / LEN / RATCH; P3 TIME: step / NUDGE / SWING / ZOOM; P4 LANE: SAMPLE / LENGTH / RATE / MUTE; P5 SOUND: FILTER / CUTOFF / RESO / LEVEL",
+    "shift + green turn: pattern A-D; shift + white press: play / stop; shift + orange press: clear the lane (again: undo); shift + blue press does nothing while open (no requantize take)",
+    "drum keys while open: select their lane (TE still plays them)"
+  ],
+  "tests": [
+    "test_dr_core.c",
+    "test_dr_dsp.c",
+    "sim/run_drtest.py"
+  ],
+  "depends": [],
+  "conflicts": [],
+  "claims": [
+    {
+      "input": "blue_turn",
+      "shift": "any",
+      "screen": "drum",
+      "modal": true
+    },
+    {
+      "input": "green_turn",
+      "shift": "any",
+      "screen": "drum",
+      "modal": true
+    },
+    {
+      "input": "white_turn",
+      "shift": "any",
+      "screen": "drum",
+      "modal": true
+    },
+    {
+      "input": "orange_turn",
+      "shift": "any",
+      "screen": "drum",
+      "modal": true
+    },
+    {
+      "input": "green_push",
+      "shift": "yes",
+      "screen": "drum"
+    },
+    {
+      "input": "blue_push",
+      "shift": "any",
+      "screen": "drum",
+      "modal": true
+    },
+    {
+      "input": "green_push",
+      "shift": "no",
+      "screen": "drum",
+      "modal": true
+    },
+    {
+      "input": "white_push",
+      "shift": "any",
+      "screen": "drum",
+      "modal": true
+    },
+    {
+      "input": "orange_push",
+      "shift": "any",
+      "screen": "drum",
+      "modal": true
+    },
+    {
+      "input": "white_push",
+      "shift": "yes",
+      "screen": "tape"
+    }
+  ],
+  "status_note": "v0.8: 'drum roll' in the drum engine list, DRUM ROLL only on the engine page (T1); v0.7 tape-screen play / stop; v0.6 back-to-back + ratchet fix; v0.3 device-tested; v0.1 device-tested",
+  "evidence": [
+    {
+      "firmware": "R246",
+      "date": "2026-10-14",
+      "what": "device: v0.1 sequencing, screen, filters (image ba877d1c; user: 'love it')"
+    }
+  ],
+  "content_sql": [
+    {
+      "file": "content/op1_factory.db",
+      "sql": [
+        "INSERT INTO drum_types (id, type, default_params) VALUES (64, 'drum roll', '[0,0,2917,974,7167,0,2592,4607]')"
+      ]
+    }
+  ]
+}

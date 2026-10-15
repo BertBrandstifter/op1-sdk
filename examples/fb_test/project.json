@@ -1,0 +1,15 @@
+{
+  "name": "fb_test",
+  "sources": ["entry.S", "fb.c"],
+  "boot_text": "op1sdk F",
+  "symbols": {
+    "ORIG_SEQIDS": "0x01a42344",
+    "ORIG_DISPATCH_NEXT": "0x01a85c24"
+  },
+  "call_sites": [
+    {"site": "0x01a42a2e", "expect": "0x01a42344", "to": "_hook_seqids"}
+  ],
+  "entry_hooks": [
+    {"func": "0x01a85c20", "expect": "00e80400", "to": "_hook_midi"}
+  ]
+}
