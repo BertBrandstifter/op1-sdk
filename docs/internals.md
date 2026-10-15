@@ -70,7 +70,6 @@ toolchain/bfin/bin/      GNU binutils 2.43.1 + GCC 14.2.0 + GDB 16.3 for bfin-el
 analysis/                disassembly (stock SDRAM, L1, op1r blob), strings, stock_funcs.json
                          (local only, TE-derived: regenerate with tools/memimage.py + objdump + tools/xref.py)
 hooks_op1r10.json        every edit op1r 10 makes, classified (local only, TE-derived)
-STATUS.md                development log: session notes, device state, RE progress, next steps
 ```
 
 ## Chip and image

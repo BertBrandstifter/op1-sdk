@@ -76,7 +76,7 @@ Why it works well with agents:
 - `python3 tools/test_all.py` verifies everything **without hardware** — the agent's feedback loop
 - nothing is guessed: firmware hash checks, original-instruction checks, hook-collision checks
 
-That is exactly how everything above was built (`STATUS.md` is the development log).
+That is exactly how everything above was built.
 
 Start your own feature:
 
@@ -111,4 +111,3 @@ keys, knobs, MIDI, note flow, display frame and sequencer tick: [`docs/features.
 | [`docs/feature-package.md`](docs/feature-package.md) | the packaging standard for sharing features |
 | [`docs/internals.md`](docs/internals.md) | under the hood: R246 reverse-engineering notes, flashing internals, simulator benches |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | pull-request rules |
-| [`STATUS.md`](STATUS.md) | development log: device state, RE progress, next steps |
