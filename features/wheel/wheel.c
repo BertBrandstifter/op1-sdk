@@ -266,7 +266,7 @@ void wh_frame(uint16_t *buf)
         if (bank_edited)
             gfx_text(x, 4, "*", dim, 2);
     } else {
-        gfx_text(x + 8, 4, "SHIFT+BLUE: PRESETS", dim, 1);
+        gfx_text(x + 8, 4, "SHIFT+BLUE: PRESETS", dim, 2);
     }
     gfx_text(272, 4, pg == 2 ? "P3" : pg ? "P2" : "P1", GFX_WHITE, 2);
 

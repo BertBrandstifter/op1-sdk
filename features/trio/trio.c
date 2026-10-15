@@ -244,7 +244,7 @@ void tr_frame(uint16_t *buf)
         if (bank_edited)
             gfx_text(x, 4, "*", dim, 2);
     } else {
-        gfx_text(x + 8, 4, "SHIFT+BLUE: PRESETS", dim, 1);
+        gfx_text(x + 8, 4, "SHIFT+BLUE: PRESETS", dim, 2);
     }
     x = gfx_text(240, 4, "P", GFX_WHITE, 2);
     gfx_dec(x, 4, pg + 1, GFX_WHITE, 2);
