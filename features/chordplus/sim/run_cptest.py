@@ -17,7 +17,7 @@ SDK = os.environ.get("OP1_SDK") or os.path.normpath(os.path.join(HERE, "..", "..
 OUT = os.path.join(SDK, "build", "bench", "cptest")     # build output, never in the package
 os.makedirs(OUT, exist_ok=True)
 sys.path.insert(0, os.path.join(SDK, "sim"))
-from simtest import asm_bin, c_bin, run_model, composed  # noqa: E402
+from simtest import asm_bin, c_bin, run_model, run_gdb, composed  # noqa: E402
 from build import compile_project  # noqa: E402
 
 FEATURES, APP = ["chordplus", "requantize"], "cptest"
@@ -49,7 +49,9 @@ def main():
             entry="_stub",
         )
         segs.append((addr, stub))
-    r = run_model(os.path.join(OUT, "cptest_run.elf"), segs, dsyms["_start"], timeout=120)
+    elf_run = os.path.join(OUT, "cptest_run.elf")
+    r = run_model(elf_run, segs, dsyms["_start"], timeout=120)
+    run_gdb(elf_run, shots=[("chordplus_panel", FB)], timeout=120)
     print("PASS" if r.returncode == 0 else f"FAIL (exit {r.returncode}; R7 = failed check bits)")
     sys.exit(r.returncode)
 

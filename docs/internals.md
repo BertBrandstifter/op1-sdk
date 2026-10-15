@@ -161,6 +161,13 @@ run your code against drivers and stubs that emulate the TE side. Run them all:
 - **Per-feature benches:** every feature has one (`features/<name>/sim/run_*test.py`), built
   through the composer; `sim/gentest` covers the generated C trampoline (init-once, filter,
   replay) and `sim/overlaytest` the render-then-overlay order.
+- **Screenshots:** benches whose features draw a screen save it as a PNG in `build/demo/`
+  (`drumroll_step`, `drumroll_sound`, `warp_screen`, `trio_screen`, `chordplus_panel`,
+  `requantize_take`, `requantize_roll`). The driver draws a frame through `hook_frame` into a
+  zeroed panel buffer at `0x03000000`; `run_gdb()` in `sim/simtest.py` reruns the bench under
+  `bfin-elf-gdb`, dumps the buffer and `fb_png()` turns it into a 2x PNG of the 320x156 UI. Only
+  our own drawing shows: TE's frame render is a stub in the benches, so the rest of the screen is
+  black. A new bench gets one with `run_gdb(elf, shots=[("my_screen", FB)])`.
 
 Simulator note: GDB's bfin sim executes some parallel instructions wrongly (a store in
 `R0 = R7 + R1 || [P5++] = R0` took the new R0); when running TE code in the sim, check results.

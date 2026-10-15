@@ -9,14 +9,14 @@ per detent and keep tag 4 (INT2 limited to +24); shift + blue = bank (16 entries
 FX knobs; "trio" -> "drwave" in the engine list; screen draw. Prints cycles per voice block.
 HLT = exit 0 = pass, ABORT = exit 1 = fail (R7 = failed check bits, see driver.c)."""
 
-import json, os, subprocess, sys
+import json, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SDK = os.environ.get("OP1_SDK") or os.path.normpath(os.path.join(HERE, "..", "..", ".."))
 OUT = os.path.join(SDK, "build", "bench", "triotest")     # build output, never in the package
 os.makedirs(OUT, exist_ok=True)
 sys.path.insert(0, os.path.join(SDK, "sim"))
-from simtest import asm_bin, c_bin, run_model, BIN, composed  # noqa: E402
+from simtest import asm_bin, c_bin, run_model, run_gdb, composed  # noqa: E402
 from build import compile_project  # noqa: E402
 
 RECIPE = json.load(open(os.path.join(SDK, "recipes", "op1plus.json")))
@@ -48,13 +48,8 @@ def main():
         segs.append((addr, stub))
     elf_run = os.path.join(OUT, "triotest_run.elf")
     r = run_model(elf_run, segs, d["_start"], timeout=300)
-    out = subprocess.run(
-        [BIN + "gdb", "-batch", "-ex", "target sim --model bf524 --memory-region 0xff800000,0x8000 "
-         "--memory-region 0xff900000,0x8000", "-ex", "load", "-ex", "run",
-         "-ex", f"p *(unsigned*){d['_cycles_plain']:#x}", "-ex", f"p *(unsigned*){d['_cycles_warp']:#x}",
-         "-ex", f"p *(unsigned*){d['_cycles_heavy']:#x}", "-ex", f"p/x *(unsigned*){d['_fails']:#x}", elf_run],
-        capture_output=True, text=True, timeout=300).stdout.split("\n")
-    vals = [l.split("=")[-1].strip() for l in out if l.startswith("$")]
+    vals = run_gdb(elf_run, [f"*(unsigned*){d[s]:#x}" for s in ("_cycles_plain", "_cycles_warp", "_cycles_heavy")]
+                   + [f"/x *(unsigned*){d['_fails']:#x}"], [("trio_screen", 0x03000000)], timeout=300)
     if len(vals) == 4 and r.returncode:
         print(f"failed check bits: {vals[3]}")
     if len(vals) >= 3:

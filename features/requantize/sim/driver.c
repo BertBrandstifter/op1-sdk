@@ -17,6 +17,8 @@ extern void hook_kb_off(te_note *n);
 extern void hook_tick(void);
 extern void hook_key(int key, int down);
 extern void hook_knob(int knob, int16_t *diff);
+extern void hook_frame(uint16_t *buf);
+extern char FB[];                               /* 2 panel buffers, 320 lines x 512 bytes each */
 extern volatile int rq_state, rq_nout, rq_take_focus, rq_nnotes, rq_cur;
 extern volatile uint32_t rq_rec_start, rq_rec_end;
 
@@ -154,6 +156,7 @@ int main(void)
     o_start = clips[0].start;
     o_end = clips[0].end;
     CHECK(1, nplayed == 6 && near(rq_rec_start, o_start, 64) && near(rq_rec_end, o_end, 64));
+    hook_frame((uint16_t *)FB);                 /* screenshot: TAKE indicator */
 
     /* 2: shift + blue press -> requantize screen (roll, knobs on the notes), default target = the
      * take's own track */
@@ -242,6 +245,7 @@ int main(void)
             ons++;
         }
     CHECK(14, ok && ons == 2);
+    hook_frame((uint16_t *)(FB + 320 * 512));   /* screenshot: piano roll with the edits */
 
     /* 15: green press: knobs to the take settings; shift + orange press there (every note back to
      * AUTO, see test_rq_roll.c) starts no commit and keeps the deleted note out */
