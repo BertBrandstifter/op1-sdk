@@ -45,7 +45,7 @@ Controls and internals per feature: `features/<name>/README.md`. Full catalog:
 
 You need an original OP-1, a Mac, and your own copy of the official firmware file `op1_246.op1`
 (R246, from Teenage Engineering's support page). The tools verify its SHA-256
-(`c5315218…13a9`) and refuse to work on anything else. One-time setup: build the
+(`c5315218…13a9`) and refuse to work on anything else. One-time setup: `./setup_toolchain.sh` builds the
 [toolchain](docs/toolchain.md).
 
 ```sh
@@ -93,6 +93,22 @@ keys, knobs, MIDI, note flow, display frame and sequencer tick: [`docs/features.
   `features.py install my_feature.zip` ([`docs/feature-package.md`](docs/feature-package.md))
 - **To this repo** — a pull request adding `features/my_feature/`
   ([`CONTRIBUTING.md`](CONTRIBUTING.md))
+
+## Thanks
+
+This SDK stands on the shoulders of other people's work — thank you all:
+
+| | |
+|---|---|
+| [op1r](https://github.com/pcppcp/op1r) | the R246 mod that proved custom code runs on the OP-1; our build pipeline reproduces its image byte for byte, and its hook technique and free memory region showed the way |
+| [op1repacker](https://github.com/op1hacks/op1repacker) | unpacking and repacking `.op1` firmware files (our `op1pack.py` matches its LZMA settings) |
+| [JIANT](https://github.com/juanjiant-bit/JIANT) | ideas behind LOFI, WHEEL, RESO and SHIMMER |
+| [sloop-fm1](https://github.com/isod89/sloop-fm1) | ideas behind CHORD+, TRIO and parts of FX MIX |
+| [strudel](https://codeberg.org/uzu/strudel) | ideas behind WARP and parts of FX MIX |
+| [GNU binutils, GCC, GDB](https://www.gnu.org/software/) | the bfin-elf toolchain and the Blackfin simulator every test runs on |
+
+Ideas only — all code here is our own (see [`docs/ideas.md`](docs/ideas.md) for sources and licenses).
+And thanks to Teenage Engineering for building the OP-1.
 
 ## The fine print
 
