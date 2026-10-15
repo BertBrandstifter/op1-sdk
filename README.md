@@ -34,12 +34,27 @@ One image ("op1plus"), composed from the feature library — build it, flash it,
 
 | | open with | |
 |---|---|---|
-| **DRUM ROLL** | drum engine list / shift + green on the drum screen | FL-style step sequencer: 8 lanes, per-sample length, rate and filter, swing, ratchets, tape sync, 4 patterns |
+| **DRUM ROLL** | drum engine list / shift + green on the drum screen | FL-style step sequencer: 8 lanes, per-sample length, rate and filter, swing, ratchets, tape sync, 4 patterns kept across restarts |
 | **REQUANTIZE** | shift + blue knob press (tape screen) | fix a recorded take on a piano roll: single notes or the whole take, grids to 1/32T |
 | **CHORD+** | shift + insert | chord keyboard: white keys play scale chords, held black keys modify |
 
 Controls and internals per feature: `features/<name>/README.md`. Full catalog:
 [`docs/features.md`](docs/features.md), or `python3 tools/features.py list`.
+
+## Image samples
+
+Photographed on a real OP-1:
+
+<table>
+  <tr>
+    <td><img src="images/drum_roll.jpeg" alt="DRUM ROLL step sequencer on the OP-1 screen" width="400"><br><b>DRUM ROLL</b>: 8 lanes, per-step velocity and probability</td>
+    <td><img src="images/lofi.jpeg" alt="LOFI synth engine on the OP-1 screen" width="400"><br><b>LOFI</b>: preset TRI BASS, stepped triangle</td>
+  </tr>
+  <tr>
+    <td><img src="images/wharp2.jpeg" alt="WARP synth engine on the OP-1 screen" width="400"><br><b>WARP</b>: sine through the BITREV warp</td>
+    <td><img src="images/wheel.jpeg" alt="WHEEL tonewheel organ on the OP-1 screen" width="400"><br><b>WHEEL</b>: preset BLUES BAR, drawbars and rotary</td>
+  </tr>
+</table>
 
 ## Get it on your OP-1
 
