@@ -5,6 +5,10 @@ the user's request; requantize stays). v0.1: shift + insert. Code:
 `features/chordplus/` (first in recipe `op1plus`). Idea: sloop's chord keyboard (white keys = scale
 chords, black keys = modifiers), ideas only, own code.
 
+## Open it on the OP-1
+
+Part of the default `op1plus` image. **Shift + insert** opens the CHORD+ panel (press again cycles panel / off). White keys = scale chords, held black keys = modifiers.
+
 ## What it does
 
 **Shift + insert** turns the synth keyboard into a chord keyboard:

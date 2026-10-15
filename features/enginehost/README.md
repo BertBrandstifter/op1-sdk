@@ -23,3 +23,7 @@ Tags: **4 TRIO**, **5 WHEEL**, **6 WARP**, free: 1-3.
   long before the first note) a tagged voice plays as drwave. Benches call `compose_init` first.
 - Rule (user, 2026-10-13): every engine = one engine-list row + one preset in its own folder; the
   sounds live in a built-in bank (shift + blue turn).
+
+## Open it on the OP-1
+
+Library — nothing to open on the device. It hosts WHEEL, WARP and TRIO (they appear in the engine list through it) and is pulled into the `op1plus` image automatically.

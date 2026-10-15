@@ -14,6 +14,10 @@ the sound's FX knobs. v0.1 device-tested by the user
 (in recipe `op1plus`, after lofi and before engine_plus). Inspired by JIANT FM's WHEEL engine
 (ideas only, own code; registrations are classic drawbar settings).
 
+## Open it on the OP-1
+
+Part of the default `op1plus` image. Pick **WHEEL** in the synth engine list, or load the preset `wheel` (browser folder wheel). Sounds: **shift + blue turn** (bank of 24 organ sounds); knob push cycles pages.
+
 ## What it is
 
 A tonewheel organ as a synth engine. TE's envelope, velocity, volume, FX, LFO, glide, bend, octave

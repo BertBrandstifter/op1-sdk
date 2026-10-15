@@ -4,6 +4,10 @@ Status: **v0.1** (2026-10-13): built and sim-verified, awaiting device test. Cod
 (engine host, tag 4). Idea: sloop's TRIO (GPL, ideas only, own code): three chip oscillators with
 ring and sync into a gritty multimode filter, early 8-bit home-computer style.
 
+## Open it on the OP-1
+
+Part of the default `op1plus` image. Pick **TRIO** in the synth engine list, or load the preset `trio` (browser folder trio). Sounds: **shift + blue turn** (bank of 16); knob push cycles pages.
+
 ## What it is
 
 | page | blue | green | white | orange |

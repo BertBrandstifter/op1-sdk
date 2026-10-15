@@ -8,6 +8,10 @@ v0.2 fixed only slots 5–8 and still halted; v0.3 covers all slots (see "Boot f
 (in recipe `op1plus`, before engine_plus). Inspired by JIANT FM's LOFI engine (ideas only, own code;
 the bytebeat formulas are classic community one-liners).
 
+## Open it on the OP-1
+
+Part of the default `op1plus` image. Pick **LOFI** in the synth engine list, or load the preset `lofi` (browser folder lofi). Sounds: **shift + blue turn** (bank of 14); knob push flips pages.
+
 ## What it is
 
 Chiptune waves and pitch-tracking bytebeat as a synth engine. TE's envelope, velocity, volume, FX,

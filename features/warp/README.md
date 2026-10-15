@@ -4,6 +4,10 @@ Status: **v0.1** (2026-10-13): built and sim-verified, awaiting device test. Cod
 (on the engine host, tag 6). Idea: phase warps on a single-cycle wave (strudel's worklets, AGPL:
 ideas only, own code).
 
+## Open it on the OP-1
+
+Part of the default `op1plus` image. Pick **WARP** in the synth engine list, or load the preset `warp` (browser folder warp). Sounds: **shift + blue turn** (bank of 16); knob push cycles pages.
+
 ## What it is
 
 One of 8 single-cycle waves read through one of 16 warps. TE's envelope, velocity, volume, FX, LFO,

@@ -4,6 +4,10 @@ Status: **v0.4** (2026-10-13: TYPE first on page 1, MIX on page 2), sim-verified
 (in recipe `op1plus`). Ideas from sloop-fm1 (phaser, flanger, wavefolder, fuzz, texture bed),
 strudel (DJ filter, distortion curves, transient shaper) — own code; see `docs/ideas.md`.
 
+## Open it on the OP-1
+
+Part of the default `op1plus` image. Pick **fx mix** in the FX list (synth FX, drum FX, or master FX on the mixer's FX page). Blue knob = TYPE (phaser, flanger, fold, fuzz, DJ filter, transient, texture); knob push flips to page 2 (MIX + the effect's values).
+
 ## What it is
 
 Seven effects behind **one** entry in TE's FX list, **fx mix** (synth, drum or master FX). Page 1's

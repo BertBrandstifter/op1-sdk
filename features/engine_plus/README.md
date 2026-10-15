@@ -3,6 +3,10 @@
 Status: **v1 built, sim-verified, awaiting device test** (2026-10-11). Code: `features/engine_plus/`,
 shipped inside `build/apps/op1plus` together with the quantizer.
 
+## Open it on the OP-1
+
+Part of the default `op1plus` image. Nothing to open: on any TE synth engine screen (fm, digital, string, cluster, phase, dna, voltage, iter), **click a knob** to flip it to its extra parameter — click again to flip back.
+
 ## What it does
 
 Every OP-1 synth preset stores 8 knob values, but only dsynth and sampler use slots 5–8; the

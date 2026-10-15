@@ -11,6 +11,10 @@ still follow the panel's grid + mode. Spec: [`requantize-roll.md`](requantize-ro
 **v3.1:** panel and roll are one screen (the roll opens directly, settings in its header, green press
 flips the knobs between notes and take settings; commit = orange press in TAKE focus).
 
+## Open it on the OP-1
+
+Part of the default `op1plus` image. On the tape screen: **shift + blue knob press** starts a take; press again to end it — the requantize screen (piano roll + take header) opens. Green press flips the knobs between NOTES and TAKE.
+
 ## Problem
 
 The tape records audio, so a take played freely cannot be quantized afterwards: re-timing overlapping

@@ -4,6 +4,10 @@ Status: **v0.8** (2026-10-14; "drum roll" in the drum engine list; tape-screen p
 host-tested (`test_dr_core.c`, `test_dr_dsp.c`), sim-verified (`sim/run_drtest.py`, mutation-tested);
 awaiting device test. Screens from the simulator: `build/demo/drumroll_step.png`, `drumroll_sound.png`.
 
+## Open it on the OP-1
+
+Part of the default `op1plus` image. Pick **drum roll** in the drum engine list (next to dbox), or **shift + green press** on the drum screen. On the tape screen (drum playmode): **shift + white press** = play / stop, to record it.
+
 ## Idea
 
 A channel-rack style drum sequencer (FL Studio's step sequencer + its per-step event graph) in a

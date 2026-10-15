@@ -4,6 +4,10 @@ Status: **v1.6 device-verified** (2026-10-11): QUEUE default, phrase start, held
 "works now perfectly".
 input are marked *(default)*. Implementation: `features/quantize/`.
 
+## Open it on the OP-1
+
+Not in the default `op1plus` image (its shift + insert gesture belongs to CHORD+ there) — compose an image that includes it. **Shift + insert** cycles off -> 1/16 -> 1/8 -> 1/4 -> 1/2 -> 1/32 -> triplet grids; a blinking dot top-right shows it is on.
+
 ## 1. Problem
 
 The OP-1 records the synth to tape as audio. Notes played on the keyboard (or arriving over MIDI)

@@ -3,6 +3,10 @@
 Status: **v0.1 built, sim-verified, awaiting device test** (2026-10-12). Code: `features/reso/`
 (in recipe `op1plus`). Idea from JIANT FM's RESO reverb (own code).
 
+## Open it on the OP-1
+
+Part of the default `op1plus` image. Pick **RESO** in the FX list (synth FX, drum FX, or master FX on the mixer's FX page). Knob push = page 2.
+
 ## What it is
 
 Four resonating "strings" (tuned feedback combs) that ring at the notes the synth is playing — any

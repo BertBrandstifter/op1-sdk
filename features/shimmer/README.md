@@ -3,6 +3,10 @@
 Status: **v0.1 built, sim-verified, awaiting device test** (2026-10-12). Code: `features/shimmer/`
 (in recipe `op1plus`). Idea from JIANT FM's SHIMMER (own code: FDN reverb + delay-line shifter).
 
+## Open it on the OP-1
+
+Part of the default `op1plus` image. Pick **SHIMMER** in the FX list (synth FX, drum FX, or master FX on the mixer's FX page). Knob push = page 2.
+
 ## What it is
 
 A reverb whose tail rises an interval on every pass through the tank: play a chord, and the tail
