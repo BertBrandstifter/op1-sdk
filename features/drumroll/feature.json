@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "drumroll",
   "title": "DRUM ROLL step sequencer",
-  "version": "0.8",
+  "version": "0.9",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
@@ -11,7 +11,7 @@
   "prefix": [
     "dr_"
   ],
-  "summary": "Channel-rack drum sequencer for the drum kit in a TE look: 8 lanes, each one drum sample with its own length (1-64 steps) and rate (1/4 .. 1/32, triplets), drawn to scale with bar / beat lines, loop lines and a playhead per lane. Every step has VEL, TONE (-24..+24 semitones), LEN (1/8 step .. 16 steps or FULL), NUDGE, PROB and RATCH; every sample a filter (LP / BP / HP, cutoff, resonance) and a level, also for keys played by hand. Follows the tape position while the tape runs, own clock otherwise, TE's tempo; 4 patterns, swing. Shift + green press on the drum screen opens it.",
+  "summary": "Channel-rack drum sequencer for the drum kit in a TE look: 8 lanes, each one drum sample with its own length (1-64 steps) and rate (1/4 .. 1/32, triplets), drawn to scale with bar / beat lines, loop lines and a playhead per lane. Every step has VEL, TONE (-24..+24 semitones), LEN (1/8 step .. 16 steps or FULL), NUDGE, PROB and RATCH; every sample a filter (LP / BP / HP, cutoff, resonance) and a level, also for keys played by hand. Follows the tape position while the tape runs, own clock otherwise, TE's tempo; 4 patterns, swing; patterns, swing and filters are kept in TE's op1.db (table sdk_drumroll) and come back after a restart; page 6 clears a pattern (asks first). Shift + green press on the drum screen opens it.",
   "license": "MIT",
   "authors": [
     "unknown"
@@ -20,7 +20,8 @@
   "sources": [
     "drumroll.c",
     "dr_core.c",
-    "dr_dsp.c"
+    "dr_dsp.c",
+    "dr_store.c"
   ],
   "libs": [
     "gfx"
@@ -47,6 +48,10 @@
     {
       "point": "frame",
       "fn": "dr_frame"
+    },
+    {
+      "point": "main_tick",
+      "fn": "dr_main"
     }
   ],
   "hooks": {
@@ -78,13 +83,14 @@
     "drum engine list: 'drum roll' (next to dbox) turns DRUM ROLL on for the drum sound (its kit stays; kits picked afterwards are its sounds, dbox turns it off); DRUM ROLL is the sound's engine page (T1), T2-T4 stay TE's; shift + green press closes / opens it",
     "tape screen (drum playmode): shift + white press = play / stop DRUM ROLL (to record it; it follows the tape position while the tape runs); not while the requantize screen is open",
     "knob turn = the value under that knob, green press = next page, shift + blue turn = browse lanes; blue press = cursor step on / off (any page); white press = hear the cursor step",
-    "P1 STEP: step / ON / VEL / PROB; P2 NOTE: step / TONE / LEN / RATCH; P3 TIME: step / NUDGE / SWING / ZOOM; P4 LANE: SAMPLE / LENGTH / RATE / MUTE; P5 SOUND: FILTER / CUTOFF / RESO / LEVEL",
+    "P1 STEP: step / ON / VEL / PROB; P2 NOTE: step / TONE / LEN / RATCH; P3 TIME: step / NUDGE / SWING / ZOOM; P4 LANE: SAMPLE / LENGTH / RATE / MUTE; P5 SOUND: FILTER / CUTOFF / RESO / LEVEL; P6 CLEAR: blue / white / orange press asks 'CLEAR PATTERN X?' (any knob turn: left NO / right YES, any press: ok)",
     "shift + green turn: pattern A-D; shift + white press: play / stop; shift + orange press: clear the lane (again: undo); shift + blue press does nothing while open (no requantize take)",
     "drum keys while open: select their lane (TE still plays them)"
   ],
   "tests": [
     "test_dr_core.c",
     "test_dr_dsp.c",
+    "test_dr_store.c",
     "sim/run_drtest.py"
   ],
   "depends": [],
@@ -149,7 +155,7 @@
       "screen": "tape"
     }
   ],
-  "status_note": "v0.8: 'drum roll' in the drum engine list, DRUM ROLL only on the engine page (T1); v0.7 tape-screen play / stop; v0.6 back-to-back + ratchet fix; v0.3 device-tested; v0.1 device-tested",
+  "status_note": "v0.9: patterns kept across restarts (op1.db), page 6 CLEAR with yes / no dialog; v0.8: 'drum roll' in the drum engine list, DRUM ROLL only on the engine page (T1); v0.7 tape-screen play / stop; v0.6 back-to-back + ratchet fix; v0.3 device-tested; v0.1 device-tested",
   "evidence": [
     {
       "firmware": "R246",

@@ -162,7 +162,7 @@ run your code against drivers and stubs that emulate the TE side. Run them all:
   through the composer; `sim/gentest` covers the generated C trampoline (init-once, filter,
   replay) and `sim/overlaytest` the render-then-overlay order.
 - **Screenshots:** benches whose features draw a screen save it as a PNG in `build/demo/`
-  (`drumroll_step`, `drumroll_sound`, `warp_screen`, `trio_screen`, `chordplus_panel`,
+  (`drumroll_step`, `drumroll_sound`, `drumroll_clear`, `warp_screen`, `trio_screen`, `chordplus_panel`,
   `requantize_take`, `requantize_roll`). The driver draws a frame through `hook_frame` into a
   zeroed panel buffer at `0x03000000`; `run_gdb()` in `sim/simtest.py` reruns the bench under
   `bfin-elf-gdb`, dumps the buffer and `fb_png()` turns it into a 2x PNG of the 320x156 UI. Only

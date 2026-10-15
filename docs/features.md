@@ -95,9 +95,10 @@ Performance:
 
 - `chordplus` 0.3 — CHORD+ chord keyboard: shift + insert; white keys = scale chords, held black
   keys = modifiers; panel KEY / SCALE / VOICING / STRUM (device-verified)
-- `drumroll` 0.8 — DRUM ROLL step sequencer for the drum kit ("drum roll" in the drum engine list, or
+- `drumroll` 0.9 — DRUM ROLL step sequencer for the drum kit ("drum roll" in the drum engine list, or
   shift + green press on the drum engine page;
-  handled like the synth engines: turn = value, press = next page, 5 pages STEP NOTE TIME LANE SOUND):
+  handled like the synth engines: turn = value, press = next page, 6 pages STEP NOTE TIME LANE SOUND
+  CLEAR; patterns kept across restarts in TE's op1.db):
   8 lanes = 8 drum samples, own length + rate each (polymetric), drawn to scale; per step VEL TONE
   LEN NUDGE PROB RATCH; per sample filter LP / BP / HP + level; tape sync; 4 patterns, swing;
   `features/drumroll/README.md` (v0.1 device-tested: "love it")

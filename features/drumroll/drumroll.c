@@ -16,11 +16,14 @@
  *                 (all knob presses ours, also shift + blue); drum keys select their lane (not consumed)
  * dr_knob         on_knob while open: the page's four functions; shift + blue lane, shift + green pattern
  * dr_frame        the screen, or a small badge while running with the screen closed
- * Patterns live in RAM (lost at power-off). */
+ * dr_main         main thread, every main-loop pass: loads the patterns + settings from TE's op1.db
+ *                 once, then saves what changed ~3 s after the last edit (at once on close)
+ * Page 6 CLEAR: a knob push asks "CLEAR PATTERN X?" (turn: no / yes, push: ok). */
 #include <op1/te246.h>
 #include <op1/gfx.h>
 #include "dr_core.h"
 #include "dr_dsp.h"
+#include "dr_store.h"
 
 /* TE drum sampler voice (DrumSampler.cpp, RE 2026-10-14): vtable 0x0190fac4 (render slot 0x0190fad8,
  * note_on slot 0x0190fae0), 12 voices of 0x14 bytes from 0xffb00000 (ctor 0x01978df4). note_on gets
@@ -56,7 +59,7 @@ volatile uint32_t dr_clock;                     /* last tick's clock (playheads,
 volatile uint8_t dr_tape;                       /* following the tape */
 static volatile uint8_t inited;
 
-typedef struct { uint8_t type, cut, res; } filt;
+typedef dr_filt filt;
 static filt filters[DR_KEYS];
 static dr_coef coefs[DR_KEYS];
 static volatile int32_t key_gain[DR_KEYS];      /* played keys: the sample's lane level */
@@ -440,14 +443,16 @@ enum {
     F_STEP, F_ON, F_VEL, F_PROB, F_TONE, F_LEN, F_RATCH, F_NUDGE, F_SWING, F_ZOOM,
     F_SAMPLE, F_LENGTH, F_RATE, F_MUTE, F_FILTER, F_CUTOFF, F_RESO, F_LEVEL
 };
-#define DR_PAGES    5
-static const char *const page_name[DR_PAGES] = { "STEP", "NOTE", "TIME", "LANE", "SOUND" };
+#define DR_PAGES    6
+#define PG_CLEAR    5
+static const char *const page_name[DR_PAGES] = { "STEP", "NOTE", "TIME", "LANE", "SOUND", "CLEAR" };
 static const uint8_t page_fn[DR_PAGES][4] = {
     { F_STEP, F_ON, F_VEL, F_PROB },            /* 1 STEP: which step, hit or not, how loud, how sure */
     { F_STEP, F_TONE, F_LEN, F_RATCH },         /* 2 NOTE: pitch, length, repeats */
     { F_STEP, F_NUDGE, F_SWING, F_ZOOM },       /* 3 TIME: early / late, swing (all), view */
     { F_SAMPLE, F_LENGTH, F_RATE, F_MUTE },     /* 4 LANE: which drum, its own beat */
     { F_FILTER, F_CUTOFF, F_RESO, F_LEVEL },    /* 5 SOUND: the drum's filter and level */
+    { F_STEP, F_STEP, F_STEP, F_STEP },         /* 6 CLEAR: no knob functions (push: the dialog) */
 };
 static const char *const fn_name[] = {
     "STEP", "ON", "VEL", "PROB", "TONE", "LEN", "RATCH", "NUDGE", "SWING", "ZOOM",
@@ -460,6 +465,8 @@ static const int8_t fn_param[] = {             /* step parameter behind a functi
 
 static dr_lane undo_lane;                       /* the lane before shift + orange press cleared it */
 static volatile int8_t undo_of = -1;            /* its index (pattern * 8 + lane), -1 none */
+volatile uint8_t dr_ask, dr_ask_yes;            /* "CLEAR PATTERN X?" up / YES picked (bench reads) */
+static volatile uint8_t dirty, save_now;        /* an edit happened / save at the next main pass */
 
 static void lane_clear(dr_lane *l)
 {
@@ -475,6 +482,15 @@ static void select_lane(int l)
 {
     dr_sel = (uint8_t)clampi(l, 0, DR_LANES - 1);
     dr_cursor = (uint8_t)(dr_cursor % lane()->len);
+}
+
+static void clear_pattern(void)
+{
+    dr_pattern_init(pat());                     /* as new: lanes on keys 1..8, 16 steps, empty */
+    if (undo_of >= 0 && undo_of / DR_LANES == (dr_cur & (DR_PATTERNS - 1)))
+        undo_of = -1;
+    dr_cursor = 0;
+    select_lane(dr_sel);
 }
 
 static void edit(int f, int d)
@@ -523,6 +539,7 @@ static void action(int k)
 
     if (k == 1) {
         set_shown(0);
+        save_now = 1;                           /* closing: keep it now, not ~3 s later */
     } else if (k == 2) {
         dr_run ^= 1;
     } else if (k == 3) {
@@ -564,6 +581,7 @@ int dr_key(int key, int down)
         if (!drum_screen())
             return 0;
         if (!shown()) {
+            dr_ask = 0;
             if (k != 1 || !*TE_SHIFT_HELD)
                 return 0;
             set_shown(1);                       /* shift + green press: open */
@@ -571,15 +589,24 @@ int dr_key(int key, int down)
             return 1;
         }
         /* open: every knob press is ours (shift + blue press too: no requantize take from here) */
-        if (*TE_SHIFT_HELD)
+        if (dr_ask) {                           /* the dialog: any push = ok on the picked answer */
+            if (dr_ask_yes)
+                clear_pattern();
+            dr_ask = 0;
+        } else if (*TE_SHIFT_HELD) {
             action(k);
-        else if (k == 0)
+        } else if (dr_page == PG_CLEAR && k != 1) {
+            dr_ask = 1;                         /* blue / white / orange push: ask, NO picked */
+            dr_ask_yes = 0;
+        } else if (k == 0) {
             edit(F_ON, lane()->s[dr_cursor % DR_STEPS].on ? -1 : 1);   /* blue: step on / off */
-        else if (k == 1)
+        } else if (k == 1) {
             dr_page = (uint8_t)(dr_page + 1 < DR_PAGES ? dr_page + 1 : 0);     /* green: next page */
-        else if (k == 2)
+        } else if (k == 2) {
             preview_req = 1;                    /* white: hear the cursor step */
+        }
         refresh_gains();
+        dirty = 1;
         consumed |= 1 << k;
         return 1;
     }
@@ -607,6 +634,10 @@ int dr_knob(int knob, int16_t *diff)
         return 0;
     if (!d)
         return 1;
+    if (dr_ask) {
+        dr_ask_yes = d > 0;                     /* any knob: left NO, right YES */
+        return 1;
+    }
     if (*TE_SHIFT_HELD) {
         if (knob == 0)
             select_lane(dr_sel + d);            /* browse lanes */
@@ -614,10 +645,11 @@ int dr_knob(int knob, int16_t *diff)
             dr_cur = (uint8_t)clampi(dr_cur + d, 0, DR_PATTERNS - 1);
             select_lane(dr_sel);
         }
-    } else {
+    } else if (dr_page != PG_CLEAR) {
         edit(page_fn[dr_page % DR_PAGES][knob], d);
     }
     refresh_gains();
+    dirty = 1;
     return 1;                                   /* all four knobs, with and without shift */
 }
 
@@ -1003,10 +1035,56 @@ static int fn_frac(int f, int *bip)
 
 #define COL_W   78
 
+static void draw_clear_page(void)
+{
+    char p[2] = { (char)('A' + (dr_cur & 3)), 0 };
+    int x = gfx_text(2, PANEL_Y + 4, "CLEAR PATTERN", GFX_WHITE, 2);
+
+    gfx_text(x + 8, PANEL_Y + 4, p, col[3], 2);
+    gfx_text(2, PANEL_Y + 18, "ALL 8 LANES START NEW: EMPTY - 16 STEPS - KEYS 1-8", c_dim, 1);
+    gfx_text(2, PANEL_Y + 26, "OTHER PATTERNS AND THE FILTERS STAY", c_dim, 1);
+    x = gfx_text(2, PANEL_Y + 34, "PUSH", c_dim, 1) + 4;
+    x = gfx_text(x, PANEL_Y + 34, "BLUE", col[0], 1) + 4;
+    x = gfx_text(x, PANEL_Y + 34, "WHITE", col[2], 1) + 4;
+    x = gfx_text(x, PANEL_Y + 34, "OR", c_dim, 1) + 4;
+    x = gfx_text(x, PANEL_Y + 34, "ORANGE", col[3], 1) + 4;
+    gfx_text(x, PANEL_Y + 34, "TO CLEAR - ASKS FIRST", c_dim, 1);
+}
+
+/* "CLEAR PATTERN X?" over the lanes: turn picks NO / YES, push = ok */
+#define ASK_W   184
+#define ASK_H   62
+
+static void draw_ask(void)
+{
+    int x0 = (gfx_w - ASK_W) / 2, y0 = LANE_Y + 10, i;
+    char p[3] = { (char)('A' + (dr_cur & 3)), '?', 0 };
+
+    gfx_rect(x0, y0, ASK_W, ASK_H, GFX_BLACK);
+    frame_rect(x0, y0, ASK_W, ASK_H, GFX_WHITE);
+    i = gfx_text(x0 + 12, y0 + 8, "CLEAR PATTERN", GFX_WHITE, 2);
+    gfx_text(i + 8, y0 + 8, p, col[3], 2);
+    for (i = 0; i < 2; i++) {                   /* NO left, YES right */
+        int on = i == (dr_ask_yes != 0), bx = x0 + 22 + i * 76, by = y0 + 26;
+        uint16_t c = i ? c_red : GFX_WHITE;
+
+        if (on)
+            gfx_rect(bx, by, 64, 18, c);
+        else
+            frame_rect(bx, by, 64, 18, c_off);
+        gfx_text(bx + (i ? 20 : 24), by + 4, i ? "YES" : "NO", on ? GFX_BLACK : c_dim, 2);
+    }
+    gfx_text(x0 + 12, y0 + ASK_H - 10, "TURN: NO / YES   PUSH: OK", c_dim, 1);
+}
+
 static void draw_panel(void)
 {
     int pg = dr_page % DR_PAGES, i, y = PANEL_Y + 2;
 
+    if (pg == PG_CLEAR) {
+        draw_clear_page();
+        return;
+    }
     for (i = 0; i < 4; i++) {
         int f = page_fn[pg][i], x = 2 + i * COL_W, bip, v = fn_frac(f, &bip), bw = COL_W - 8;
 
@@ -1049,9 +1127,9 @@ static void draw_hints(void)
     int x = 2, y = gfx_h - 7;
 
     x = gfx_text(x, y, "PUSH", c_dim, 1) + 4;
-    x = gfx_text(x, y, "ON", col[0], 1) + 4;
+    x = gfx_text(x, y, dr_page == PG_CLEAR ? "CLEAR" : "ON", col[0], 1) + 4;
     x = gfx_text(x, y, "PAGE", col[1], 1) + 4;
-    x = gfx_text(x, y, "HEAR", col[2], 1) + 8;
+    x = gfx_text(x, y, dr_page == PG_CLEAR ? "CLEAR" : "HEAR", col[2], 1) + 8;
     x = gfx_text(x, y, "SHIFT+TURN", c_dim, 1) + 4;
     x = gfx_text(x, y, "LANE", col[0], 1) + 4;
     x = gfx_text(x, y, "PATTERN", col[1], 1) + 8;
@@ -1072,6 +1150,7 @@ void dr_frame(uint16_t *buf)
         return;
     gfx_begin(buf);
     if (!shown()) {
+        dr_ask = 0;                             /* left the screen: the question is gone */
         if (dr_run) {                           /* badge: running in the background */
             int x;
 
@@ -1100,4 +1179,175 @@ void dr_frame(uint16_t *buf)
     gfx_rect(0, PANEL_Y - 1, gfx_w, 1, c_beat);
     draw_panel();
     draw_hints();
+    if (dr_ask)
+        draw_ask();
+}
+
+/* ------------------------------------------------------------------ main thread: op1.db
+ * Rows in TE's own database, table sdk_drumroll (id 0..3 patterns A-D, 4 settings), the way TE keeps
+ * its sequencers (easseq, endless). TE's db helpers assert on any SQLite error, so: the table is
+ * created first, every statement is ours and fixed apart from base64 (no quote, no '%'), < 8 KB.
+ * Reads use the same lock and calls as TE's own query, minus its JSON step (a row that is not
+ * ours is skipped, never parsed). */
+#define SAVE_WAIT   375                         /* main-loop passes (~8 ms) without an edit: ~3 s */
+#define STEP_TRIES  100
+
+static char row[DR_ROW_TEXT_MAX];               /* one row's text (load: a copy of the column) */
+static char sql[DR_ROW_TEXT_MAX + 96];
+static uint8_t loaded, pending;
+static uint16_t quiet;
+static uint32_t saved_hash[DR_ROWS];
+
+static void put(char **o, const char *s)
+{
+    while (*s)
+        *(*o)++ = *s++;
+}
+
+/* row id's data -> row (0-ended); 0 if there is none (or it cannot be read) */
+static int db_read(void *db, int id)
+{
+    te_db_query q = { db, 0 };
+    char *o = sql;
+    int rc = 0, n = 0, i;
+    void *sem = *TE_DB_LOCK;
+
+    put(&o, "SELECT data FROM sdk_drumroll WHERE id=");
+    *o++ = (char)('0' + id);
+    *o = 0;
+    row[0] = 0;
+    TE_SEM_PEND(sem, 0);
+    TE_DB_PREPARE(&q, sql);
+    if (q.stmt) {
+        for (i = 0; i < STEP_TRIES; i++) {
+            rc = TE_SQLITE_STEP(q.stmt);
+            if (rc == 100 || rc == 101)
+                break;
+        }
+        if (rc == 100) {
+            const char *t = TE_SQLITE_COLUMN_TEXT(q.stmt, 0);
+
+            while (t && t[n] && n < DR_ROW_TEXT_MAX - 1) {
+                row[n] = t[n];
+                n++;
+            }
+            if (t && t[n])
+                n = 0;                          /* longer than any row of ours: not ours */
+            row[n] = 0;
+        }
+        TE_SQLITE_FINALIZE(q.stmt);
+    }
+    TE_SEM_POST(sem);
+    return n;
+}
+
+static void db_write(void *db, int id, const char *text)
+{
+    char *o = sql;
+
+    put(&o, "INSERT OR REPLACE INTO sdk_drumroll (id, data) VALUES (");
+    *o++ = (char)('0' + id);
+    put(&o, ",'");
+    put(&o, text);
+    put(&o, "')");
+    *o = 0;
+    TE_DB_EXEC(db, sql);
+}
+
+static void settings_get(dr_settings *s)
+{
+    int i;
+
+    s->cur = dr_cur;
+    s->swing = dr_swing;
+    s->zoom = dr_zoom;
+    s->pad = 0;
+    for (i = 0; i < DR_KEYS; i++)
+        s->filt[i] = filters[i];
+}
+
+static uint32_t row_hash(int id)
+{
+    dr_settings s;
+
+    if (id < DR_PATTERNS)
+        return dr_hash(&dr_pat[id], (int)sizeof(dr_pattern));
+    settings_get(&s);
+    return dr_hash(&s, (int)sizeof(s));
+}
+
+static void load_all(void *db)
+{
+    static dr_pattern p;
+    dr_settings s;
+    int id, i;
+
+    TE_DB_EXEC(db, "CREATE TABLE IF NOT EXISTS sdk_drumroll (id INTEGER PRIMARY KEY, data TEXT NOT NULL)");
+    for (id = 0; id < DR_PATTERNS; id++)
+        if (db_read(db, id) && dr_load_pattern(id, row, &p) == 0)
+            dr_pat[id] = p;
+    if (db_read(db, DR_ROW_SETTINGS) && dr_load_settings(row, DR_FILTERS, &s) == 0) {
+        dr_cur = s.cur;
+        dr_swing = s.swing;
+        dr_zoom = s.zoom;
+        for (i = 0; i < DR_KEYS; i++) {
+            filters[i] = s.filt[i];
+            set_filter(i);
+        }
+    }
+    select_lane(dr_sel);
+    refresh_gains();
+    for (id = 0; id < DR_ROWS; id++)
+        saved_hash[id] = row_hash(id);          /* as stored (or defaults): nothing to write yet */
+}
+
+static void save_changed(void *db)
+{
+    int id;
+
+    for (id = 0; id < DR_ROWS; id++) {
+        uint32_t h = row_hash(id);
+
+        if (h == saved_hash[id])
+            continue;
+        if (id < DR_PATTERNS) {
+            dr_store_pattern(id, &dr_pat[id], row);
+        } else {
+            dr_settings s;
+
+            settings_get(&s);
+            dr_store_settings(&s, row);
+        }
+        db_write(db, id, row);
+        saved_hash[id] = h;
+    }
+}
+
+void dr_main(void)
+{
+    void *db;
+
+    if (!inited)
+        return;
+    db = TE_DB_OP1();
+    if (!db || !*TE_DB_LOCK)                    /* TE has not opened / used op1.db yet */
+        return;
+    if (!loaded) {
+        load_all(db);
+        loaded = 1;
+        return;
+    }
+    if (dirty) {                                /* an edit: wait until it is quiet again */
+        dirty = 0;
+        pending = 1;
+        quiet = 0;
+    }
+    if (save_now) {
+        save_now = 0;
+        quiet = SAVE_WAIT;
+    }
+    if (!pending || ++quiet < SAVE_WAIT)
+        return;
+    pending = 0;
+    save_changed(db);                           /* a later edit sets dirty again: saved next round */
 }

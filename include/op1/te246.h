@@ -150,6 +150,27 @@ enum {                              /* MIDI status bytes the dispatcher routes *
 /* data cache: SDRAM is cached; DMA (screen, audio) only sees data after a flush */
 #define TE_DCACHE_FLUSH     ((void (*)(void *start, void *end, int invalidate))0x01aa185c)
 
+/* ---------------------------------------------------------------- database (static RE 2026-10-15)
+ * TE keeps its state in SQLite files on yaffs2 (db2/db2.cpp): user/op1.db (slots, sequencers: e.g.
+ * EtchASketchData saves "UPDATE easseq SET data='%s' ..." after "CREATE TABLE IF NOT EXISTS easseq"),
+ * user/tape.db, content/op1_factory.db. Open at boot (0x0196f6ca), handles at 0x01bab720 (op1.db),
+ * +4 op1_factory.db, +8 kerntable.db, +0xc tape.db. One VDK semaphore guards every query.
+ * DANGER: TE's helpers assert on any SQLite error (fatal after boot), and they format the SQL
+ * printf-style into one static 8 KB buffer (0x01bab8e0): pass only SQL without '%', under 8 KB,
+ * on tables that exist. Call from a thread (main loop), never from the audio / sequencer path. */
+#define TE_DB_OP1           ((void *(*)(void))0x0196dd44)       /* op1.db handle (0 before boot opens it) */
+#define TE_DB_EXEC          ((void (*)(void *db, const char *sql))0x0196f950)   /* locks; prepare + step,
+                                                                 * asserts unless SQLITE_DONE */
+typedef struct te_db_query { void *db; void *stmt; } te_db_query;  /* db2 statement holder */
+#define TE_DB_PREPARE       ((void (*)(te_db_query *q, const char *fmt, ...))0x0196e2f0)   /* no lock;
+                                                                 * asserts if prepare fails */
+#define TE_SQLITE_STEP      ((int (*)(void *stmt))0x01a7bb20)   /* 100 ROW, 101 DONE */
+#define TE_SQLITE_COLUMN_TEXT ((const char *(*)(void *stmt, int col))0x01a7c6b8)
+#define TE_SQLITE_FINALIZE  ((int (*)(void *stmt))0x01a7b202)   /* 0 ok */
+#define TE_DB_LOCK          ((void *volatile *)0x01bab718)      /* the semaphore (TE creates it on first use) */
+#define TE_SEM_PEND         ((int (*)(void *sem, int timeout))0xffa0b6e8)   /* VDK, timeout 0 = forever */
+#define TE_SEM_POST         ((void (*)(void *sem))0xffa0b96c)
+
 /* Hook points for app lifecycle (thread context; the targets are empty 2-byte RTS functions,
  * so use call-site hooks, never entry hooks):
  *   TE_SITE_BOOT_DONE   main thread, once, right before the main loop  -> "init" work

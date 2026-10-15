@@ -1,8 +1,10 @@
 # DRUM ROLL — step sequencer for drum kits — spec
 
-Status: **v0.8** (2026-10-14; "drum roll" in the drum engine list; tape-screen play / stop; back-to-back hits + ratchet fixed; v0.3 device-tested: "nice"; v0.2 device-tested; v0.1 device-tested same day, user: "love it"), `features/drumroll`, in `op1plus` (image `ba877d1c`, not flashed);
-host-tested (`test_dr_core.c`, `test_dr_dsp.c`), sim-verified (`sim/run_drtest.py`, mutation-tested);
-awaiting device test. Screens from the simulator: `build/demo/drumroll_step.png`, `drumroll_sound.png`.
+Status: **v0.9** (2026-10-15: patterns kept across restarts in TE's op1.db; page 6 CLEAR with a yes / no
+dialog; v0.8 2026-10-14: "drum roll" in the drum engine list; tape-screen play / stop; back-to-back hits + ratchet fixed; v0.3 device-tested: "nice"; v0.2 device-tested; v0.1 device-tested same day, user: "love it"), `features/drumroll`, in `op1plus` (image `ba877d1c`, not flashed);
+host-tested (`test_dr_core.c`, `test_dr_dsp.c`, `test_dr_store.c`), sim-verified (`sim/run_drtest.py`,
+mutation-tested; v0.9 against an emulated op1.db); awaiting device test. Screens from the simulator:
+`build/demo/drumroll_step.png`, `drumroll_sound.png`, `drumroll_clear.png`.
 
 ## Open it on the OP-1
 
@@ -49,7 +51,8 @@ dimmer. Every lane has its own playhead.
 
 ## Data
 
-- 4 patterns **A B C D**, 8 lanes each, up to 64 steps per lane. RAM only (lost at power-off, v0.1).
+- 4 patterns **A B C D**, 8 lanes each, up to 64 steps per lane. Kept across restarts (v0.9, see
+  *Saving* below); before v0.9 RAM only.
 - Lane: sample key 1..24 (default lanes = keys 1..8), length 1..64 steps (16), rate 1/4 1/8 1/8T
   **1/16** 1/16T 1/32, level 0..100 (100 = as TE plays it), mute.
 - Step: on/off + VEL 1..100 % (100), TONE -24..+24 (0), LEN 1/8 1/4 1/2 3/4 1 1.5 2 3 4 6 8 16 steps or
@@ -93,6 +96,12 @@ when the screen is closed (small badge top right). Drum keys still play and sele
 | P3 TIME | step | NUDGE | SWING (all lanes) | ZOOM 1 / 2 / 4 bars |
 | P4 LANE | SAMPLE (drum key) | LENGTH (steps) | RATE | MUTE |
 | P5 SOUND | FILTER OFF LP BP HP | CUTOFF | RESO | LEVEL |
+| P6 CLEAR | press: clear? | (press: next page) | press: clear? | press: clear? |
+
+**P6 CLEAR** (v0.9, user): a blue, white or orange press asks **CLEAR PATTERN X?** with NO picked. Any
+knob turn picks (left NO, right YES), any knob press confirms. YES resets the current pattern as new
+(8 empty lanes on keys 1-8, 16 steps, 1/16); the other patterns and the per-sample filters stay.
+Leaving the screen drops the question.
 
 | with shift | |
 |---|---|
@@ -141,9 +150,30 @@ position 0), so the hits land on TE's bars; the badge top right shows that it ru
 - Screen: ~0.4M cycles per frame (full-screen overlay; GUI thread). `lib/gfx.c` got a clipped
   column fill for `gfx_rect` and direct glyph stores (3x faster for every overlay).
 
+## Saving (v0.9)
+
+TE keeps its own sequencers in the SQLite database `user/op1.db` (e.g. `easseq`: `CREATE TABLE IF NOT
+EXISTS`, then `UPDATE easseq SET data='…'`). DRUM ROLL does the same in its own table
+`sdk_drumroll (id INTEGER PRIMARY KEY, data TEXT)`: rows 0-3 = patterns A-D, row 4 = current
+pattern, swing, zoom and the 24 per-sample filters. A row is base64 of `'D' 'R' version id` + the raw
+data (pattern row 4,872 characters), written with `INSERT OR REPLACE`.
+
+- **When:** `dr_main` on the main loop (`main_tick`). The first pass after boot creates the table and
+  loads the rows; afterwards a row is written only if it changed, ~3 s after the last edit, or at
+  the next pass when the screen is closed (shift + green). An edit in the last ~3 s before power-off
+  is lost unless the screen was closed.
+- **Safety:** TE's db helpers assert on any SQLite error, and an assertion halts the OP-1. So: the
+  table exists before any query, every statement is fixed text apart from base64 (no quote, no `%`,
+  well under TE's 8 KB SQL buffer), and reading uses TE's lock + sqlite calls directly instead of
+  TE's JSON query (a row that is not ours is skipped, never parsed). Loaded values are clamped into
+  range, a wrong version or damaged row keeps the defaults. The table is ours: TE's boot-time preset
+  checks never look at it.
+- **Not stored:** which drum sounds use DRUM ROLL from the engine list (after a power cycle the sound
+  is a plain kit again; shift + green still opens DRUM ROLL), play / stop, lane / cursor / page.
+
 ## Out of scope (v0.1)
 
-Saving patterns to flash, pattern chaining / song mode, copy / paste, Euclid fill, dbox
+Pattern chaining / song mode, copy / paste, Euclid fill, dbox
 post-processing, MIDI out of the sequence, per-step sample choice, tape speeds other than 1x.
 
 ## Code
@@ -153,7 +183,10 @@ post-processing, MIDI out of the sequence, per-step sample choice, tape speeds o
   ratchet, probability; every hit exactly once across consecutive windows).
 - `dr_dsp.h/.c` (pure C, `test_dr_dsp.c`): filter coefficients (cutoff table at 88.2 kHz), per-voice
   post-process (SVF, gain, gate with fade).
-- `drumroll.c`: Seq tick (clock, notes, note-offs, preview), the two voice slots, keys / knobs, screen.
+- `dr_store.h/.c` (pure C, `test_dr_store.c`): base64, row text for a pattern / the settings, loading
+  with range checks.
+- `drumroll.c`: Seq tick (clock, notes, note-offs, preview), the two voice slots, keys / knobs, screen,
+  the op1.db load / save on the main loop.
 - `sim/run_drtest.py`: the composed op1plus image against stub TE functions.
 
 ## Plan
@@ -168,4 +201,5 @@ post-processing, MIDI out of the sequence, per-step sample choice, tape speeds o
 5. Manifest, recipe `op1plus`, docs (`features.md`); sim bench `sim/run_drtest.py`; full suite; build.
 6. Device test: drum screen edit mode (assumed 1; the gesture also works in drum playmode on any
    screen that is not synth / tape / mixer / tempo), timing against the metronome, tone and gate on
-   a few kits, filter sound + CPU with 12 voices, badge position, power-cycle (nothing is stored).
+   a few kits, filter sound + CPU with 12 voices, badge position; v0.9: edit, wait ~3 s (or close),
+   power-cycle: patterns, swing and filters come back; page 6 CLEAR yes / no.

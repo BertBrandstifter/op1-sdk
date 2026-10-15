@@ -28,3 +28,7 @@ _stub:
         P1.L = EMU_VOICE_ON;  P1.H = EMU_VOICE_ON;
         JUMP (P1);
 .endif
+.if WHICH == 6                  /* TE db / sqlite / VDK semaphore: the C stand-in TARGET (same ABI) */
+        P1.L = TARGET;  P1.H = TARGET;
+        JUMP (P1);
+.endif

@@ -3,16 +3,19 @@
  * voice note_on slot, as TE's 0x01a84ba0 does) and a stub voice render. Returns failed-check bits. */
 #include <op1/te246.h>
 #include "../dr_core.h"
+#include "../dr_store.h"
 
 extern void hook_tick(void);
 extern void hook_key(int key, int down);
 extern void hook_knob(int knob, int16_t *diff);
 extern void hook_frame(uint16_t *buf);
 extern void compose_init(void);
+extern void hook_main(void);
 extern void dr_te_note_on(void *self, const int16_t *params);
 extern void dr_te_render(void *self, int16_t *out, const int16_t *params);
 extern dr_pattern dr_pat[DR_PATTERNS];
 extern volatile uint8_t dr_run, dr_open, dr_page, dr_sel, dr_cursor, dr_param, dr_cur;
+extern volatile uint8_t dr_swing, dr_zoom, dr_ask, dr_ask_yes;
 extern char FB[];
 extern volatile int rq_state;
 extern int dr_te_drum_pick(void *msg);
@@ -80,6 +83,81 @@ void emu_render(void *self, int16_t *out, const int16_t *p)
 }
 
 void log_input(int a, int b) { (void)a; (void)b; inputs++; }
+
+/* TE's op1.db, emulated (stubs at TE_DB_OP1 / _EXEC / _PREPARE, the sqlite calls and the VDK
+ * semaphore): table sdk_drumroll as five text rows; anything but DRUM ROLL's exact statements
+ * counts as bad (on the device: a fatal assert) */
+static char db_row[DR_ROWS][DR_ROW_TEXT_MAX];
+static uint8_t db_has[DR_ROWS];
+static int db_creates, db_writes[DR_ROWS], db_bad, sem_depth, sem_bad, step_n;
+static int db_obj;
+
+static const char *after(const char *s, const char *prefix)    /* s past prefix, or 0 */
+{
+    while (*prefix)
+        if (*s++ != *prefix++)
+            return 0;
+    return s;
+}
+
+void *emu_db_op1(void) { return &db_obj; }
+
+void emu_db_exec(void *db, const char *sql)
+{
+    const char *t;
+    int id, n;
+
+    if (db != &db_obj || sem_depth) {
+        db_bad++;                               /* TE_DB_EXEC locks itself: never inside our lock */
+        return;
+    }
+    if (after(sql, "CREATE TABLE IF NOT EXISTS sdk_drumroll (id INTEGER PRIMARY KEY, data TEXT NOT NULL)")) {
+        db_creates++;
+        return;
+    }
+    t = after(sql, "INSERT OR REPLACE INTO sdk_drumroll (id, data) VALUES (");
+    if (!t || !db_creates || t[0] < '0' || t[0] >= '0' + DR_ROWS || t[1] != ',' || t[2] != '\'') {
+        db_bad++;
+        return;
+    }
+    id = t[0] - '0';
+    t += 3;
+    for (n = 0; t[n] && t[n] != '\'' && t[n] != '%' && n < (int)DR_ROW_TEXT_MAX - 1; n++)
+        db_row[id][n] = t[n];
+    db_row[id][n] = 0;
+    if (t[n] != '\'' || t[n + 1] != ')' || t[n + 2]) {
+        db_bad++;
+        return;
+    }
+    db_has[id] = 1;
+    db_writes[id]++;
+}
+
+void emu_db_prepare(te_db_query *q, const char *sql)
+{
+    const char *t = after(sql, "SELECT data FROM sdk_drumroll WHERE id=");
+
+    q->stmt = 0;
+    if (!sem_depth || q->db != &db_obj || !db_creates || !t || t[0] < '0' || t[0] >= '0' + DR_ROWS || t[1]) {
+        db_bad++;
+        return;
+    }
+    q->stmt = db_row[t[0] - '0'];
+    step_n = 0;
+}
+
+int emu_step(void *stmt)
+{
+    int id = (int)(((char *)stmt - db_row[0]) / DR_ROW_TEXT_MAX);
+
+    return step_n++ == 0 && db_has[id] ? 100 : 101;
+}
+
+const char *emu_column(void *stmt, int col) { return col ? 0 : (const char *)stmt; }
+int emu_finalize(void *stmt) { (void)stmt; return 0; }
+#define SEM ((void *)0x5e3a)                   /* the handle the bench puts at TE_DB_LOCK */
+int emu_pend(void *sem, int t) { sem_bad += sem != SEM || t != 0 || sem_depth; sem_depth++; return 0; }
+void emu_post(void *sem) { sem_bad += sem != SEM || sem_depth != 1; sem_depth--; }
 
 static uint32_t cycles(void)
 {
@@ -263,6 +341,142 @@ static void demo(void)
 
 #define CHECK(bit, c) do { if (!(c)) fails |= 1 << (bit); } while (0)
 
+int memcmp(const void *a, const void *b, __SIZE_TYPE__ n);     /* lib/rt.c (linked into the driver) */
+void *memset(void *d, int c, __SIZE_TYPE__ n);
+#define QUIET       375                         /* drumroll.c SAVE_WAIT */
+
+static void mains(int n)
+{
+    while (n--)
+        hook_main();
+}
+
+/* 13a: the first main-loop pass creates the table and loads what op1.db holds: pattern D and the
+ * settings (a filter on K21, zoom 2 bars); a damaged row (C) and missing rows (A, B) keep defaults */
+static dr_pattern want;
+
+static void store_load(void)
+{
+    dr_settings st;
+    dr_pattern fresh;
+    int ok;
+
+    dr_pattern_init(&want);
+    want.lane[4].key = 11;
+    want.lane[4].len = 9;
+    want.lane[4].s[8].on = 1;
+    want.lane[4].s[8].p[DR_TONE] = 7;
+    dr_store_pattern(3, &want, db_row[3]);
+    db_has[3] = 1;
+    memset(&st, 0, sizeof(st));
+    st.zoom = 1;
+    st.filt[20].type = 1;
+    st.filt[20].cut = 30;
+    st.filt[20].res = 90;
+    dr_store_settings(&st, db_row[DR_ROW_SETTINGS]);
+    db_has[DR_ROW_SETTINGS] = 1;
+    dr_store_pattern(2, &want, db_row[2]);
+    db_row[2][7] = '#';                         /* damaged */
+    db_has[2] = 1;
+    *TE_DB_LOCK = SEM;
+
+    mains(1);
+    dr_pattern_init(&fresh);
+    ok = db_creates == 1 && !db_bad && !sem_bad && !sem_depth;
+    ok &= !memcmp(&dr_pat[3], &want, sizeof(want)) && !memcmp(&dr_pat[2], &fresh, sizeof(fresh))
+          && !memcmp(&dr_pat[0], &fresh, sizeof(fresh)) && dr_zoom == 1 && dr_swing == 0 && dr_cur == 0;
+    mains(QUIET + 5);                           /* nothing edited: nothing written */
+    ok &= !db_writes[0] && !db_writes[1] && !db_writes[2] && !db_writes[3] && !db_writes[4];
+    dr_zoom = 0;                                /* the rest of the bench starts as before */
+    if (!ok)
+        fails |= 1 << 13;
+}
+
+/* 12: page 6 CLEAR: a push asks (NO picked), push = ok; turn right = YES, push clears the pattern;
+ * leaving the screen drops the question. Draws the dialog into FB + 3 for the docs. */
+static void clear_dialog(void)
+{
+    dr_pattern before, fresh;
+    int ok;
+
+    dr_open = 1;
+    *TE_EDIT_MODE = 1;
+    dr_cur = 1;                                 /* the demo groove */
+    dr_page = 0;
+    before = dr_pat[1];
+    push(GREEN, 0); push(GREEN, 0); push(GREEN, 0); push(GREEN, 0); push(GREEN, 0);
+    ok = dr_page == 5 && !dr_ask;
+    turn(1, 3, 0);                              /* knobs do nothing on the page */
+    ok &= !memcmp(&before, &dr_pat[1], sizeof(before));
+    push(ORANGE, 0);
+    ok &= dr_ask && !dr_ask_yes;
+    turn(2, 1, 0);
+    turn(2, -1, 0);                             /* back to NO */
+    push(BLUE, 0);                              /* ok on NO: nothing happens */
+    ok &= !dr_ask && !memcmp(&before, &dr_pat[1], sizeof(before));
+    push(WHITE, 0);
+    ok &= dr_ask && !dr_ask_yes;
+    dr_open = 0;                                /* the screen goes away: no question left */
+    hook_frame((uint16_t *)FB);
+    ok &= !dr_ask;
+    dr_open = 1;
+    push(WHITE, 0);
+    turn(3, 1, 0);                              /* YES */
+    ok &= dr_ask && dr_ask_yes && dr_page == 5;
+    hook_frame((uint16_t *)(FB + 3 * 320 * 512));
+    push(ORANGE, 0);
+    dr_pattern_init(&fresh);
+    ok &= !dr_ask && !memcmp(&fresh, &dr_pat[1], sizeof(fresh)) && dr_cursor == 0 && dr_page == 5;
+    dr_page = 0;
+    dr_cur = 0;
+    if (!ok)
+        fails |= 1 << 12;
+}
+
+/* 13b: saving. The bench closed DRUM ROLL earlier (shift + green): the first pass writes every
+ * changed row (A and C edited, B cleared = as never stored, D untouched, the settings), each decoding
+ * to what is in RAM. A plain edit waits for ~3 s of quiet; closing writes at the next pass. */
+static int saved_as_ram(int id)
+{
+    static dr_pattern got;
+
+    return dr_load_pattern(id, db_row[id], &got) == 0 && !memcmp(&got, &dr_pat[id], sizeof(got));
+}
+
+static void store_save(void)
+{
+    dr_settings st;
+    int ok = 1;
+
+    mains(1);
+    ok &= db_writes[0] == 1 && db_writes[1] == 0 && db_writes[2] == 1 && db_writes[3] == 0
+          && db_writes[4] == 1 && saved_as_ram(0) && saved_as_ram(2);
+    ok &= dr_load_settings(db_row[4], 4, &st) == 0 && st.cur == dr_cur && st.zoom == dr_zoom
+          && st.filt[20].cut == 30 && st.filt[0].type == 1;
+    mains(QUIET + 5);
+    ok &= db_writes[0] == 1;                    /* nothing new: nothing written */
+
+    dr_open = 1;
+    *TE_EDIT_MODE = 1;
+    dr_cur = 0;
+    dr_page = 3;
+    turn(2, 1, 0);                              /* LANE page, white = rate of the lane */
+    mains(QUIET - 10);
+    ok &= db_writes[0] == 1;                    /* still waiting */
+    mains(20);
+    ok &= db_writes[0] == 2 && saved_as_ram(0);
+
+    turn(2, -1, 0);
+    push(GREEN, 1);                             /* close */
+    mains(1);
+    ok &= db_writes[0] == 3 && saved_as_ram(0);
+    ok &= !db_bad && !sem_bad && !sem_depth && db_creates == 1;
+    dr_page = 0;
+    dr_open = 1;                                /* as demo() left it */
+    if (!ok)
+        fails |= 1 << 13;
+}
+
 int main(void)
 {
     static int16_t out[128];
@@ -277,6 +491,7 @@ int main(void)
     *TE_TAPE_POS = 0;
     *TE_DRUM_SHIFT_NOTE = -1;
     compose_init();
+    store_load();
 
     /* 0: shift + green press opens (TE never sees it), any knob press = next page (5, wraps) */
     n = inputs;
@@ -296,6 +511,8 @@ int main(void)
     push(GREEN, 0);
     push(GREEN, 0);
     CHECK(0, dr_page == 4);
+    push(GREEN, 0);
+    CHECK(0, dr_page == 5);                     /* CLEAR */
     push(GREEN, 0);
     CHECK(0, dr_page == 0 && inputs == n + 2);
     push(BLUE, 1);                              /* shift + blue press: no requantize take here */
@@ -321,6 +538,7 @@ int main(void)
     push(GREEN, 0);
     push(GREEN, 0);                              /* page 4 LANE: green = length */
     turn(1, -13, 0);
+    push(GREEN, 0);
     push(GREEN, 0);
     push(GREEN, 0);                              /* back to page 1 */
     turn(1, 1, 0);
@@ -362,8 +580,8 @@ int main(void)
 
     /* 4: VEL 50 + LEN 1/2 step: gain 1/2, gate 2756 * 2 voice samples, then a 256-sample fade */
     turn(2, -10, 0);                            /* page 2 white = LEN: FULL (12) -> 1/2 (2) */
-    for (i = 0; i < 4; i++)
-        push(GREEN, 0);                          /* page 1 */
+    for (i = 0; i < 5; i++)
+        push(GREEN, 0);                          /* page 1 (2 -> 6 pages -> 1) */
     turn(2, -10, 0);                            /* white = VEL 50 */
     CHECK(4, dr_page == 0 && dr_param == DR_VEL);
     CHECK(4, dr_pat[0].lane[0].s[0].p[DR_VEL] == 50 && dr_pat[0].lane[0].s[0].p[DR_LEN] == 2);
@@ -402,7 +620,8 @@ int main(void)
     turn(1, -30, 0);                            /* green = CUTOFF 64 -> 4 */
     push(WHITE, 1);                             /* stop; then white press: hear the cursor step */
     tick(200);
-    push(GREEN, 0);                              /* page 1 */
+    push(GREEN, 0);
+    push(GREEN, 0);                              /* page 1 (past page 6 CLEAR) */
     push(WHITE, 0);
     CHECK(5, dr_page == 0);
     a = nlog;
@@ -523,6 +742,8 @@ int main(void)
         engine_list();
         back_to_back();
         demo();
+        clear_dialog();
+        store_save();
         push(WHITE, 1);                         /* stop: the other features' frames only */
         *TE_PLAYMODE = 0;
         t0 = cycles();
