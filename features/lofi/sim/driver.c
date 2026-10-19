@@ -9,6 +9,8 @@ extern int lf_te_range_check(int type, int slot, const int16_t *v);
 extern void lf_te_type_fetched(te_string *out, void *db, const char *sql);
 extern void hook_key(int key, int down);
 extern void hook_knob(int knob, int16_t *diff);
+extern void hook_frame(uint16_t *buf);
+extern char FB[];
 extern volatile uint8_t lf_page, ep_page[4];
 extern volatile int8_t lf_bank;
 
@@ -273,5 +275,20 @@ int main(void)
         *TE_SHIFT_HELD = 0;
         CHECK(16, ok && lf_bank == 0);
     }
+    /* 17: the LOFI screen draws (bank entry TRI BASS, page 1, a note in the scope) - dumped as a
+     * screenshot */
+    *TE_SHIFT_HELD = 1;
+    for (i = 0; i < 3; i++)
+        turn(0, 1024);
+    *TE_SHIFT_HELD = 0;
+    for (i = 0; i < 8; i++)
+        knobs[i] = K(i);
+    pitch((uint32_t)(88200.0 / 64 / 88200 * 4294967296.0));   /* two periods per block */
+    lf_te_note_on(VOICE(1), 0, 0);
+    for (i = 0; i < 4; i++)
+        lf_te_render(VOICE(1), out, knobs);
+    lf_page = 0;
+    hook_frame((uint16_t *)FB);
+    CHECK(17, lf_bank == 3);
     return fails;
 }

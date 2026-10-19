@@ -7,17 +7,18 @@ Checks: plain pulse sound = TE's pulse render untouched; LOFI sound renders from
 pitch buffer (pitch checked), note_on restarts the voice; shift + white push is TE's (no gesture since
 v0.7); knob push = page (engine_plus
 does not see it), knob turns edit slots 1-4 / 5-8 and save; after LOFI is off everything is
-TE's / engine_plus' again. Prints the cycles per 128-sample voice block.
+TE's / engine_plus' again; screen (bank entry TRI BASS: build/demo/lofi_screen.png). Prints the
+cycles per 128-sample voice block.
 HLT = exit 0 = pass, ABORT = exit 1 = fail (R7 = failed check bits, see driver.c)."""
 
-import json, os, subprocess, sys
+import json, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SDK = os.environ.get("OP1_SDK") or os.path.normpath(os.path.join(HERE, "..", "..", ".."))
 OUT = os.path.join(SDK, "build", "bench", "lofitest")     # build output, never in the package
 os.makedirs(OUT, exist_ok=True)
 sys.path.insert(0, os.path.join(SDK, "sim"))
-from simtest import asm_bin, c_bin, run_model, BIN, composed  # noqa: E402
+from simtest import asm_bin, c_bin, run_model, run_gdb, composed  # noqa: E402
 from build import compile_project  # noqa: E402
 
 RECIPE = json.load(open(os.path.join(SDK, "recipes", "op1plus.json")))
@@ -36,9 +37,10 @@ def main():
         {"STACK": STACK, "_lf_te_render": syms["_lf_te_render"], "_lf_te_note_on": syms["_lf_te_note_on"],
          "_lf_te_range_check": syms["_lf_te_range_check"], "_lf_te_type_fetched": syms["_lf_te_type_fetched"],
          "_lf_page": syms["_lf_page"], "_lf_bank": syms["_lf_bank"], "_ep_page": syms["_ep_page"],
-         "_hook_key": syms["__sdk_hook_019b6c74"], "_hook_knob": syms["__sdk_hook_019b6c0c"]},
+         "_hook_key": syms["__sdk_hook_019b6c74"], "_hook_knob": syms["__sdk_hook_019b6c0c"],
+         "_hook_frame": syms["__sdk_hook_019ab8b2"], "_FB": 0x03000000},
     )
-    segs = [(0x01E00000, code), (DRIVER_AT, driver)]
+    segs = [(0x01E00000, code), (DRIVER_AT, driver), (0x03000000, bytes(320 * 512))]
     for addr, which in STUBS.items():
         stub, _ = asm_bin(
             os.path.join(HERE, "te_stubs.S"), addr, os.path.join(OUT, f"stub{which}"),
@@ -49,12 +51,8 @@ def main():
         segs.append((addr, stub))
     elf_run = os.path.join(OUT, "lofitest_run.elf")
     r = run_model(elf_run, segs, d["_start"], timeout=180, regions=[L1I])
-    out = subprocess.run(
-        [BIN + "gdb", "-batch", "-ex", "target sim --model bf524 --memory-region 0xff800000,0x8000 "
-         f"--memory-region 0xff900000,0x8000 --memory-region {L1I[0]:#x},{L1I[1]:#x}", "-ex", "load",
-         "-ex", "run", "-ex", f"p *(unsigned*){d['_cycles_pulse']:#x}",
-         "-ex", f"p *(unsigned*){d['_cycles_heavy']:#x}", "-ex", f"p/x *(unsigned*){d['_fails']:#x}", elf_run], capture_output=True, text=True).stdout.split("\n")
-    vals = [l.split("=")[-1].strip() for l in out if l.startswith("$")]
+    vals = run_gdb(elf_run, [f"*(unsigned*){d[s]:#x}" for s in ("_cycles_pulse", "_cycles_heavy")]
+                   + [f"/x *(unsigned*){d['_fails']:#x}"], [("lofi_screen", 0x03000000)], timeout=180, regions=[L1I])
     if len(vals) == 3 and r.returncode:
         print(f"failed check bits: {vals[2]}")
     if len(vals) >= 2:

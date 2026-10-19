@@ -62,23 +62,18 @@ Controls and internals per feature: `features/<name>/README.md`. Full catalog:
 
 ## Image samples
 
-Photographed on a real OP-1:
+Screens drawn by the real feature code in the simulator benches (`python3 tools/test_all.py`
+writes them to `build/demo/`):
 
 <table>
   <tr>
-    <td><img src="images/drum_roll.jpeg" alt="DRUM ROLL step sequencer on the OP-1 screen" width="400"><br><b>DRUM ROLL</b>: 8 lanes, per-step velocity and probability</td>
-    <td><img src="images/lofi.jpeg" alt="LOFI synth engine on the OP-1 screen" width="400"><br><b>LOFI</b>: preset TRI BASS, stepped triangle</td>
+    <td><img src="images/sim/drumroll_step.png" alt="DRUM ROLL step sequencer screen" width="400"><br><b>DRUM ROLL</b>: 8 lanes, per-step velocity and probability</td>
+    <td><img src="images/sim/lofi_screen.png" alt="LOFI synth engine screen" width="400"><br><b>LOFI</b>: preset TRI BASS, stepped triangle</td>
   </tr>
   <tr>
-    <td><img src="images/wharp2.jpeg" alt="WARP synth engine on the OP-1 screen" width="400"><br><b>WARP</b>: sine through the BITREV warp</td>
-    <td><img src="images/wheel.jpeg" alt="WHEEL tonewheel organ on the OP-1 screen" width="400"><br><b>WHEEL</b>: preset BLUES BAR, drawbars and rotary</td>
+    <td><img src="images/sim/warp_screen.png" alt="WARP synth engine screen" width="400"><br><b>WARP</b>: preset SYNC LEAD, saw through the SYNC warp</td>
+    <td><img src="images/sim/wheel_screen.png" alt="WHEEL tonewheel organ screen" width="400"><br><b>WHEEL</b>: preset SOUL JAZZ, drawbars, percussion and rotary</td>
   </tr>
-</table>
-
-Screens of the newer features, drawn by the real feature code in the simulator benches
-(`python3 tools/test_all.py` writes them to `build/demo/`):
-
-<table>
   <tr>
     <td><img src="images/sim/mono_screen.png" alt="MONO 3 synth engine screen" width="400"><br><b>MONO 3</b>: synth panel, page 1 (cutoff, emphasis, contour, glide)</td>
     <td><img src="images/sim/m1_screen.png" alt="STATION 1 synth engine screen" width="400"><br><b>STATION 1</b>: two multisounds layered (built-in waves, 100 sampled multisounds)</td>

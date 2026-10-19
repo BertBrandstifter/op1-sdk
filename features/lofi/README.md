@@ -110,7 +110,7 @@ validator rejects it the same way. Before flashing stock, turn LOFI off on every
    audible, LOOP, BITS, CRUSH, SWEEP, ARP, TONE, BEND, repeatable notes, extremes (ASan/UBSan clean).
 2. `sim/run_lofitest.py`: plain pulse untouched; LOFI pitch from TE's buffer (441 Hz exact); note restart;
    gesture on/off only on pulse; page push hidden from engine_plus; knob edits + TE save; envelope
-   screen untouched; cycle counts.
+   screen untouched; cycle counts; screen `build/demo/lofi_screen.png` (bank entry TRI BASS).
 
 ## Risks (device test)
 
