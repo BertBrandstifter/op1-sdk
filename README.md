@@ -11,16 +11,24 @@ features below have been flashed and played on a real OP-1.
 
 One image ("op1plus"), composed from the feature library — build it, flash it, have fun.
 
-**Synth engines** — new rows in TE's engine list, each with its own bank of sounds
-(**shift + blue turn**), knob push flips pages:
+**Synth engines** — six new rows in TE's engine list with **114 ready-to-play sounds** between
+them, each engine with its own bank (**shift + blue turn**), knob push flips pages:
 
-| | |
-|---|---|
-| **LOFI** | chiptune waves + 16 pitch-tracking bytebeat formulas |
-| **WHEEL** | tonewheel organ: registrations, percussion, click, drive, rotary speaker |
-| **WARP** | 8 waves x 16 phase/output warps, sweep, motion, unison, colour |
-| **TRIO** | SID-style 3 oscillators (ring/sync/AND) into an SVF filter, drive, noise |
-| **engine_plus** | DRIVE / FILTER / RESO / CRUSH parameters for TE's own engines (fm, digital, string, cluster, phase, dna, voltage, iter) |
+| | sounds | |
+|---|---|---|
+| **LOFI** | 14 | chiptune waves + 16 pitch-tracking bytebeat formulas |
+| **WHEEL** | 24 | tonewheel organ: registrations, percussion, click, drive, rotary speaker |
+| **WARP** | 16 | 8 waves x 16 phase/output warps, sweep, motion, unison, colour |
+| **TRIO** | 16 | SID-style 3 oscillators (ring/sync/AND) into an SVF filter, drive, noise |
+| **MONO 3** | 16 | classic 70s-style mono synth, played with 4 voices: 3 band-limited oscillators (range / wave / level), noise, a 4-pole ladder filter that self-oscillates in tune, filter and loudness contours, glide — fat basses, leads, brass, pads |
+| **STATION 1** | 28 | late-80s-style sample workstation: **100 sampled multisounds** (pianos, organs, strings, choir, brass, bells, basses, waves), two layered per sound, B transposed / fading in, low-pass with envelope; samples from a set you own (+ two drum kits for the drum sampler) |
+| **engine_plus** | | DRIVE / FILTER / RESO / CRUSH parameters for TE's own engines (fm, digital, string, cluster, phase, dna, voltage, iter) |
+
+**Sound quality first**: the engines render at the OP-1's internal 88.2 kHz; MONO 3's
+oscillators are band-limited (no aliasing whine on high notes) and its filter stays stable at every
+setting; STATION 1 packs 6.3 MB of samples into 1.4 MB with the added noise ~53 dB below the note
+(single-cycle waves kept 16-bit and tuned to 0.0 cents). Their simulator tests sweep every
+parameter through its full range, so each knob moves its sound one way, as the screen says.
 
 **Effects** — new rows in TE's FX list (synth, drum and master):
 
@@ -34,9 +42,20 @@ One image ("op1plus"), composed from the feature library — build it, flash it,
 
 | | open with | |
 |---|---|---|
-| **DRUM ROLL** | drum engine list / shift + green on the drum screen | FL-style step sequencer: 8 lanes, per-sample length, rate and filter, swing, ratchets, tape sync, 4 patterns kept across restarts |
-| **REQUANTIZE** | shift + blue knob press (tape screen) | fix a recorded take on a piano roll: single notes or the whole take, grids to 1/32T |
-| **CHORD+** | shift + insert | chord keyboard: white keys play scale chords, held black keys modify |
+| **DRUM ROLL** | shift + blue knob press on the finger sequencer screen (drums) | step editor for TE's finger sequencer: each of the 14 finger patterns as 8 lanes with per-sample length, rate and filter, per-step velocity, probability, ratchets; swing; the finger keys play it; kept across restarts; black keys = punch-in effects in three banks (PO-20 set, arcade: 8-bit, laser, coin, echo, reverse …, time: half / double time, build …) |
+| **NOTE ROLL** | shift + blue knob press on the finger sequencer screen (synth) | step editor for TE's synth finger sequencer, DRUM ROLL's twin: chords up to 6 notes, per-note velocity and length (ties), nudge, probability, ratchets, patterns up to 64 steps; the finger keys play it; black keys = punch-in effects in three banks (PO-20 set, arcade: chip arps, power up, coin, trill, echo …, time + solos); kept across restarts |
+| **SYNTH ROLL** (requantize) | shift + blue knob press (tape screen) | fix a recorded take on a piano roll in DRUM ROLL's look: by default every note snaps clean to the grid (start and length), single notes or the whole take, grids to 1/32T |
+| **CHORD+** | shift + insert | chord keyboard: white keys play scale chords, held black keys modify (lower octave: min/maj, 7th, sus4, 9th, inversion; upper: power, sus2, open / wide voicing, more inversion) |
+
+**Content:**
+
+| | |
+|---|---|
+| **drumtrim** | TE's 14 factory drum kits without their silent tails: −1.43 MB of flash, every hit bit-identical up to the cut (made from your own firmware file, nothing of TE's is committed) |
+
+Two more recipes build on op1plus: `recipes/op1disk.json` adds **noalbum** (album sides cut to
+1 s, ~128 MB more free flash) and the **diskinfo** flash usage panel; `recipes/op1mem.json` adds the
+**meminfo** SDRAM panel (debug).
 
 Controls and internals per feature: `features/<name>/README.md`. Full catalog:
 [`docs/features.md`](docs/features.md), or `python3 tools/features.py list`.
@@ -53,6 +72,24 @@ Photographed on a real OP-1:
   <tr>
     <td><img src="images/wharp2.jpeg" alt="WARP synth engine on the OP-1 screen" width="400"><br><b>WARP</b>: sine through the BITREV warp</td>
     <td><img src="images/wheel.jpeg" alt="WHEEL tonewheel organ on the OP-1 screen" width="400"><br><b>WHEEL</b>: preset BLUES BAR, drawbars and rotary</td>
+  </tr>
+</table>
+
+Screens of the newer features, drawn by the real feature code in the simulator benches
+(`python3 tools/test_all.py` writes them to `build/demo/`):
+
+<table>
+  <tr>
+    <td><img src="images/sim/mono_screen.png" alt="MONO 3 synth engine screen" width="400"><br><b>MONO 3</b>: synth panel, page 1 (cutoff, emphasis, contour, glide)</td>
+    <td><img src="images/sim/m1_screen.png" alt="STATION 1 synth engine screen" width="400"><br><b>STATION 1</b>: two multisounds layered (built-in waves, no sample set loaded)</td>
+  </tr>
+  <tr>
+    <td><img src="images/sim/noteroll_chord.png" alt="NOTE ROLL step editor screen" width="400"><br><b>NOTE ROLL</b>: chord steps on the synth finger sequencer</td>
+    <td><img src="images/sim/synthroll_quant.png" alt="SYNTH ROLL piano roll screen" width="400"><br><b>SYNTH ROLL</b>: a recorded take snapped clean to the grid</td>
+  </tr>
+  <tr>
+    <td><img src="images/sim/trio_screen.png" alt="TRIO synth engine screen" width="400"><br><b>TRIO</b>: preset SID LEAD, three oscillators into the filter</td>
+    <td><img src="images/sim/chordplus_panel.png" alt="CHORD+ chord keyboard panel" width="400"><br><b>CHORD+</b>: key, scale, voicing, strum and the black-key modifiers</td>
   </tr>
 </table>
 
@@ -138,6 +175,7 @@ And thanks to Teenage Engineering for building the OP-1.
 | | |
 |---|---|
 | [`docs/toolchain.md`](docs/toolchain.md) | build the bfin-elf toolchain (binutils, GCC, GDB + simulator) |
+| [`docs/lessons.md`](docs/lessons.md) | lessons learned per dev day: TE internals found, DSP techniques, how we work |
 | [`docs/features.md`](docs/features.md) | feature library, manifests, shared hook points |
 | [`docs/feature-package.md`](docs/feature-package.md) | the packaging standard for sharing features |
 | [`docs/internals.md`](docs/internals.md) | under the hood: R246 reverse-engineering notes, flashing internals, simulator benches |

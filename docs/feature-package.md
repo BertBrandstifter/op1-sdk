@@ -60,6 +60,7 @@ against the user's stock image.
 | `hooks` |  | exclusive hooks (`call_sites` / `entry_hooks` / `pointers`); each with `expect` + `what` |
 | `claims` | ✓ | physical inputs the feature takes over (section 5); `[]` if none |
 | `controls` |  | human-readable control list (README / catalog) |
+| `content_files` |  | `[{"file": "content/audio/factory_drum/<name>.raw", "from": "build/x.raw", "optional": true, "sql": {"file": "content/op1_factory.db", "from": "build/x.sql"}}]`: files added to the update (paths in the feature; e.g. a factory drum kit's audio), each with an optional SQL file (statements separated by `;` + newline) run like `content_sql`; an existing file of the update is replaced. A feature may be content only (no `sources`). `optional`: a missing file (local data, e.g. made from your own samples) leaves out the file and its SQL together |
 | `content_sql` |  | `[{"file": "content/op1_factory.db", "sql": ["INSERT ..."]}]`: SQL run at build time on a content database of the update (e.g. a row in TE's engine list `synth_types`). Write order-independent statements (`SELECT MAX(id) + 1 ...`); every value must pass TE's checks |
 | `tests` |  | package-relative host tests and benches |
 | `depends` |  | `["quantize"]` or `[{"name": "quantize", "version": ">=1.8 <2", "repository": "https://…", "ref": "v1.8.0"}]` |
@@ -116,11 +117,14 @@ behaviour that depends on recipe order, so packages declare what they take:
 - `input`: `<key>_press` for `speech metronome synth drum tape mixer t1..t4 cut insert join sound1..sound8 auto rec play stop back forward mic com keyboard`,
   or `<knob>_turn` / `<knob>_push` for `blue green white orange`.
 - `shift`: `no` (default), `yes`, `any` (the handler does not look at shift).
-- `screen`: `any` (default), `synth`, `drum`, `tape`, `mixer`, `tempo`, `sequencer`, `album`.
+- `screen`: `any` (default), `synth`, `drum`, `tape`, `mixer`, `tempo`, `sequencer`, `album`, or a
+  list of them (e.g. every screen but `sequencer`).
+- `playmode`: `any` (default), `synth`, `drum` (TE's playmode; the handler must leave the input to
+  TE in the other one).
 - `modal: true`: only while the feature's own panel/mode is open (the user opened it on purpose).
 
 The composer stops on two non-modal claims that overlap: same input, compatible shift, and
-overlapping screen (`any` overlaps everything). It only notes overlaps involving a modal claim.
+overlapping screen and playmode (`any` overlaps everything). It only notes overlaps involving a modal claim.
 The code must match the claims. For example, if `shift` is `no`, the handler must return 0 while
 shift is held.
 
@@ -178,3 +182,5 @@ feature follows this same standard (it must `pack` cleanly), so it can be publis
   prefix rule; lock file.
 - 2026-10-15 (no schema change): `.zip` packages (`features.py pack`, install from .zip / .zip URL,
   sha256 in the lock file); contributing to the SDK repository (section 8).
+- 2026-10-17 (no schema change): optional claim field `playmode` (`any` / `synth` / `drum`); `screen`
+  may be a list.

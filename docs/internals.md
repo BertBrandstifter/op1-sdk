@@ -87,6 +87,9 @@ argument is the file length − 16. The last loaded block is `FINAL`; after it c
 | `…–0x01dfff34` | zeroed BSS (FILL blocks) |
 | `0x01e00000–0x01ffffff` | **free**, about 2 MB; op1r loads its 109 KB here |
 | `0x02000000…`, `0x02040000…` (8 MB), `0x03000000…` | buffers (FILL) |
+| `0x00000100–0x00fffffc` | VisualDSP malloc heap 0 (`malloc`; heap table `0x018e628c`) |
+| `0x02800000–0x02bfffff` | no data CPLB: any access faults |
+| `0x03040000–0x03fffdb0` | VisualDSP malloc heap 1: `SampleBuffer.cpp` sample buffers, `tar.cpp` updates (64 MB SDRAM in all, `features/meminfo`) |
 | `0xffa00000` 48 KB | L1 instruction SRAM (hot code) |
 | `0xff800000`, `0xff900000` | L1 data A/B |
 

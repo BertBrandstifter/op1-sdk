@@ -9,7 +9,7 @@ Routes: **a** = engine hosted on a TE voice (like LOFI on pulse), **b** = effect
 (RESO on CWO, SHIMMER on spring; free hosts: delay, grid, punch, phone, filter, nitro), **c** = no
 audio DSP: key / knob / MIDI / sequencer-tick hooks (like quantize).
 
-Done: LOFI (engine), WHEEL (engine, v0.1 2026-10-12), CHORD+ (v0.1 2026-10-13), WARP (v0.1 2026-10-13), TRIO (v0.1 2026-10-13), RESO, SHIMMER, FXPACK (phaser, flanger, fold, fuzz, DJ filter, transient,
+Done: LOFI (engine), WHEEL (engine, v0.1 2026-10-12), CHORD+ (v0.1 2026-10-13), WARP (v0.1 2026-10-13), TRIO (v0.1 2026-10-13), STATION 1 (M1 engine + drum kits, v0.2 2026-10-18), RESO, SHIMMER, FXPACK (phaser, flanger, fold, fuzz, DJ filter, transient,
 texture; measured 1-3.5 % CPU each), engine_plus stages, quantize + requantize.
 
 ## Ratings

@@ -73,14 +73,23 @@ bank on **shift + blue turn**; knob push = pages; last page = the sound's FX kno
 
 - `lofi` 0.7 — LOFI on pulse: chiptune waves + 16 bytebeat formulas, bank of 14 (v0.1 device-verified;
   0.7: preset `lofi` back in the preset browser, shift + white push gesture removed)
-- `enginehost` 1.0 — library: SDK engines share drwave via a tag in knob slots 5-8 (4 TRIO, 5 WHEEL,
-  6 WARP; 1-3 free) + the shared FX page (device-verified)
+- `enginehost` 1.0 — library: SDK engines share drwave via a tag in knob slots 5-8 (2 MONO 3, 3 STATION 1,
+  4 TRIO, 5 WHEEL, 6 WARP; 1 free) + the shared FX page (device-verified)
 - `wheel` 0.7 — WHEEL tonewheel organ (tag 5): 16 registrations, percussion, click, drive, rotary,
   bank of 24 (0.4 device-verified; 0.7 clean output: no clipping, drive level-compensated)
 - `warp` 0.1 — WARP (tag 6): 8 waves x 16 phase / output warps, sweep, motion, unison, bank of 16
   (device-verified)
 - `trio` 0.1 — TRIO (tag 4): SID-style 3 oscillators (ring, sync, AND waves) into an LP/BP/HP/notch
   SVF with envelope, drive, noise; page 1 LFO-able; bank of 16 (device-verified)
+- `mono` 0.3 — MONO 3 (tag 2): classic 3-oscillator mono synth voice, 4 voices: 3 oscillators
+  (range, wave, level each; osc 2 / 3 frequency), white / pink noise, 4-pole ladder (self-oscillation, bass loss,
+  keyboard control), filter + loudness contours (decay switch), constant-time glide; page 1 LFO-able; 7 pages;
+  bank of 16 + P-- (sim-verified)
+- `m1` 0.5 — STATION 1 (tag 3): two of 100 sampled multisounds layered (B pitch / detune, A decay, B fade-in) into
+  a low-pass with envelope, resonance, key tracking; page 1 LFO-able; bank of 28. Samples from your
+  own sample set via `gen_m1.py` (1.4 MB, local only; built-in waves without it); `m1_drumkit.py`
+  makes two drum sampler kits, built in as factory kits (folder station 1); station screen with LCD, LEDs and a keyboard lighting the sounding
+  keys (sim-verified)
 - `engine_plus` 2.0 — 4 extra parameters for fm, digital, string, cluster, phase, dna, voltage, iter
   (generic stages device-verified; engine-specific hidden parameters sim-verified)
 
@@ -93,19 +102,28 @@ Effects (each hosted on a TE FX with an in-range marker; own row in the FX list,
 
 Performance:
 
-- `chordplus` 0.3 — CHORD+ chord keyboard: shift + insert; white keys = scale chords, held black
-  keys = modifiers; panel KEY / SCALE / VOICING / STRUM (device-verified)
-- `drumroll` 0.9 — DRUM ROLL step sequencer for the drum kit ("drum roll" in the drum engine list, or
-  shift + green press on the drum engine page;
-  handled like the synth engines: turn = value, press = next page, 6 pages STEP NOTE TIME LANE SOUND
-  CLEAR; patterns kept across restarts in TE's op1.db):
-  8 lanes = 8 drum samples, own length + rate each (polymetric), drawn to scale; per step VEL TONE
-  LEN NUDGE PROB RATCH; per sample filter LP / BP / HP + level; tape sync; 4 patterns, swing;
-  `features/drumroll/README.md` (v0.1 device-tested: "love it")
-- `requantize` 3.2 — requantize a tape take: shift + blue knob press; one screen = piano roll + take
-  settings header; green press flips the knobs between NOTES (single notes / selection) and TAKE
-  (grid 1/2 .. 1/32T incl. 1/4T, mode, track, zoom, commit, all notes AUTO); `features/requantize/requantize-roll.md`
-  (3.1 one screen device-tested: "very nice"; 3.2 grid order + 1/4T flashed; 2.5 logs CHORD+'s chord notes)
+- `chordplus` 0.5 — CHORD+ chord keyboard: shift + insert (insert while the panel shows: pin it); white keys = scale chords, held black
+  keys = modifiers (lower octave: min/maj, 7th, sus4, 9th, inversion; upper: power, sus2, OPEN / WIDE voicing, 2nd / 3rd inversion); panel KEY / SCALE / VOICING / STRUM (device-verified)
+- `drumroll` 2.1 — DRUM ROLL, the finger sequencer's step editor (drum playmode, sequencer key with the
+  finger sequencer picked, shift + blue press opens and closes (note "SHIFT+BLUE: EDITOR"); handled like the synth engines: turn = value, press =
+  next page, 6 pages STEP NOTE TIME LANE SOUND PAT): shows / edits the selected finger pattern (1-14)
+  as 8 lanes = 8 drum samples, own length + rate each (polymetric), drawn to scale; per step VEL TONE
+  LEN NUDGE PROB RATCH; per sample filter LP / BP / HP + level; swing; one pattern length for all
+  lanes (page 6, and it follows TE's length). An edited pattern plays with all
+  of that on TE's step events (finger keys start / stop it, TE's compressed view shows a summary, TE's
+  step record still works); black keys on the drum finger screen = punch-in effects in three banks (green press on the finger screen: A PO-20 set, B arcade: 8-BIT LASER FALL COIN RND PITCH OCT UP / DOWN ECHO REVERSE SHUFFLE, C time + mix: HALF / DOUBLE TIME TRIPLET LOOP BEAT BUILD SOLOs NO KICK FADE CUT; a window while held); STEP REC (shift + white: the keyboard into the cursor step, the arrows move); undo / redo shift + BACK / FORWARD (also TE's own finger screen edits); patterns kept in TE's op1.db; `features/drumroll/README.md` (v1.0
+  / v1.1 device-tested: "nice!", "really love it!"; v1.2 sim-verified)
+- `noteroll` 0.9 — NOTE ROLL, the synth finger sequencer's step editor (synth playmode, sequencer
+  key with the finger sequencer picked, shift + blue press opens and closes; DRUM ROLL's handling, 5
+  pages NOTE SHAPE CHORD PAT CLEAR): the selected finger pattern as a piano roll, up to 6 notes a step
+  (chord shapes, inversions), per note VEL + LEN (to 16 steps, TIE), per step NUDGE PROB RATCH,
+  length 1-64, swing, transpose; a pitch cursor (shift + blue turn, blue press = note on / off); STEP REC (shift + white); undo / redo shift + BACK / FORWARD (also TE's finger screen edits); plays on TE's step events, TE keeps a summary; black keys = punch-in effects in three banks (green press: A PO-20 set, B arcade: CHIP ARP UP / DN, POWER UP / DOWN, COIN, TRILL, ECHO, REVERSE, OCT ARP, LASER, C time + solos; a window while held); op1.db;
+  `features/noteroll/README.md` (v0.1 sim-verified)
+- `requantize` 4.3 — SYNTH ROLL, requantize a tape take: shift + blue knob press (not in drum playmode); DRUM ROLL's look,
+  NOTE ROLL's navigation (cursor = grid step + pitch row, blue press = a note on / off, green press = next page): pages NOTE
+  (step / pitch / velocity / length), TIME (note jump, move, nudge 5 ms, length ms), QUANT (grid 1/2 .. 1/32T, mode CLEAN (default: start + length on the grid) /
+  SNAP / QUEUE / STRICT, zoom, all notes AUTO), TAKE (track, commit); `features/requantize/requantize-roll.md`
+  (3.1 device-tested: "very nice"; 4.0 sim-verified)
 - `quantcore` 1.0 — library: the quantizer core shared by quantize and requantize
 - `quantize` 1.10 — live input quantizer (shift + insert); **not in op1plus** since 2026-10-13 (user),
   kept in the library (conflicts with CHORD+'s shift + insert)
@@ -113,18 +131,17 @@ Performance:
 Debug / examples (not in op1plus): `fxdiag` 0.1 (FX hosting overlay, `recipes/op1diag.json`),
 `key_probe` (input probe, device-verified), `midi_filter` (MIDI CC filter example).
 
-Recipe `recipes/op1plus.json` (boot text `op1sdk +`): chordplus, lofi, wheel, warp, trio, reso,
-shimmer, fxpack, drumroll, requantize, engine_plus (+ enginehost, quantcore as dependencies). Factory synth
+Recipe `recipes/op1plus.json` (boot text `op1sdk +`): chordplus, lofi, wheel, warp, trio, m1, mono, reso,
+shimmer, fxpack, drumroll, noteroll, requantize, engine_plus (+ enginehost, quantcore as dependencies). Factory synth
 presets: 164 of TE's 176 (one per engine).
 
 Key combinations in use (machine-readable in each manifest's `claims`; compose stops on overlaps):
-shift + insert (CHORD+ on / panel / off), shift + blue knob press (requantize), synth engine screen
-plain knob clicks (engine_plus pages on stock engines; page flips on LOFI / WHEEL / WARP / TRIO),
+shift + insert (CHORD+ on / panel / off), shift + blue knob press (requantize; not in drum playmode, not on the sequencer screen), synth engine screen
+plain knob clicks (engine_plus pages on stock engines; page flips on LOFI / WHEEL / WARP / TRIO / STATION 1 / MONO 3),
 shift + blue turn on an SDK engine's screen (its bank), CHORD+ panel knobs while open, requantize
-screen on the tape screen (all knob turns and presses, with and without shift; green press = NOTES / TAKE),
-shift + white press on the tape screen in drum playmode (DRUM ROLL play / stop, unless the requantize
-screen is open), shift + green press on the drum screen (DRUM ROLL; while open all knob turns and presses there except
-shift + blue press: press = next page as on the engines, shift + white / orange press = play / clear). Left to TE: shift + metronome, shift + stop and everything else.
+SYNTH ROLL on the tape screen (all knob turns and presses, with and without shift; green press = next page),
+shift + blue press on the synth finger sequencer screen (NOTE ROLL, as DRUM ROLL), shift + blue press on the drum finger sequencer screen (DRUM ROLL; while open all knob turns and presses
+there: press = next page as on the engines, shift + orange press = clear the lane, shift + blue / green press = close). Left to TE: shift + metronome, shift + stop and everything else.
 
 ## Other firmware versions
 

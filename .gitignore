@@ -19,10 +19,10 @@ build/
 *.bak
 # local development log
 STATUS.md
-# local development log
-STATUS.md
 # local-only binary sheets
 op-1 key mapping/op-1 keys.xlsx
 op-1 key mapping/op_1 key layout and mapping.png
+# screenshots of TE's OP-1 artwork (TE's, not ours)
+op-1 key mapping/Bildschirmfoto*.png
 # macOS folder metadata
 .DS_Store
