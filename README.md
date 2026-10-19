@@ -81,11 +81,7 @@ Screens of the newer features, drawn by the real feature code in the simulator b
 <table>
   <tr>
     <td><img src="images/sim/mono_screen.png" alt="MONO 3 synth engine screen" width="400"><br><b>MONO 3</b>: synth panel, page 1 (cutoff, emphasis, contour, glide)</td>
-    <td><img src="images/sim/m1_screen.png" alt="STATION 1 synth engine screen" width="400"><br><b>STATION 1</b>: two multisounds layered (built-in waves, no sample set loaded)</td>
-  </tr>
-  <tr>
-    <td><img src="images/sim/noteroll_chord.png" alt="NOTE ROLL step editor screen" width="400"><br><b>NOTE ROLL</b>: chord steps on the synth finger sequencer</td>
-    <td><img src="images/sim/synthroll_quant.png" alt="SYNTH ROLL piano roll screen" width="400"><br><b>SYNTH ROLL</b>: a recorded take snapped clean to the grid</td>
+    <td><img src="images/sim/m1_screen.png" alt="STATION 1 synth engine screen" width="400"><br><b>STATION 1</b>: two multisounds layered (built-in waves, 100 sampled multisounds)</td>
   </tr>
   <tr>
     <td><img src="images/sim/trio_screen.png" alt="TRIO synth engine screen" width="400"><br><b>TRIO</b>: preset SID LEAD, three oscillators into the filter</td>
