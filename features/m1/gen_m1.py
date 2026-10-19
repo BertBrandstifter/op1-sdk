@@ -2,8 +2,8 @@
 """STATION 1 engine data generator.
 
     gen_m1.py --sf2 "<path>/<sample set>.sf2" [--budget 1500000]
-        -> the 100 multisounds of your own sample set (.sf2), converted for the OP-1 (local only:
-           build/ is never committed or packed; the samples are not ours):
+        -> the 100 multisounds of your own sample set (.sf2), converted for the OP-1 (the samples
+           are not ours: build/ is committed with a NOTICE, not MIT, and never packed):
            build/m1_data.inc  the tables (compiled in)
            build/m1_rom.bin   the sample data: a content file of the update (content/m1_rom.bin),
                               loaded at runtime into TE's sample memory (m1.c)
@@ -547,7 +547,7 @@ def main():
     if a.sf2:
         rom, samples, zones, multis = convert(a.sf2, a.budget)
         write_data(os.path.join(HERE, "build", "m1_data.inc"), rom, samples, zones, multis,
-                   f"From {os.path.basename(a.sf2)}: local only, never commit or pack.", True, rom_file=True)
+                   f"From {os.path.basename(a.sf2)}: not MIT (see NOTICE), never packed.", True, rom_file=True)
     if not a.static and not a.sf2:
         ap.print_help()
 

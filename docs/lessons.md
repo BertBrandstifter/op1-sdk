@@ -88,5 +88,6 @@
   disk); verify patched bytes against stock and disassemble new instructions before flashing.
 - **Say what is verified and what is assumed**: "the album only uses what is recorded" was a guess
   and wrong; the measurement (image layout) corrected it.
-- Third-party sample data and TE's data stay local (`build/`, never committed or packed); `content_files` with
+- TE's data stays local (`build/`, never committed or packed); third-party sample data is never packed (the
+  STATION 1 library is committed in `features/m1/build/` with a NOTICE, not MIT); `content_files` with
   `optional` leave a file and its SQL out together, so no preset row points at missing audio.

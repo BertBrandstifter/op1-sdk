@@ -1,0 +1,15 @@
+STATION 1 sound library: not MIT
+
+The files in this folder are converted from "KORG M1 Waveforms.sf2", a SoundFont of the
+KORG M1's ROM multisounds and drum samples. The sample content belongs to its rights holders
+(KORG Inc.); it is not our work and not covered by the MIT license of this repository.
+
+  m1_data.inc         tables of the 100 multisounds (gen_m1.py --sf2)
+  m1_rom.bin          the sample data, content/m1_rom.bin of the update (~1.4 MB)
+  m1_rom.inc          the same data as a C array (host tests, sample bench)
+  drum/m1 drums.*     drum sampler kit: .aif (stock OP-1, disk mode), .raw + .sql (factory kit)
+  drum/m1 perc.*      the same for the percussion kit
+
+Made with features/m1/gen_m1.py and features/m1/m1_drumkit.py (MIT, our code). Regenerate from
+your own copy of the sample set with those tools. features.py pack leaves build/ out, so the
+feature's zip stays MIT-only.

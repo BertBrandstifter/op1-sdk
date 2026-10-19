@@ -12,7 +12,7 @@
                                      content/audio/factory_drum/<name>.raw and the drum_presets row
                                      (folder "station 1"); feature.json's content_files put both into
                                      the image when they exist
-    Local only (build/ is never committed or packed: the samples are not ours).
+    Not ours: build/ is committed with a NOTICE (not MIT) and never packed.
 
 Built into the image (above), the kits are in the drum preset browser, folder station 1. The .aif
 files also work on a stock OP-1: copy them into the drum folder in disk mode (e.g. drum/m1/); after

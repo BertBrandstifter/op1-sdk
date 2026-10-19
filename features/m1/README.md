@@ -6,8 +6,8 @@ update, loaded at runtime into TE's sample memory (they no longer take ~0.95 MB 
 region; see **Data**). Code: `features/m1/` (engine host, tag 3). A late-80s-style sample
 workstation voice: two of 100 sampled multisounds (piano, organs, strings, choir, brass, bells,
 basses, single-cycle waves ...) layered, into a low-pass filter with its own envelope, and a bank
-of 28 ready-to-play sounds. Own code; the samples come from a sample set you own and stay on your
-machine (see **Data**).
+of 28 ready-to-play sounds. Own code; the samples (KORG M1 multisounds) are not ours: committed in
+`build/` with a [NOTICE](build/NOTICE), not MIT, never packed (see **Data**).
 
 ## Open it on the OP-1
 
@@ -58,8 +58,10 @@ triangle, sine, organ, e.piano, voice) and the bank has 8 sounds.
 
 ## Data
 
-The samples are not ours: they are never committed or packed. `gen_m1.py` converts *your* own
-sample set (a SoundFont of the 100 multisounds) into `build/` (git-ignored, skipped by `features.py pack`): `m1_data.inc` (the tables,
+The samples are not ours (KORG M1 multisounds): the converted library is committed in `build/` with
+a [NOTICE](build/NOTICE) (not MIT) and skipped by `features.py pack`, so the feature's zip stays
+MIT-only. A fresh clone builds the image with them as it is. `gen_m1.py` regenerates them from the
+sample set (a SoundFont of the 100 multisounds) into `build/`: `m1_data.inc` (the tables,
 compiled in), `m1_rom.bin` (the sample data, ~1.4 MB) and `m1_rom.inc` (the same as a C array for
 the host tests and the sample bench). Without them `m1_core.c` uses the built-in waves
 (`m1_builtin.inc`, own, MIT).
@@ -112,7 +114,8 @@ Listen before flashing: `build/demo/m1_demo.wav` (the 28 bank sounds) and `build
 `m1_drumkit.py` makes two OP-1 drum sampler kits from the sample set's drum samples. Built
 into the image they are factory kits: drum preset browser, folder **station 1**, `m1 drums` and
 `m1 perc` (`content_files`: `content/audio/factory_drum/<name>.raw` + a `drum_presets` row, both left
-out when the kits were not made). The `.aif` files also work on a stock OP-1 (disk mode, below).
+out when the kits were not made). Both kits are committed in `build/drum/` (not MIT, see the NOTICE).
+The `.aif` files also work on a stock OP-1 (disk mode, below).
 
 ```sh
 python3 features/m1/m1_drumkit.py "<path>/<drum samples folder>"
@@ -124,7 +127,7 @@ python3 features/m1/m1_drumkit.py "<path>/<drum samples folder>"
 - `build/drum/m1 perc.aif` (5.1 s, 444 KB): KICK 1, SNARE 1, SIDE STICK, CLAPS, CLOSED HH1,
   OPEN HH2, COWBELL (so it plays on its own), then TIMBALES 1-2, WHIP, POLE, BLOCK, FINGER SNAP,
   DROP, VIBE HIT, HAMMER, METAL HIT, PLUCK, FLEXATONE, WIND BELLS, TUBULAR, BELL RING, METRONOME 1-2.
-- In the image: run `m1_drumkit.py` before `compose.py` (the kits add ~1.08 MB to the update,
+- In the image: committed, so `compose.py` takes them as they are (the kits add ~1.08 MB to the update,
   op1plus 14.77 MB of the OP-1's 15 MiB limit).
 - On a stock OP-1: copy both `.aif` into the drum folder in disk mode (e.g. `drum/m1/`); TE imports
   them on unplug.

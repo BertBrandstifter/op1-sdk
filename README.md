@@ -21,7 +21,7 @@ them, each engine with its own bank (**shift + blue turn**), knob push flips pag
 | **WARP** | 16 | 8 waves x 16 phase/output warps, sweep, motion, unison, colour |
 | **TRIO** | 16 | SID-style 3 oscillators (ring/sync/AND) into an SVF filter, drive, noise |
 | **MONO 3** | 16 | classic 70s-style mono synth, played with 4 voices: 3 band-limited oscillators (range / wave / level), noise, a 4-pole ladder filter that self-oscillates in tune, filter and loudness contours, glide — fat basses, leads, brass, pads |
-| **STATION 1** | 28 | late-80s-style sample workstation: **100 sampled multisounds** (pianos, organs, strings, choir, brass, bells, basses, waves), two layered per sound, B transposed / fading in, low-pass with envelope; samples from a set you own (+ two drum kits for the drum sampler) |
+| **STATION 1** | 28 | late-80s-style sample workstation: **100 sampled multisounds** (pianos, organs, strings, choir, brass, bells, basses, waves), two layered per sound, B transposed / fading in, low-pass with envelope; sample library included (+ two drum kits for the drum sampler) |
 | **engine_plus** | | DRIVE / FILTER / RESO / CRUSH parameters for TE's own engines (fm, digital, string, cluster, phase, dna, voltage, iter) |
 
 **Sound quality first**: the engines render at the OP-1's internal 88.2 kHz; MONO 3's
@@ -158,7 +158,8 @@ And thanks to Teenage Engineering for building the OP-1.
 - The OP-1's firmware is proprietary, so this repo contains **none of it** — you patch your own
   copy. Images you build contain TE's firmware: they are for your own device, don't redistribute
   `.op1`/`.ldr` files.
-- MIT licensed ([`LICENSE`](LICENSE)). Not affiliated with or endorsed by Teenage Engineering.
+- MIT licensed ([`LICENSE`](LICENSE)), except the STATION 1 sample library in `features/m1/build/`
+  (KORG M1 multisounds, not ours: [`NOTICE`](features/m1/build/NOTICE)). Not affiliated with or endorsed by Teenage Engineering.
 - Flashing always carries a small risk; restoring stock works by re-flashing `op1_246.op1`.
 
 ## Dig deeper

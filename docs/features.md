@@ -86,8 +86,9 @@ bank on **shift + blue turn**; knob push = pages; last page = the sound's FX kno
   keyboard control), filter + loudness contours (decay switch), constant-time glide; page 1 LFO-able; 7 pages;
   bank of 16 + P-- (sim-verified)
 - `m1` 0.5 — STATION 1 (tag 3): two of 100 sampled multisounds layered (B pitch / detune, A decay, B fade-in) into
-  a low-pass with envelope, resonance, key tracking; page 1 LFO-able; bank of 28. Samples from your
-  own sample set via `gen_m1.py` (1.4 MB, local only; built-in waves without it); `m1_drumkit.py`
+  a low-pass with envelope, resonance, key tracking; page 1 LFO-able; bank of 28. Samples (1.4 MB,
+  KORG M1 multisounds, committed in `features/m1/build/`, not MIT: see its NOTICE; `gen_m1.py`
+  regenerates them; built-in waves without them); `m1_drumkit.py`
   makes two drum sampler kits, built in as factory kits (folder station 1); station screen with LCD, LEDs and a keyboard lighting the sounding
   keys (sim-verified)
 - `engine_plus` 2.0 — 4 extra parameters for fm, digital, string, cluster, phase, dna, voltage, iter
