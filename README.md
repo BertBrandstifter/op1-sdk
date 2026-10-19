@@ -67,20 +67,16 @@ writes them to `build/demo/`):
 
 <table>
   <tr>
-    <td><img src="images/sim/drumroll_step.png" alt="DRUM ROLL step sequencer screen" width="400"><br><b>DRUM ROLL</b>: 8 lanes, per-step velocity and probability</td>
-    <td><img src="images/sim/lofi_screen.png" alt="LOFI synth engine screen" width="400"><br><b>LOFI</b>: preset TRI BASS, stepped triangle</td>
-  </tr>
+    <td><img src="images/sim/mono_screen.png" alt="MONO 3 synth engine screen" width="400"><br><b>MONO 3</b>: synth panel, page 1 (cutoff, emphasis, contour, glide)</td>
+    <td><img src="images/sim/m1_screen.png" alt="STATION 1 synth engine screen" width="400"><br><b>STATION 1</b>: two multisounds layered (built-in waves, 100 sampled multisounds)</td>
+  </tr>  
   <tr>
     <td><img src="images/sim/warp_screen.png" alt="WARP synth engine screen" width="400"><br><b>WARP</b>: preset SYNC LEAD, saw through the SYNC warp</td>
     <td><img src="images/sim/wheel_screen.png" alt="WHEEL tonewheel organ screen" width="400"><br><b>WHEEL</b>: preset SOUL JAZZ, drawbars, percussion and rotary</td>
   </tr>
   <tr>
-    <td><img src="images/sim/mono_screen.png" alt="MONO 3 synth engine screen" width="400"><br><b>MONO 3</b>: synth panel, page 1 (cutoff, emphasis, contour, glide)</td>
-    <td><img src="images/sim/m1_screen.png" alt="STATION 1 synth engine screen" width="400"><br><b>STATION 1</b>: two multisounds layered (built-in waves, 100 sampled multisounds)</td>
-  </tr>
-  <tr>
     <td><img src="images/sim/trio_screen.png" alt="TRIO synth engine screen" width="400"><br><b>TRIO</b>: preset SID LEAD, three oscillators into the filter</td>
-    <td><img src="images/sim/chordplus_panel.png" alt="CHORD+ chord keyboard panel" width="400"><br><b>CHORD+</b>: key, scale, voicing, strum and the black-key modifiers</td>
+    <td><img src="images/sim/lofi_screen.png" alt="LOFI synth engine screen" width="400"><br><b>LOFI</b>: preset TRI BASS, stepped triangle</td>
   </tr>
 </table>
 
