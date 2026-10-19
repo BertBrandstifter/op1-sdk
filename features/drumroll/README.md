@@ -1,205 +1,288 @@
-# DRUM ROLL — step sequencer for drum kits — spec
+# DRUM ROLL — the finger sequencer's step editor — spec
 
-Status: **v0.9** (2026-10-15: patterns kept across restarts in TE's op1.db; page 6 CLEAR with a yes / no
-dialog; v0.8 2026-10-14: "drum roll" in the drum engine list; tape-screen play / stop; back-to-back hits + ratchet fixed; v0.3 device-tested: "nice"; v0.2 device-tested; v0.1 device-tested same day, user: "love it"), `features/drumroll`, in `op1plus` (image `ba877d1c`, not flashed);
-host-tested (`test_dr_core.c`, `test_dr_dsp.c`, `test_dr_store.c`), sim-verified (`sim/run_drtest.py`,
-mutation-tested; v0.9 against an emulated op1.db); awaiting device test. Screens from the simulator:
+Status: **v2.1** (2026-10-17): punch-ins act on both held patterns (TE's taken over while held), repeats loop the last step with a hit. **v2.0** (2026-10-17): punch-in banks A / B / C (green press on the finger screen), 18 new arcade / time effects, shift + black always TE's step record. **v1.9** (2026-10-17): undo / redo (shift + BACK / FORWARD), also of TE's own finger screen edits. **v1.8** (2026-10-17): 12 punch-in effects, reordered (FILL FAST, GLITCH FAST, LP FAST, HP
+FILTER left out). **v1.7** (2026-10-17): STEP REC (shift + white press: play the keyboard into the cursor step,
+the arrows move). **v1.6** (2026-10-17): the punch-in effects are the PO-20 arcade's 16 (10 on the black keys,
+6 on shift + black), shown in a window while held. **v1.5** (2026-10-17): zoom 3.5 bars (user: "this way 1/32 patterns fit"; op1.db index 4), the
+shift key drawn as its arrow (`gfx_shift`) on the finger screen note and the hint line; punch-in effects on the black keys of TE's drum finger screen (user:
+"put some fun punch in effects on the black keys in the drum mode when using the finger sequencer";
+picked: the mix without a buffer, held = on, stacking). **v1.4** (2026-10-17): zoom 3 bars added (1 / 2 / 3 / 4; op1.db keeps 0 1 2 = 1 2 4 bars,
+3 = 3 bars). **v1.3** (2026-10-17): shift + blue press opens and closes it (user: "to enter and leave
+the drum roll lets use the shift + blue knob"); no "DRUM ROLL n" badge any more; shift + blue press in drum playmode
+no longer starts a requantize take (requantize 4.0). **v1.2** (2026-10-17, user: "really love it!"; the playhead showed only sometimes): the view
+follows a held pattern key at once, TE's own patterns get a playhead, the view follows the playhead
+while playing. **v1.1** (2026-10-17, user after the v1.0 device test: "nice!"; when the finger sequencer's
+pattern length changes, all tracks should follow, and DRUM ROLL should set the length of all tracks
+together; then: open it with a plain blue press, a small "editor" note on the finger screen): TE's
+length and page 6 PAT's LENGTH set every lane's length; blue press opens (shift + blue closes), note
+"BLUE: EDITOR" on TE's finger screen. **v1.0** (2026-10-17, user: "integrate the drum roll into the finger sequencer … remove the drum
+roll from the normal drums page"): DRUM ROLL opens over TE's **finger sequencer** (sequencer key, drum
+playmode) and shows / edits the selected finger pattern as an 8-lane step grid; a pattern edited there
+plays with 8 tracks and every DRUM ROLL step parameter. The drum screen gesture, the "drum roll" row in
+the drum engine list and DRUM ROLL's own play / stop + tape clock are gone. `features/drumroll`, in
+`op1plus`; host-tested (`test_dr_core.c`, `test_dr_dsp.c`, `test_dr_store.c`, `test_dr_fs.c`),
+sim-verified (`sim/run_drtest.py`); v1.0 / v1.1 device-tested ("nice!", "really love it!"), v1.2 awaiting device test. Screens from the simulator:
 `build/demo/drumroll_step.png`, `drumroll_sound.png`, `drumroll_clear.png`.
+
+History: v0.9 (2026-10-15) patterns kept in op1.db, page 6 CLEAR; v0.8 "drum roll" in the drum engine
+list; v0.7 tape-screen play / stop; v0.6 back-to-back + ratchet fix; v0.3 device-tested ("nice"); v0.1
+device-tested ("love it") — all as a stand-alone sequencer on the drum screen.
 
 ## Open it on the OP-1
 
-Part of the default `op1plus` image. Pick **drum roll** in the drum engine list (next to dbox), or **shift + green press** on the drum screen. On the tape screen (drum playmode): **shift + white press** = play / stop, to record it.
+Part of the default `op1plus` image. Drum playmode, press the **sequencer key** with the **finger**
+sequencer picked (the screen shows **⇧ BLUE: EDITOR** (the shift arrow) top left, at the size of the engines'
+"SHIFT+BLUE: PRESETS"), then **shift + blue press**: DRUM ROLL shows the finger pattern that is
+selected. **Shift + blue press** again closes it (shift + green press too; TE's finger screen with its compressed view
+is back). Shift + blue press on the finger screen with DRUM ROLL closed stays requantize's.
 
 ## Idea
 
-A channel-rack style drum sequencer (FL Studio's step sequencer + its per-step event graph) in a
-Teenage Engineering look: black screen, thin lines, the four knob colours, small type. It plays
-the current drum kit (drum playmode). Every **lane** is one drum sample (one of the kit's 24 keys)
-with its **own length and rate**, so lanes run polymetric (a 3-step hat against a 16-step kick).
-Every step carries its own **velocity, tone, length, nudge, probability and ratchet**. Every drum
-sample can get a **filter** (LP / BP / HP, cutoff, resonance) and a level.
+TE's finger sequencer keeps 14 patterns on the keyboard's pattern keys, but shows a pattern only as a
+tiny strip and edits it one step at a time with two sounds per step. DRUM ROLL becomes its editor:
+a channel-rack grid (FL Studio's step sequencer in a TE look: black screen, thin lines, the four knob
+colours) where a finger pattern is **8 lanes**, each lane one drum sample with its own length and rate,
+every step with **VEL, TONE, LEN, NUDGE, PROB, RATCH**, every sample with a filter. The finger keys
+still start and stop the patterns, so live play stays TE's; DRUM ROLL makes building and tweaking a
+pattern easy.
 
-Like the requantize piano roll, the screen draws time to scale: bars and beats are lines, every
-step is as wide as its duration, so a 1/32 hat lane shows twice as many narrow cells as a 1/16
-kick lane, and where a short lane loops a coloured loop line marks its end and the repeats are drawn
-dimmer. Every lane has its own playhead.
+The screen draws time to scale (bars and beats are lines, a step is as wide as its duration), short
+lanes show a loop line and dim repeats, every lane has its own playhead while the pattern plays.
 
-## How it plays (route c + a voice post-process)
+## TE's finger sequencer (RE 2026-10-17, R246)
 
-- **Clock**: the Seq thread tick (once per 64-frame block). While the tape plays or records, the
-  sequencer follows the **tape position** (bar 1 = tape position 0, the bars TE draws), so it lines
-  up with what is on tape and records into it. With the tape stopped it runs on its own clock.
-  Tempo = TE's BPM (tempo screen). Lanes start together at clock 0 and loop on their own lengths.
-- **Notes**: VoiceCtl note-on/off (`0x01a85750` / `0x01a85840`) with drum note 53 + key; TE adds the
-  kit's octave. Only while TE is in drum playmode **and not switching** (`0x01de4c40 == 1` and
-  `0xff801038 == 1`: TE's drum note-on asserts, i.e. halts, otherwise). In synth playmode the
-  sequencer keeps time silently.
-- **Tone** = the note-on's `extra` argument: TE's drum note-on turns it into the voice's pitch factor
-  2^(extra/12) (RE, `0x01a84ba0`). -24 .. +24 semitones per step.
-- **TE ignores a drum note-on while that note is still held** (0x01a84ba0 checks its sounding list
-  first). A hit therefore first releases DRUM ROLL's still-held copy of the same drum (back-to-back
-  steps, ratchets; v0.6 fix), and due note-offs go out before new hits in each tick.
-- **Every note-on gets its note-off** (TE keeps a 128-entry list of sounding drum notes and halts
-  when it overflows).
-- **Voice post-process** (filter, level, length gate): drumroll owns the drum sampler voice's render
-  and note_on vtable slots (`0x0190fad8`, `0x0190fae0`; 12 voices of 0x14 bytes at `0xffb00000`,
-  128 samples per block, the 2x rate TE renders voices at). After TE renders a voice the voice's
-  sample (key) gets its filter; voices started by the sequencer also get the step's velocity x lane
-  level and the length gate (fade-out over 3 ms when the gate ends). The note_on slot sees the key
-  directly (`params - 0x01aaadb4`, 16 bytes per key, 0x180 per kit slot). Drum keys played by hand
-  get the sample's filter and level too. dbox (synth drum) kits are sequenced but not post-processed.
+Internally "ok" (`seq/ok_data.cpp`, `ok_player.cpp`, `gui/screens/ok_screen.cpp`, table `okseq`).
+
+- **Data** (`OkData`, one per playmode; getter `0x019ed238` picks drum when `TE_PLAYMODE != 0`; loaded
+  from `okseq` on first use, flag `B[0x01ddb564]`). Drum instance `0x01dda710` (synth `0x01dd98bc`):
+  `+0` dirty bytes, `+0x08` artist pattern[2] (-1 none, 0..13: the patterns the two "artists" = held
+  pattern keys play), `+0x10` **notes[14][32][2]** (int32: MIDI note, drum = 53 + key (+24 per octave
+  offset), -1 = empty), `+0xe10` length[14] (1..32), `+0xe48` swing (0..100, 50 straight), `+0xe4c` play
+  mode (0..3).
+- `set_note(this, pat, step, hand, note)` `0x019ecc5c` writes a note and calls the mark-dirty
+  `0x0193ef3c(this)` (TE's saver then writes `okseq`). Its only callers (the finger screen's
+  controller): `0x019ec534` delete the cursor step (both hands -1), `0x019ec802` / `0x019ec840` step
+  record into hand 0 / hand 1, `0x019ecade` clear the pattern. `get_note(this, pat, step, hand)`
+  `0x019eccf0`.
+- **Player** `0x01ddc5a8` (built by `0x019ed460`, flag `[0x01ddc5a4]`): `+0x1c` **selected pattern**
+  (the one last started; TE's finger screen edits it), `+0x0c` step[2] per artist. Tick `0x019ee0a0`
+  at 96 PPQN: a step is 24 ticks (1/16), swing moves the first step of each pair (pairs are 48).
+  `0x019edbb8` plays one step: for every artist playing a pattern, hands 0 and 1 via `get_note`; the
+  **drum** branch's call is at **`0x019ede2a`** (synth: `0x019edc4e`), then VoiceCtl note-on with
+  velocity 127.
+- **Sequencer screen** = `TE_EDIT_MODE` 7 (sequencer key 21, `0x019ac724`). Active drum sequencer type
+  `*(int32 *)0x01ab3148` (synth `0x01ab3144`), finger = 3 (`TE_SEQ_FINGER`).
+
+## How it works
+
+### Patterns
+
+DRUM ROLL has **14 patterns = the 14 finger patterns** (shown 1..14). Each is a DRUM ROLL pattern
+(8 lanes x up to 64 steps, as before). A finger pattern is in one of two states:
+
+- **TE's** (not yet edited in DRUM ROLL): TE keeps and plays it. DRUM ROLL shows an **import**: one
+  lane per drum key used (in order of first use; more than 8 keys: the first 8), the remaining lanes
+  on the lowest unused keys; length = TE's length, rate 1/16; a note = step on with VEL 100, TONE =
+  12 x the note's octave offset. The import is redone whenever the pattern is shown, and TE's own
+  edits (step record, delete, clear) update it as they happen.
+- **DRUM ROLL's** (from its first edit in DRUM ROLL): DRUM ROLL holds the truth and plays it with
+  8 tracks and all step parameters. TE's copy of the pattern becomes a **summary** for TE's compressed
+  view (and for stock firmware): for each 1/16 step 0..31 the first two hits of that grid position, in
+  lane order, as 53 + key. TE's length is left alone. TE's own edits still work on such a pattern: a
+  recorded note at step s turns on step s of the first 1/16 lane on that key (or of the first empty
+  lane, which gets that key; none free: ignored), a deleted / cleared note turns that step off.
+
+DRUM ROLL's page 6 PAT clears the pattern on both sides and gives it back to TE (empty).
+
+### Pattern length
+
+A pattern has one length in 1/16 steps (1..64): every lane plays that time span, in its own rate's
+steps (1 bar = 4 x 1/4, 8 x 1/8, 12 x 1/8T, 16 x 1/16, 24 x 1/16T, 32 x 1/32; rounded, 1..64). Shown
+and set on page 6 PAT (blue turn): all lanes, then TE's length (TE keeps at most 32; a longer DRUM
+ROLL pattern stays as it is). The pattern's length is its longest 1/16 or 1/32 lane (those hold any
+length exactly; without such a lane: its longest lane). Page 4 LANE's LENGTH still sets one lane
+(polymeter) until the next pattern length change.
+
+- TE's length changes (finger screen) on a DRUM ROLL pattern: all its lanes follow at the next
+  main-loop pass (polled; an edit in DRUM ROLL sets the lanes before TE's length, a length that
+  already matches is left alone, so the two never fight). New steps are empty; steps past a shorter
+  length are kept (lengthen again: they are back), as TE keeps its notes.
+- On a TE pattern on screen: imported again with the new length.
+
+### Playback
+
+- TE's patterns: untouched, TE plays them.
+- DRUM ROLL's patterns: the `get_note` call site of TE's drum player (`0x019ede2a`) returns -1 for
+  them (TE plays nothing), and records **step events** (hand 0 = one event per artist step). DRUM
+  ROLL plays the pattern from the seq tick (after TE's player in the same block):
+  - starts on its **first step event** (clock 0; its step-0 hits go out in that very block);
+  - runs on its own sample clock at TE's tempo, **re-synced on every second step event** (the swing
+    pair grid): behind by up to 2 blocks it catches up, ahead it holds, further off it jumps;
+  - stops when no artist holds it any more, or after 3 steps without a step event;
+  - two artists = two patterns at the same time; every lane loops on its own length from the
+    pattern's start (polymeter), swing = DRUM ROLL's SWING;
+  - TE's play mode, step order and swing do not apply to the notes of a DRUM ROLL pattern (TE's play
+    mode still decides when a pattern starts and stops).
+- Notes as before: VoiceCtl note-on/off with 53 + key, TONE as the note-on's extra, only in drum
+  playmode and not while switching (TE asserts otherwise), every note-on gets its note-off, a held
+  copy of the same drum is released first (TE ignores a held note).
+- **Voice post-process** unchanged: drumroll owns the drum sampler voice's render and note_on slots
+  (`0x0190fad8`, `0x0190fae0`): per-sample filter, the step's velocity x lane level, the length gate;
+  hand-played keys and TE's own finger notes get the sample's filter and level.
+- Recording: the finger sequencer runs while the tape records; DRUM ROLL's notes go to tape like TE's.
+
+## Punch-in effects (v2.0: three banks)
+
+v2.0 (user, 2026-10-17: "to avoid accidental edits don't use shift + black keys for more punch-in
+effects any more; cycle through banks A / B / C with the green knob press in the finger sequencer
+… and add some more cool, funky arcade inspired effects"). On TE's drum finger screen the **10
+black keys** (ids 13 14 15 32 22 23 24 25 26 27, F# G# A# C# D# F# G# A# C# D# low to high) are
+punch-in effects while held (a plain black press does nothing in TE there; shift + black is TE's
+step record again, always). **Green press** on the finger screen with DRUM ROLL closed picks the
+bank, A -> B -> C (a box shows FX BANK x; the finger screen note shows FX x); with the editor open
+green press stays "next page", the bank picked plays on.
+
+| key | A (the PO-20) | B (arcade) | C (time + mix) |
+|---|---|---|---|
+| F# | FILL | 8-BIT: 5 bits, 11 kHz (every drum sound) | HALF TIME |
+| G# | RETRIG: the step over and over | LASER: a 1/64 roll, 2 semitones down each ("pew") | DOUBLE TIME |
+| A# | RETRIG FAST: half a step | FALL: a 1/32 roll, a semitone down each | TRIPLET: 1/16T retrigger |
+| C# | GLITCH: 1/16 pieces from random places of the bar | COIN: an octave-up grace hit a quarter step after each hit | LOOP BEAT: the beat over and over |
+| D# | RISE: a 1/32 roll, a semitone up each | RND PITCH: every hit -12..+12 semitones | BUILD: a roll 1/8 -> 1/16 -> 1/32 -> 1/64, beat by beat |
+| F# | LP SWEEP (every drum sound) | OCT UP: every hit an octave up | SOLO 1-4 |
+| G# | HP SWEEP (every drum sound) | OCT DOWN | SOLO 5-8 |
+| A# | BLINDS: 1/16 gate (every drum sound) | ECHO: two softer repeats 3 and 6 steps later | NO KICK: all but lane 1 |
+| C# | SOLO 1 | REVERSE: the bar's steps backwards | FADE: down to nothing over a bar |
+| D# | SOLO 1+2 | SHUFFLE: heavy swing (66) | CUT: silence |
+
+- Time effects (RETRIG, RETRIG FAST, GLITCH, RISE, LASER, FALL, TRIPLET, LOOP BEAT, BUILD, HALF /
+  DOUBLE TIME, REVERSE): the last one pressed plays, its place captured at the nearest 1/16 of the
+  first; the others stack. The pattern's clock never stops: released, it goes on.
+- They act on DRUM ROLL's patterns (TE plays its own); the sound effects (LP / HP SWEEP, BLINDS,
+  8-BIT) on every drum voice (`dr_punch.c`, after TE's render and DRUM ROLL's own post-process).
+- v2.1 (user: "the finger sequencer can play two patterns at the same time, the punch-in effects
+  apply only to one … retrigger needs perfect timing; hit on an empty note, use the last note"):
+  **both held patterns**: a held TE pattern (not yet DRUM ROLL's) is **taken over** while an effect
+  on the notes is held: TE's notes read at the press (as the import), TE's get_note gives -1 for it
+  meanwhile and DRUM ROLL plays it on its own clock; released, TE plays it again (it stays TE's,
+  nothing saved). The repeat effects (RETRIG, RETRIG FAST, RISE, FALL, LASER, TRIPLET, BUILD) loop
+  the **last step with a hit** from the nearest 1/16 back (up to a bar), not an empty one.
+- Window while held (as CHORD+'s panel): bank + key, the last pressed effect's pictogram and name,
+  the other held ones, "GREEN = NEXT BANK".
+
+## Step record (v1.7)
+
+User (2026-10-17): "add a step record mode … select the start point, play the keys on the keyboard
+one / multiple per step, the left and right arrows advance or go back and re-record a step".
+**Shift + white press** (open) turns STEP REC on / off (header: a red REC; hint line: how). While on:
+
+- the **24 keyboard keys** play drums into the **cursor step** (the step index of every lane; pick
+  the start with the STEP knob first): the first key after arriving at a step clears it in every
+  lane, more keys add to it; a key's drum goes to the first lane on that drum, else to the first
+  empty lane (which gets the drum), else nowhere; every key is heard as it is played;
+- **FORWARD / BACK** (the arrows) go a step on / back (wrapping at the selected lane's length); a
+  step passed by stays as it is, so go back and play to re-record one;
+- the keys and the arrows are DRUM ROLL's meanwhile (pattern keys, TE's step record and the
+  black-key punch-ins wait); closing the editor ends STEP REC.
+
+## Undo / redo (v1.9)
+
+User (2026-10-17): "an undo / redo in all the editors, shift + left (undo) / shift + right (redo),
+several steps … also undo additions to a pattern I accidentally do in the finger sequencer".
+**Shift + BACK = undo, shift + FORWARD = redo**, in DRUM ROLL and on TE's drum finger screen with
+it closed; a box shows UNDO / REDO and how many steps are left (or NOTHING TO UNDO).
+
+- A step = the state of one pattern before a change: DRUM ROLL's pattern, **TE's copy of it** (notes
+  + length) and whose it is. So TE's own finger screen edits (step record, delete, clear: they pass
+  DRUM ROLL's set_note hooks) go back too, also on TE's own (not yet edited) patterns; undoing a
+  pattern's first DRUM ROLL edit gives it back to TE with its notes.
+- Every press is a step; knob turns of one kind, the STEP REC keys of one step and TE's edits in a
+  row within a second are one. 16 steps (the oldest go); a new edit drops what could be redone.
+- The view goes to the pattern that changed. Not kept over a power cycle.
 
 ## Data
 
-- 4 patterns **A B C D**, 8 lanes each, up to 64 steps per lane. Kept across restarts (v0.9, see
-  *Saving* below); before v0.9 RAM only.
-- Lane: sample key 1..24 (default lanes = keys 1..8), length 1..64 steps (16), rate 1/4 1/8 1/8T
-  **1/16** 1/16T 1/32, level 0..100 (100 = as TE plays it), mute.
-- Step: on/off + VEL 1..100 % (100), TONE -24..+24 (0), LEN 1/8 1/4 1/2 3/4 1 1.5 2 3 4 6 8 16 steps or
-  **FULL** (default: the sample plays out, the note-off follows one step later), NUDGE -50..+50 % of
-  a step (0), PROB 0..100 % (100), RATCH 1..4 hits per step (1). Parameters stay when a step is
-  switched off and on again.
-- Per sample (key) filter: OFF / LP / BP / HP, cutoff 0..127 (20 Hz .. 20 kHz, exponential), reso
-  0..127 (Simper trapezoidal SVF, the TRIO filter). Lanes on the same key share it.
-- Swing 0..100 (global): odd steps of every lane late by up to half a step.
-
-## Engine list (v0.8)
-
-"drum roll" sits in the drum engine list next to dbox (a `drum_types` row, id 64, via `content_sql`).
-Picking it turns DRUM ROLL on for that drum sound: an entry hook on TE's pick handler (`0x0193f86c`,
-msg +4 drum sound, +8 row id or -kit index) skips TE, so the sound keeps its kit and no unknown type
-is ever saved (a saved unknown type would halt the next boot: patch validator, RE 2026-10-14).
-Kits picked afterwards from the same list are DRUM ROLL's sounds (it stays on); dbox turns it off.
-DRUM ROLL is then that sound's engine page (T1), like a synth engine's screen; T2-T4 (envelope, FX,
-LFO) stay TE's, so the SDK effects' pages work there. The flag lives in RAM like the patterns (after a
-power cycle the sound is a plain kit). Shift + green press still opens DRUM ROLL on any drum sound's
-engine page and closes it.
+- Lane: sample key 1..24, length 1..64 steps, rate 1/4 1/8 1/8T **1/16** 1/16T 1/32, level 0..100,
+  mute. Step: on/off + VEL 1..100 (100), TONE -24..+24 (0), LEN 1/8 .. 16 steps or **FULL**, NUDGE
+  -50..+50 % (0), PROB 0..100 (100), RATCH 1..4 (1). Per sample filter OFF / LP / BP / HP, cutoff,
+  resonance. Swing 0..100 (global).
 
 ## Controls
 
-v0.2 (2026-10-14, user: "more consistent, like our synths"): the same handling as the SDK synth
-engines (WHEEL, WARP, TRIO): **a knob turn edits the value under that knob, blue press goes to the
-next page, shift + blue turn browses** (the engines' sound bank; here the lanes). v0.3 (user): only
-blue press turns pages, **white press plays the cursor step**, orange press does nothing.
-v0.4 (user): **green press switches the cursor step on / off on every page**.
-v0.5 (user, "more ergonomic"): swapped: **blue press = step on / off** (any page), **green press = next
-page**. Every page puts
-four functions on the four knobs, drawn as four columns in the knob colours (name, value, bar).
-
-Open / close: **shift + green press** on the drum screen (drum playmode). The sequencer keeps running
-when the screen is closed (small badge top right). Drum keys still play and select their lane.
+Same handling as the SDK synth engines: a knob turn edits the value under that knob, **green press =
+next page**, **blue press = cursor step on / off** (any page), **white press = hear the cursor step**.
 
 | page | blue | green | white | orange |
 |---|---|---|---|---|
 | P1 STEP | step | ON (right = hit, left = rest) | VEL | PROB |
 | P2 NOTE | step | TONE | LEN | RATCH |
-| P3 TIME | step | NUDGE | SWING (all lanes) | ZOOM 1 / 2 / 4 bars |
+| P3 TIME | step | NUDGE | SWING (all) | ZOOM 1 / 2 / 3 / 3.5 / 4 bars |
 | P4 LANE | SAMPLE (drum key) | LENGTH (steps) | RATE | MUTE |
 | P5 SOUND | FILTER OFF LP BP HP | CUTOFF | RESO | LEVEL |
-| P6 CLEAR | press: clear? | (press: next page) | press: clear? | press: clear? |
-
-**P6 CLEAR** (v0.9, user): a blue, white or orange press asks **CLEAR PATTERN X?** with NO picked. Any
-knob turn picks (left NO, right YES), any knob press confirms. YES resets the current pattern as new
-(8 empty lanes on keys 1-8, 16 steps, 1/16); the other patterns and the per-sample filters stay.
-Leaving the screen drops the question.
+| P6 PAT | LENGTH (all lanes + TE) / press: clear? | (press: next page) | press: clear? | press: clear? |
 
 | with shift | |
 |---|---|
 | blue turn | lane (browse) |
-| green turn | pattern A B C D |
-| green press | close the screen |
-| white press | play / stop |
+| green turn | finger pattern 1..14 |
+| blue press (or green press) | close |
 | orange press | clear the lane (again: undo) |
-| blue press | nothing while the screen is open (v0.3: used to start a requantize take) |
-| white press **on the tape screen** | play / stop (v0.7), drum playmode, not while the requantize screen is open |
+| white press | nothing |
 
-Recording (v0.7, user): on the tape screen, start DRUM ROLL with shift + white press and record with
-TE's own keys (rec + play). While the tape runs DRUM ROLL follows the tape position (bar 1 = tape
-position 0), so the hits land on TE's bars; the badge top right shows that it runs.
+- Opening shows the selected finger pattern; while open, when the finger sequencer selects another
+  pattern (its key is pressed and it starts) the view follows at once (next main-loop pass, while
+  the key is still held).
+- Playhead: a white line under the playing step of every lane, for DRUM ROLL's patterns (its clock)
+  and TE's own (TE player's step, `0x01ddc5a8 + 0x0c` per artist). While a pattern plays the view
+  shows the playhead's bar(s); a knob turn or press brings the cursor's back for 2 s.
+- The keyboard stays TE's (pattern keys, step record, BACK / FWD).
+- P6 PAT: blue turn = the pattern length (all lanes, TE's too); a blue, white or orange press asks **CLEAR PATTERN n?** (NO picked); any knob turn picks
+  (left NO, right YES), any press confirms. Leaving the screen drops the question.
+- Header: pattern number, TE / DR (whose pattern), PLAY / STOP (that pattern), bar.beat, BPM, swing,
+  page. Closed: nothing of DRUM ROLL over TE's screens but the "(shift arrow) BLUE: EDITOR" note on the finger
+  screen (v1.3, user: the small "DRUM ROLL n" badge removed).
 
-- White press plays the cursor step with all its settings; stopped, editing a step (ON, VEL, TONE,
-  LEN, RATCH) plays it too.
-- Step pages show the last edited step parameter as a graph over the lane's steps; P5 the filter
-  curve; P4 a line about the lane. Header: pattern, PLAY / TAPE / STOP, bar.beat, BPM, page dots +
-  "P1 STEP" as on the engines.
-- v0.1 had two focuses (STEP / LANE) flipped by green press and shift layers on every knob.
+## Saving
 
-## Screen (320 x 156 UI)
+Table `sdk_drumroll (id INTEGER PRIMARY KEY, data TEXT)` in TE's `user/op1.db`: rows 0-13 = patterns
+1-14, row 14 = settings (shown pattern, swing, zoom, **which patterns are DRUM ROLL's** (bit mask),
+the 24 filters). Base64 of `'D' 'R' version id` + raw data; **version 2** (v0.9's version-1 rows,
+patterns A-D, are ignored). Written ~3 s after the last edit, or at the next main-loop pass after
+closing. Safety as before: table created first, fixed SQL text plus base64 only, reads through TE's
+lock and sqlite calls, loaded values clamped. TE's summary notes go into `okseq` through TE's own
+mark-dirty / saver; they are values TE writes itself (53..76, -1).
 
-```
- A  PLAY  3.2  120 BPM  SW 20                 STEP   header (scale 2), focus lit
- 1 K01 16 |##  ..  ##  ..|##  ..  ##  ..|     lanes: label | cells to scale; bar lines bright,
- 2 K02  3 |..##..|..##..|..##..                beat lines mid; loop line + dim repeats
- 3 K03 32 |#.#.#.#.#.#.#.#.#.#.#.#.#.#.          for short lanes; cursor = white frame;
- ...                                             playhead per lane = white bar under the cell
- VEL      |▮ ▮ ▯ ▮ ▮ ▯ ▮ ▮ ...                  graph of the parameter (STEP focus) or
- 100      |                                     lane panel KEY FILTER CUTOFF RESO + curve
-```
+## Out of scope
 
-- Lane colours cycle blue / green / white / orange; cell brightness = velocity, a step with tone
-  shows a small tick (up/down), a ratchet step is split into its hits.
-- The view (1 / 2 / 4 bars) scrolls to keep the cursor step visible.
-
-## Cost (simulator cycles)
-
-- Filtered voice block (128 samples): ~8.1k cycles for the SVF (Q31 coefficients, 32-bit states:
-  a Q15 version leaked ~25 % at 20 Hz), ~2.1k more with gain + gate; unfiltered unity voices cost
-  nothing extra. Idle voices (silent block, settled filter) are skipped. In TRIO's range per voice.
-- Seq tick: one 32-bit divide per lane, step lengths cached until the tempo or a rate changes
-  (the whole seq-tick chain of op1plus: ~8.5k cycles per block with DRUM ROLL playing).
-- Screen: ~0.4M cycles per frame (full-screen overlay; GUI thread). `lib/gfx.c` got a clipped
-  column fill for `gfx_rect` and direct glyph stores (3x faster for every overlay).
-
-## Saving (v0.9)
-
-TE keeps its own sequencers in the SQLite database `user/op1.db` (e.g. `easseq`: `CREATE TABLE IF NOT
-EXISTS`, then `UPDATE easseq SET data='…'`). DRUM ROLL does the same in its own table
-`sdk_drumroll (id INTEGER PRIMARY KEY, data TEXT)`: rows 0-3 = patterns A-D, row 4 = current
-pattern, swing, zoom and the 24 per-sample filters. A row is base64 of `'D' 'R' version id` + the raw
-data (pattern row 4,872 characters), written with `INSERT OR REPLACE`.
-
-- **When:** `dr_main` on the main loop (`main_tick`). The first pass after boot creates the table and
-  loads the rows; afterwards a row is written only if it changed, ~3 s after the last edit, or at
-  the next pass when the screen is closed (shift + green). An edit in the last ~3 s before power-off
-  is lost unless the screen was closed.
-- **Safety:** TE's db helpers assert on any SQLite error, and an assertion halts the OP-1. So: the
-  table exists before any query, every statement is fixed text apart from base64 (no quote, no `%`,
-  well under TE's 8 KB SQL buffer), and reading uses TE's lock + sqlite calls directly instead of
-  TE's JSON query (a row that is not ours is skipped, never parsed). Loaded values are clamped into
-  range, a wrong version or damaged row keeps the defaults. The table is ours: TE's boot-time preset
-  checks never look at it.
-- **Not stored:** which drum sounds use DRUM ROLL from the engine list (after a power cycle the sound
-  is a plain kit again; shift + green still opens DRUM ROLL), play / stop, lane / cursor / page.
-
-## Out of scope (v0.1)
-
-Pattern chaining / song mode, copy / paste, Euclid fill, dbox
-post-processing, MIDI out of the sequence, per-step sample choice, tape speeds other than 1x.
+Following TE's reverse / random step order or TE's swing for DRUM ROLL patterns, the synth finger
+sequencer, live recording into DRUM ROLL patterns (TE's finger sequencer only step-records), pattern
+copy / chaining, MIDI out of the sequence.
 
 ## Code
 
-- `dr_core.h/.c` (pure C, `test_dr_core.c`): data model, defaults, parameter ranges and labels, the
-  scheduler `dr_schedule` (which hits fall into a window of the clock: rates, lengths, swing, nudge,
-  ratchet, probability; every hit exactly once across consecutive windows).
-- `dr_dsp.h/.c` (pure C, `test_dr_dsp.c`): filter coefficients (cutoff table at 88.2 kHz), per-voice
-  post-process (SVF, gain, gate with fade).
-- `dr_store.h/.c` (pure C, `test_dr_store.c`): base64, row text for a pattern / the settings, loading
-  with range checks.
-- `drumroll.c`: Seq tick (clock, notes, note-offs, preview), the two voice slots, keys / knobs, screen,
-  the op1.db load / save on the main loop.
-- `sim/run_drtest.py`: the composed op1plus image against stub TE functions.
+- `dr_core.h/.c` (pure C, `test_dr_core.c`): data model, ranges, the scheduler `dr_schedule`.
+- `dr_dsp.h/.c` (pure C, `test_dr_dsp.c`): filter + per-voice post-process.
+- `dr_store.h/.c` (pure C, `test_dr_store.c`): base64 rows, load with range checks.
+- `dr_fs.h/.c` (pure C, `test_dr_fs.c`): finger glue without TE calls — import of a TE pattern,
+  the summary, a TE edit on a DRUM ROLL pattern, the clock follower (start / resync / hold / jump).
+- `drumroll.c`: hooks (get_note + 4 set_note call sites), Seq tick, voice slots, keys / knobs,
+  screen, op1.db.
+- `sim/run_drtest.py`: the composed op1plus image against stub TE functions and an emulated
+  finger sequencer (data, player state, step events).
 
-## Plan
+## Plan (v1.0)
 
-1. Spec (this file).
-2. `dr_core` + host tests: grid timing, polymeter lanes, rates incl. triplets, swing, nudge across
-   window edges, ratchet, probability 0 / 100, no double hits over consecutive windows.
-3. `dr_dsp` + host tests: LP passes low / damps high, HP the reverse, gate ends with a fade to
-   silence, gain, filter OFF + unity = untouched.
-4. `drumroll.c`: tick + notes (playmode guard, note-off for every note-on, tape sync), voice slots,
-   controls, drawing.
-5. Manifest, recipe `op1plus`, docs (`features.md`); sim bench `sim/run_drtest.py`; full suite; build.
-6. Device test: drum screen edit mode (assumed 1; the gesture also works in drum playmode on any
-   screen that is not synth / tape / mixer / tempo), timing against the metronome, tone and gate on
-   a few kits, filter sound + CPU with 12 voices, badge position; v0.9: edit, wait ~3 s (or close),
-   power-cycle: patterns, swing and filters come back; page 6 CLEAR yes / no.
+1. RE of the finger sequencer (above): data layout, writers, player step path, screen id, type.
+2. Spec (this file).
+3. `dr_fs` + host tests: import (keys in order, >8 keys, octave -> TONE, length), summary (first two
+   hits per 1/16, other rates on the grid), TE edits (add to lane / free lane / full; remove), clock
+   follower (start, steady, behind, ahead, jump).
+4. `dr_store`: 14 pattern rows + settings with owned mask, version 2, two-digit ids; tests.
+5. `drumroll.c`: remove drum screen / engine list / tape play; finger screen gate; 14 patterns,
+   follow the selection; ownership + summary write-back; get_note / set_note hooks; per-pattern play
+   state in the seq tick.
+6. Manifest (hooks, claims on the seq screen, no content_sql / drum pick hook), docs (`features.md`,
+   repo README); sim bench rewritten for the finger sequencer; full suite; build `op1plus`.
+7. Device test: open over the finger screen with a TE pattern (import looks right), edit -> plays 8
+   lanes in time with TE's step grid, two patterns at once, TE step record into a DRUM ROLL pattern,
+   CLEAR, power cycle (patterns + ownership back, TE's mini view shows the summary), boot is clean.

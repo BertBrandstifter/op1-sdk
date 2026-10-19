@@ -1,0 +1,22 @@
+{
+  "name": "op1mem",
+  "boot_text": "op1sdk +",
+  "features": [
+    "chordplus",
+    "lofi",
+    "wheel",
+    "warp",
+    "trio",
+    "m1",
+    "mono",
+    "reso",
+    "shimmer",
+    "fxpack",
+    "drumroll",
+    "noteroll",
+    "requantize",
+    "engine_plus",
+    "drumtrim",
+    "meminfo"
+  ]
+}

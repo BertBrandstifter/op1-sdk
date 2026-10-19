@@ -7,11 +7,15 @@
     "wheel",
     "warp",
     "trio",
+    "m1",
+    "mono",
     "reso",
     "shimmer",
     "fxpack",
     "drumroll",
+    "noteroll",
     "requantize",
-    "engine_plus"
+    "engine_plus",
+    "drumtrim"
   ]
 }

@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "wheel",
   "title": "WHEEL synth engine (tonewheel organ)",
-  "version": "0.7",
+  "version": "0.9",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
@@ -11,7 +11,7 @@
   "prefix": [
     "wh_"
   ],
-  "summary": "Pick WHEEL in the engine list (or the 'wheel' presets): a tonewheel organ with 9 drawbars (16 registrations + bass/body/top trims), single-sine-per-bar additive voices with tonewheel foldback, Hammond-style percussion (2nd/3rd, soft, slow), key click, overdrive and a rotary speaker (horn + drum, slow/fast with spin-up). 8 values (knob push = page 1/2) saved in the preset, page 3 = the sound's FX knobs (reverb/echo amount etc. without leaving the screen); TE's envelope, FX and LFO apply. The preset stays a drwave preset with in-range values (passes TE's boot check, loads on stock firmware as drwave).",
+  "summary": "Pick WHEEL in the engine list (or the 'wheel' presets): a tonewheel organ with 9 drawbars (16 registrations + bass/body/top trims), single-sine-per-bar additive voices with tonewheel foldback, Hammond-style percussion (2nd/3rd, soft, slow), key click, overdrive and a rotary speaker (horn + drum, slow/fast with spin-up). 8 values (knob push = page 1/2) saved in the preset, page 3 = the sound's FX knobs (reverb/echo amount etc. without leaving the screen); TE's envelope, FX and LFO apply. The screen draws the organ (cabinet grille = drawbars, PERC / ROTARY buttons, the played keys lit), the sound's name over it for 1 s when picked, and the page's knobs as STATION 1 (name and bar). The preset stays a drwave preset with in-range values (passes TE's boot check, loads on stock firmware as drwave).",
   "license": "MIT",
   "authors": [
     "unknown"
@@ -30,6 +30,11 @@
   "shared": [
     {
       "point": "on_key",
+      "fn": "wh_note_key",
+      "mode": "observe"
+    },
+    {
+      "point": "on_key",
       "fn": "wh_key",
       "mode": "filter"
     },
@@ -41,6 +46,10 @@
     {
       "point": "frame",
       "fn": "wh_frame"
+    },
+    {
+      "point": "seq_tick",
+      "fn": "wh_tick"
     },
     {
       "point": "engine_name",
@@ -120,7 +129,7 @@
       ]
     }
   ],
-  "status_note": "v0.7: no clipping (level 18000, soft knee, drive level-compensated, click halved) after user heard crackle in chords; v0.6: runs on the engine host (tag 5); v0.5: one preset 'wheel' in folder wheel (sounds via the bank); v0.4: page 3 shows the FX's real knob names; v0.3: built-in bank of 24 sounds; v0.2: page 3 = FX knobs",
+  "status_note": "v0.9: page knobs as STATION 1 (name + bar; REG, PERC, ROTARY, BASS/BODY/TOP one value per detent, bar = the value's step), the sound's name over the organ for 1 s, keys lit as STATION 1 (a held key its own note); v0.8: new screen after the wheel overview graphic (cabinet grille = drawbars, drive pill, registration digits, PERC/ROTARY buttons, keyboard lights held keys, rotor air), values below as MONO 3; v0.7: no clipping (level 18000, soft knee, drive level-compensated, click halved) after user heard crackle in chords; v0.6: runs on the engine host (tag 5); v0.5: one preset 'wheel' in folder wheel (sounds via the bank); v0.4: page 3 shows the FX's real knob names; v0.3: built-in bank of 24 sounds; v0.2: page 3 = FX knobs",
   "init": "wh_init",
   "evidence": [
     {

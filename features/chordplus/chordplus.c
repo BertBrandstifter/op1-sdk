@@ -18,7 +18,7 @@
 #include "cp_core.h"
 
 #define BARRIER()       __asm__ volatile("" ::: "memory")
-#define PANEL_TIME      (TE_SAMPLE_RATE * 3)    /* panel closes 3 s after the last change */
+#define PANEL_TIME      (TE_SAMPLE_RATE * 5)    /* panel closes 5 s after the last change */
 #define STRUM_MAX       100                     /* ms */
 #define RING            64                      /* power of two */
 #define PENDING         32
@@ -34,11 +34,21 @@ static volatile uint32_t now;                   /* samples, advanced by cp_tick 
 static volatile uint32_t panel_until;           /* panel open while now < this */
 static volatile uint8_t panel;
 static volatile uint8_t consumed;               /* insert down was eaten -> eat its up */
+volatile uint8_t cp_pinned;                     /* panel pinned (insert while shown): no timeout */
+
+static int panel_shown(void)
+{
+    return panel && (cp_pinned || (int32_t)(now - panel_until) < 0);
+}
 static volatile char chord_name[16];
 
 /* KeyHandler thread */
 static uint8_t forwarding;                      /* our own notes passing through the chain */
 static uint8_t held_pc[12];                     /* black keys held, per pitch class */
+static volatile uint16_t held_at;               /* black keys held, by place (on_key; bit 0..9) */
+
+/* the black keys' ids (on_key), lower octave F# G# A# C# D# then the upper (RE 2026-10-17) */
+static const uint8_t black_ids[10] = { 13, 14, 15, 32, 22, 23, 24, 25, 26, 27 };
 static uint8_t count_sync[128];                 /* sounding chord notes (unstrummed) */
 static int prev_center;
 static struct {
@@ -63,8 +73,19 @@ static struct {
 static int npending;
 static uint8_t count_strum[128];
 
+/* the held black keys as modifiers: by their place on the keyboard (lower octave: quality, upper:
+ * power / sus2 / voicings / more inversion); by pitch class (the lower octave's meaning) if no
+ * on_key event told the place */
 static int mods(void)
 {
+    int i, m = 0;
+
+    if (held_at) {
+        for (i = 0; i < 10; i++)
+            if (held_at >> i & 1)
+                m |= cp_black_mod_at(i);
+        return m;
+    }
     return (held_pc[1] ? CP_FLIP : 0) | (held_pc[3] ? CP_SEVEN : 0) | (held_pc[6] ? CP_SUS4 : 0)
            | (held_pc[8] ? CP_NINE : 0) | (held_pc[10] ? CP_INV1 : 0) | (held_pc[10] > 1 ? CP_INV2 : 0);
 }
@@ -135,6 +156,20 @@ int cp_kb_on(te_note *n, int extra)
         return 0;
     prev_center = cp_center(notes, c);
     cp_name(&s, note, mods(), (char *)chord_name);
+    i = cp_root_pc(&s, note);
+    if (i >= 0 && notes[0] % 12 != i) {         /* inverted: the bass after a slash, "C/E" */
+        const char *b = cp_key_names[notes[0] % 12];
+        int k;
+
+        for (k = 0; k < 11 && chord_name[k]; k++)
+            ;
+        if (k <= 12) {
+            chord_name[k++] = '/';
+            while (*b && k < 15)
+                chord_name[k++] = *b++;
+            chord_name[k] = 0;
+        }
+    }
     chord_of[note].n = (uint8_t)c;
     chord_of[note].strum = cp_strum != 0;
     for (i = 0; i < c; i++) {
@@ -236,6 +271,16 @@ void cp_tick(void)
 
 int cp_key(int key, int down)
 {
+    int i;
+
+    for (i = 0; i < 10; i++)                    /* black keys: only watched (their notes follow) */
+        if (key == black_ids[i]) {
+            if (down)
+                held_at |= (uint16_t)(1 << i);
+            else
+                held_at &= (uint16_t)~(1 << i);
+            return 0;
+        }
     if (key != TE_KEY_INSERT)
         return 0;
     if (!down) {
@@ -245,16 +290,24 @@ int cp_key(int key, int down)
         }
         return 0;
     }
-    if (!*TE_SHIFT_HELD)
-        return 0;
+    if (!*TE_SHIFT_HELD) {                      /* insert while the panel shows: pin / unpin it */
+        if (!cp_on || !panel_shown())
+            return 0;                           /* else insert is TE's */
+        cp_pinned = !cp_pinned;
+        if (!cp_pinned)
+            panel = 0;                          /* unpinned: closes */
+        consumed = 1;
+        return 1;
+    }
     if (!cp_on) {
         cp_on = 1;
         panel = 1;
-    } else if (!panel || (int32_t)(now - panel_until) >= 0) {
+    } else if (!panel_shown()) {
         panel = 1;
     } else {
         cp_on = 0;
         panel = 0;
+        cp_pinned = 0;
     }
     panel_until = now + PANEL_TIME;
     consumed = 1;
@@ -270,7 +323,7 @@ int cp_knob(int knob, int16_t *diff)
 {
     int d = *diff, v;
 
-    if ((unsigned int)knob > 3 || !cp_on || !panel || (int32_t)(now - panel_until) >= 0 || !d)
+    if ((unsigned int)knob > 3 || !cp_on || !panel_shown() || !d)
         return 0;
     switch (knob) {
     case 0: cp_set.key = (uint8_t)step(cp_set.key, d, 12); break;
@@ -309,13 +362,19 @@ void cp_frame(uint16_t *buf)
     x = gfx_text(198, 2, "CHORD", col[1], 1);
     gfx_text(x + 4, 2, name, GFX_WHITE, 1);
 
-    if (!panel || (int32_t)(now - panel_until) >= 0)
+    if (!panel_shown())
         return;
     /* nearly full screen, size 2-3 text (4 px per char and scale): four columns of 78 px */
     gfx_rect(2, 2, 316, 152, frame_col);
     gfx_rect(4, 4, 312, 148, GFX_BLACK);
     gfx_text(10, 10, "CHORD+", col[1], 3);
-    gfx_text(178, 14, "SHIFT+INSERT: OFF", dim, 1);
+    if (cp_pinned) {                            /* pinned: stays until insert again */
+        gfx_text(178, 8, "PINNED", col[3], 1);
+        gfx_text(178, 18, "INSERT: UNPIN", dim, 1);
+    } else {
+        gfx_text(178, 8, "INSERT: PIN", dim, 1);
+        gfx_text(178, 18, "SHIFT+INSERT: OFF", dim, 1);
+    }
     for (i = 0; i < 4; i++) {
         static const char *const labels[4] = { "KEY", "SCALE", "VOICING", "STRUM" };
 
@@ -331,10 +390,15 @@ void cp_frame(uint16_t *buf)
     } else {
         gfx_text(244, 58, "OFF", GFX_WHITE, 2);
     }
-    gfx_text(10, 86, "HOLD BLACK KEYS", dim, 1);
-    gfx_text(10, 98, "C# MIN/MAJ", GFX_WHITE, 2);
-    gfx_text(166, 98, "D# 7TH", GFX_WHITE, 2);
-    gfx_text(10, 116, "F# SUS4", GFX_WHITE, 2);
-    gfx_text(166, 116, "G# 9TH", GFX_WHITE, 2);
-    gfx_text(10, 134, "A# INVERT", GFX_WHITE, 2);
+    gfx_text(10, 80, "HOLD BLACK KEYS - LOWER OCTAVE", dim, 1);
+    gfx_text(166, 80, "UPPER OCTAVE", dim, 1);
+    for (i = 0; i < 5; i++) {
+        static const char *const lower[5] = { "C# MIN/MAJ", "D# 7TH", "F# SUS4", "G# 9TH", "A# INV 1" };
+        static const char *const upper[5] = { "C# POWER", "D# SUS2", "F# OPEN", "G# WIDE", "A# INV 2" };
+        static const uint8_t bit[5] = { 3, 4, 0, 1, 2 };     /* places: F# G# A# C# D# */
+        int y = 90 + i * 12;
+
+        gfx_text(10, y, lower[i], held_at >> bit[i] & 1 ? col[1] : GFX_WHITE, 2);
+        gfx_text(166, y, upper[i], held_at >> (bit[i] + 5) & 1 ? col[1] : GFX_WHITE, 2);
+    }
 }

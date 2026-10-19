@@ -1,6 +1,6 @@
 # Requantize piano roll — spec
 
-Status: **v3.1** (2026-10-13: panel and roll are one screen; v3.0 same day), part of `features/requantize`; host-tested (`test_rq_roll.c`) and
+Status: **v4.3** (2026-10-17): undo / redo (shift + BACK / FORWARD). **v4.2** (2026-10-17): drawing fixed (user: frames left after add + delete, rows of different heights): an added note deleted again goes for good, a deleted take note is a thin line, the cursor frame is one size, rows at least 4 px (a 1 px gap always). **v4.1** (2026-10-17): NOTE ROLL's navigation (a grid-step + pitch-row cursor, blue press = a note on / off: new notes too). **v4.0** SYNTH ROLL (2026-10-17: DRUM ROLL's design and pages, default mode CLEAN; sim-verified); v3.1 (2026-10-13: panel and roll are one screen; v3.0 same day; device-tested: "very nice"), part of `features/requantize`; host-tested (`test_rq_roll.c`) and
 sim-verified (`sim/run_rqtest.py`, roll scenario); awaiting device test.
 
 ## Problem
@@ -25,73 +25,56 @@ so QUEUE/STRICT order the remaining notes around them). Pitch edits and deletion
 Preview and commit play what the roll shows. A take that is never opened in the roll behaves exactly
 as in v2.5.
 
-## Controls
+## Controls (v4.1: NOTE ROLL's navigation)
 
-Open: ending the take (shift + blue press) opens the **requantize screen** directly: the roll, with
-the take settings (grid, mode, target track) in its header (tape screen, full screen overlay; v3.0
-had a separate panel). **Green press flips the knobs** between two focuses on the same screen:
+v4.1 (user, 2026-10-17: "replace the quantize editor with the piano roll editor; the navigation
+shall be the one of the piano roll editor, change the quantize functions so they fit into the
+pages"). The cursor is NOTE ROLL's: a **grid step** (of the take's grid) and a **pitch row**; the
+note under it is the one of that pitch starting inside that step (none: an empty place). A knob turn
+edits the value under that knob, **green press = next page**. Targets of an edit: the selected
+notes, else the note under the cursor.
 
-- **NOTES** (default): edit notes, table below. Edits act on the **targets**: the selected notes,
-  or the cursor note when nothing is selected.
-- **TAKE** (header lit): quantize the whole take and commit.
+| page | blue | green | white | orange | orange press |
+|---|---|---|---|---|---|
+| P1 NOTE | STEP (the cursor, grid steps) | PITCH (the note; empty: the row) | VEL ±5 | LENGTH ±1 grid step | quantize targets |
+| P2 TIME | NOTE: to the next / previous note | MOVE ±1 grid step | NUDGE ±5 ms | LEN MS ±5 ms | quantize targets |
+| P3 QUANT | GRID | MODE CLEAN / SNAP / QUEUE / STRICT | ZOOM 1..16 bars | (FIXED count) | every note back to AUTO |
+| P4 TAKE | TRACK (own = REPLACE) | | | | **commit** |
 
-So both ways stay: **whole take** = TAKE focus, grid + mode (every AUTO note follows; shift + orange
-press brings every note back to AUTO); **one or many notes** = NOTES focus, orange press quantizes
-the cursor note or the selection to the grid.
-
-TAKE focus:
-
-| input | plain (shift: the same) | with shift |
+| press | plain | with shift |
 |---|---|---|
-| blue turn | grid | |
-| green turn | SNAP / QUEUE / STRICT | |
-| white turn | target track (own track = REPLACE) | |
-| orange turn | zoom | |
-| blue press | — | exit requantize |
-| green press | knobs back to NOTES | — |
-| white press | preview (again = stop) | — |
-| orange press | **commit** | **every note back to AUTO** (whole take quantized by grid + mode; pitch and delete stay) |
+| blue | **a note at the cursor on / off**: an empty place gets a new note one grid step long (FIXED, velocity 100, the take's replay data); a note added here goes for good (v4.2), a note of the take is deleted / back (shown as a thin line) | exit SYNTH ROLL (abort a preview / commit) |
+| green | next page | select all / clear the selection |
+| white | preview (again = stop) | select / unselect the note under the cursor |
+| orange | the page's action (above) | targets as played (FIXED) <-> AUTO |
 
-NOTES focus:
+**Shift + BACK = undo, shift + FORWARD = redo** (v4.3): the take's note list after every edit is kept
+(24 states, ~1500 notes over all; the oldest go), every press a step, knob turns of one kind within
+a second one; selecting is no step, nor are GRID / MODE (settings: AUTO notes follow them). The
+info line says UNDO / REDO / NOTHING TO UNDO.
 
-| input | plain | with shift |
-|---|---|---|
-| blue turn | cursor to previous / next note (time order) | zoom: 1 / 2 / 4 / 8 / 16 bars per screen |
-| blue press | select / unselect the cursor note | exit requantize (as in the panel) |
-| green turn | move targets ±5 ms | move targets ±1 grid step |
-| green press | knobs to TAKE (grid, mode, track, commit) | select all / clear the selection |
-| white turn | pitch ±1 semitone | pitch ±12 |
-| white press | preview (again = stop), as in the panel | delete / restore targets |
-| orange turn | length ±5 ms | length ±1 grid step |
-| orange press | **quantize** targets: start snapped to the nearest grid point (FIXED) | toggle targets **as played** (FIXED at the played start/length) ↔ **AUTO** |
+Shift + blue turn = the cursor's pitch row (any of 0..127); the cursor follows its note when it is
+moved or transposed; a new grid keeps the cursor's time.
 
-- "Grid" = the take's grid (blue knob in TAKE focus); the roll redraws as grid / mode change.
-- Grid-step moves keep a note on the grid if it was on a grid point (also for triplet grids, where a
-  step is fractional); off-grid notes keep their offset.
-- Commit only in TAKE focus (orange press); orange press in NOTES focus only quantizes the targets.
-- Knobs do nothing while a preview or commit runs (white press still stops the preview,
-  shift + blue press aborts).
-- Edits live as long as the requantize screen: focus changes, preview and commit keep them;
-  exiting with shift + blue press drops them (the next shift + blue press starts a new take).
+- **CLEAN** (default): every note starts on its nearest grid point and lasts a whole number of grid
+  steps (held length rounded, at least one); never before the take's record start; a key still
+  sounding is cut where it starts again; the same key twice on one grid point = one note. Orange
+  press "quantize" on P1 / P2 does the same for the targets (FIXED).
+- SNAP / QUEUE / STRICT: the live quantizer's rules / one step per note / packed.
+- Knobs do nothing while a preview or commit runs (white press still stops the preview, shift +
+  blue press aborts). Edits live as long as SYNTH ROLL; exiting drops them.
 
-## Screen (320 x 156 UI)
+## Screen (320 x 156 UI, DRUM ROLL's layout)
 
-```
- 1/16 QUEUE T1 REPLACE 12/34 SEL 3               line 1 (scale 2): lit in TAKE focus
- C#4  BAR 3.2  +12MS  LEN 240MS  AUTO            line 2: cursor note (scale 2)
- |    :    :    :    |    :    :    :    |        roll: bar lines bright, beats mid, grid dim
- |  ====    [====]       ==                       notes: AUTO green, FIXED blue, selected orange,
- |       ##        ----                           cursor white frame, deleted outline only
- |^ take start (red)                    ^ end     tick under the cursor note = where it was played
- BLUE SEL GREEN TIME WHITE PITCH ORANGE LEN ...   hint line (scale 1)
-```
-
-- Opens at the smallest zoom that shows the whole take. Pitch rows fit the take's pitch range
-  (2..10 px per row); taller ranges scroll to keep the cursor note visible. Time scrolls to keep
-  the cursor note on screen.
-- Line 2: note name (60 = C4), bar.beat of its start (4/4, from tape position 0 = TE's bar grid),
-  offset to the nearest grid point (`ON GRID` / `+12MS` / `-3MS`), length, state (AUTO / FIX / DEL).
-- During preview / commit a white line shows the tape position; line 1 shows the status.
+- Header: the take's track (orange box), SR, STOP / PLAY / REC, bar.beat (tape position while
+  running, else the cursor note), BPM, page dots + "P1 NOTE".
+- Roll: pitch column on the left (names; the cursor note's row lit), rows of black keys darker, a line
+  under every C; bars bright, beats and grid steps dim, the take's range in red; notes AUTO green,
+  FIXED blue, selected orange (velocity = brightness), deleted outline only; cursor white frame, a
+  white tick where it was played; while running a white tape line and the view follows the tape.
+- Panel: four knob columns (name in the knob colour, value, bar); P4 TAKE: TRACK + what commit does.
+  Info line: the status, else the cursor note (name, bar.beat, ON / OFF GRID, length in grid steps,
+  AUTO / FIXED / DELETED, selection count) and what the page does. Hint line as DRUM ROLL's.
 
 ## Behaviour details
 
@@ -111,7 +94,7 @@ NOTES focus:
 
 ## Out of scope (v3.0)
 
-Velocity editing (the OP-1 keyboard plays fixed velocity), adding new notes, undo (shift + orange
+ (shift + orange
 press brings timing back to AUTO / as played; pitch and delete are toggles you can turn back),
 copy/paste, knob moves and sound changes during the take.
 

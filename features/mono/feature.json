@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "name": "mono",
+  "title": "MONO 3 synth engine (classic 3-oscillator mono synth, polyphonic)",
+  "version": "0.4",
+  "status": "sim-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "mo_"
+  ],
+  "summary": "Pick MONO 3 in the engine list or the 'mono 3' preset: a classic three-oscillator mono synth voice, 4 voices: three oscillators with range (LO..2'), wave (triangle, shark / ramp, saw, square, two pulses) and level each, osc 2 / 3 tuned against osc 1, white / pink noise; a 4-pole ladder (cutoff, emphasis to self-oscillation, bass loss, keyboard control 1/3 / 2/3 / full), its contour (attack, decay, sustain, amount) and the loudness contour with a decay switch, constant-time glide. Page 1 (cutoff, emphasis, contour) can be moved by TE's LFO. Shift + blue turn browses P-- and 16 built-in sounds; page 7 = the sound's FX knobs. The screen draws a synth panel (the page's knobs lit), the sound's name over it for 1 s when picked, and the page's knobs as STATION 1 (name and bar). Presets stay drwave presets with in-range values.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "mono.c",
+    "mo_core.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "init": "mo_setup",
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "mo_note_key",
+      "mode": "observe"
+    },
+    {
+      "point": "on_key",
+      "fn": "mo_key",
+      "mode": "filter"
+    },
+    {
+      "point": "on_knob",
+      "fn": "mo_knob",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "mo_frame"
+    },
+    {
+      "point": "seq_tick",
+      "fn": "mo_tick"
+    },
+    {
+      "point": "engine_name",
+      "fn": "mo_engine_name"
+    }
+  ],
+  "hooks": {},
+  "controls": [
+    "engine list: MONO 3; preset browser: folder mono 3 (one preset, 'mono 3'); sounds: shift + blue turn (P-- + 16)",
+    "MONO 3 sound: knob push cycles page 1 FILTER (CUTOFF EMPHASIS CONTOUR GLIDE) / 2 OSC 1 (RANGE WAVE VOLUME NOISE) / 3 OSC 2 (RANGE FREQUENCY WAVE VOLUME) / 4 OSC 3 (the same) / 5 FILTER CONTOUR (ATTACK DECAY SUSTAIN KEYBOARD) / 6 LOUDNESS CONTOUR (ATTACK DECAY SUSTAIN RELEASE) / 7 FX knobs"
+  ],
+  "tests": [
+    "test_mo_core.c",
+    "sim/run_monotest.py"
+  ],
+  "depends": [
+    "enginehost"
+  ],
+  "conflicts": [],
+  "claims": [
+    {
+      "input": "blue_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "green_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "white_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "orange_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "blue_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "green_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "white_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "orange_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    }
+  ],
+  "content_sql": [
+    {
+      "file": "content/op1_factory.db",
+      "sql": [
+        "INSERT INTO synth_types (id, type, default_params) SELECT MAX(id) + 1, 'mono 3', '[4114,2573,9616,608,9239,12229,8621,9874]' FROM synth_types",
+        "INSERT INTO synth_presets (patch, folder) VALUES ('{\"adsr\":[64,8128,32767,4000,4000,64,4000,4000],\"fx_active\":false,\"fx_params\":[8000,14368,9438,20044,0,0,0,0],\"fx_type\":\"delay\",\"knobs\":[4114,2573,9616,608,9239,12229,8621,9874],\"lfo_active\":false,\"lfo_params\":[24172,3068,0,16000,0,0,0,0],\"lfo_type\":\"tremolo\",\"name\":\"mono 3\",\"octave\":0,\"synth_version\":1,\"type\":\"drwave\"}', 'mono 3')"
+      ]
+    }
+  ],
+  "evidence": []
+}

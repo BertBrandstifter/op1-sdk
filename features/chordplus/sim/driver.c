@@ -9,12 +9,12 @@ extern void hook_tick(void);
 extern void hook_key(int key, int down);
 extern void hook_frame(uint16_t *buf);
 extern void hook_knob(int knob, int16_t *diff);
-extern volatile uint8_t cp_on, cp_strum;
+extern volatile uint8_t cp_on, cp_pinned, cp_strum;
 extern volatile uint8_t cp_set[3];              /* key, scale, voicing */
 extern char FB[];
 
 #define BEAT_Q14    (22050 << 14)               /* 120 BPM */
-#define MAXLOG      64
+#define MAXLOG          256
 
 struct entry { int kind, note, tick; };
 static struct entry log[MAXLOG];
@@ -74,6 +74,13 @@ static int logged(int from, const int *want, int n)
 
 #define CHECK(bit, c) do { if (!(c)) fails |= 1 << (bit); } while (0)
 
+/* a black key as TE delivers it: on_key with its id, then its keyboard note */
+static void black(int on, int id, int num)
+{
+    hook_key(id, on);
+    key(on, num);
+}
+
 int main(void)
 {
     int m, i;
@@ -88,11 +95,19 @@ int main(void)
     key(0, 60);
     { static const int w[] = { 1, 60, 2, 60 }; CHECK(0, logged(m, w, 2)); }
 
-    /* 1: shift + insert turns CHORD+ on, consumed (down and up); plain insert is TE's */
+    /* 1: shift + insert turns CHORD+ on, consumed (down and up); plain insert while the panel shows
+     * pins it, again unpins (closes) it; with the panel closed plain insert is TE's; shift + insert
+     * opens the panel again */
     press(TE_KEY_INSERT, 1);
     CHECK(1, cp_on == 1 && keys_seen == 0);
     press(TE_KEY_INSERT, 0);
+    CHECK(1, cp_pinned && keys_seen == 0);
+    press(TE_KEY_INSERT, 0);
+    CHECK(1, !cp_pinned && keys_seen == 0);
+    press(TE_KEY_INSERT, 0);
     CHECK(1, keys_seen == 2);
+    press(TE_KEY_INSERT, 1);
+    CHECK(1, cp_on == 1 && keys_seen == 2);
 
     /* 2: white key = its chord (C major: C = C E G), release stops all three */
     m = nlog;
@@ -128,9 +143,45 @@ int main(void)
     turn(0, -1024);
     turn(0, -1024);
 
+    /* 6: the upper octave's black keys (by place, from on_key): C# = power chord, A# = second
+     * inversion, both A# = third, G# = WIDE; silent, as the lower ones */
+    m = nlog;
+    black(1, 26, 73);
+    key(1, 60);
+    key(0, 60);
+    black(0, 26, 73);
+    { static const int w[] = { 1, 60, 1, 67, 1, 72, 2, 60, 2, 67, 2, 72 }; CHECK(6, logged(m, w, 6)); }
+    m = nlog;
+    black(1, 25, 70);
+    key(1, 60);
+    key(0, 60);
+    { static const int w[] = { 1, 67, 1, 72, 1, 76, 2, 67, 2, 72, 2, 76 }; CHECK(6, logged(m, w, 6)); }
+    m = nlog;
+    black(1, 15, 58);
+    key(1, 60);
+    key(0, 60);
+    black(0, 15, 58);
+    black(0, 25, 70);
+    { static const int w[] = { 1, 72, 1, 76, 1, 79, 2, 72, 2, 76, 2, 79 }; CHECK(6, logged(m, w, 6)); }
+    m = nlog;
+    black(1, 24, 68);
+    key(1, 60);
+    key(0, 60);
+    black(0, 24, 68);
+    { static const int w[] = { 1, 48, 1, 67, 1, 76, 2, 48, 2, 67, 2, 76 }; CHECK(6, logged(m, w, 6)); }
+    m = nlog;
+    key(1, 60);                                 /* nothing held: the plain chord again */
+    key(0, 60);
+    { static const int w[] = { 1, 60, 1, 64, 1, 67, 2, 60, 2, 64, 2, 67 }; CHECK(6, logged(m, w, 6)); }
+
     /* 7: strum 20 ms (orange knob, panel reopened): notes ~882 samples apart (13-14 blocks);
      * release before the last one drops it */
-    run(2500);                                  /* panel closes after 3 s */
+    run(3000);
+    i = knobs_seen;
+    turn(3, 1024);
+    CHECK(7, knobs_seen == i);                  /* 4.4 s: the panel is still open (5 s) */
+    turn(3, -1024);                             /* (a change: the 5 s start again) */
+    run(3500);                                  /* panel closes 5 s after the last change */
     i = knobs_seen;
     turn(3, 1024);
     CHECK(7, knobs_seen == i + 1);              /* panel closed: knobs are TE's again */
@@ -167,7 +218,23 @@ int main(void)
     { static const int w[] = { 1, 60, 2, 60 }; CHECK(9, logged(m, w, 2)); }
     *TE_PLAYMODE = 0;
 
-    /* 10: a frame draws (badge + panel) without crashing */
-    hook_frame((uint16_t *)FB);
+    /* 11: insert (plain) while the panel shows pins it: still open long after 5 s (the knobs ours),
+     * insert again unpins and closes it; plain insert with the panel closed is TE's */
+    run(4000);                                  /* the panel from 9 closed by now */
+    i = keys_seen;
+    press(TE_KEY_INSERT, 0);
+    CHECK(11, keys_seen == i + 2 && !cp_pinned);    /* closed: TE's insert */
+    press(TE_KEY_INSERT, 1);                    /* panel */
+    press(TE_KEY_INSERT, 0);                    /* pin */
+    CHECK(11, cp_pinned && cp_on && keys_seen == i + 2);
+    run(8000);                                  /* 11.6 s */
+    m = knobs_seen;
+    turn(0, 1024);
+    turn(0, -1024);
+    CHECK(11, knobs_seen == m);                 /* still open: the knobs are the panel's */
+    hook_frame((uint16_t *)FB);                 /* screenshot: PINNED */
+    press(TE_KEY_INSERT, 0);                    /* unpin: closed */
+    turn(0, 1024);
+    CHECK(11, !cp_pinned && cp_on && knobs_seen == m + 1 && keys_seen == i + 2);
     return fails;
 }

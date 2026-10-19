@@ -216,10 +216,23 @@ def compose(names, name, boot_text=None, out=None):
     code, used, has_init = dispatcher(order)
     open(os.path.join(out, "_compose.c"), "w").write(code)
     sources, bases, libs, cflags = ["_compose.c"], {"_compose.c": "composer"}, [], []
-    hooks = {"call_sites": [], "entry_hooks": [], "pointers": []}
-    content_sql = []
+    hooks = {"call_sites": [], "entry_hooks": [], "pointers": [], "patches": []}
+    content_sql, content_files = [], []
     for f in order:
         content_sql += f.get("content_sql", [])
+        for cf in f.get("content_files", []):   # files added to the update (+ their SQL), feature-relative
+            src = os.path.join(f["dir"], cf["from"])
+            sql = cf.get("sql")
+            sql_src = os.path.join(f["dir"], sql["from"]) if sql else None
+            if not os.path.exists(src) or (sql_src and not os.path.exists(sql_src)):
+                if cf.get("optional"):
+                    print(f"note: {f['name']}: {cf['from']} not there, {cf['file']} left out (optional)")
+                    continue
+                sys.exit(f"{f['name']}: content file {cf['from']} missing")
+            content_files.append({"file": cf["file"], "from": os.path.abspath(src)})
+            if sql:
+                stmts = [q.strip() for q in open(sql_src).read().split(";\n") if q.strip()]
+                content_sql.append({"file": sql["file"], "sql": stmts})
         for src in f["sources"]:
             b = os.path.basename(src)
             if b in bases:
@@ -249,6 +262,8 @@ def compose(names, name, boot_text=None, out=None):
     proj.update({k: v for k, v in hooks.items() if v})
     if content_sql:
         proj["content_sql"] = content_sql
+    if content_files:
+        proj["content_files"] = content_files
     proj["features"] = [f"{f['name']} {f.get('version', '')}".strip() for f in order]
     json.dump(proj, open(os.path.join(out, "project.json"), "w"), indent=2)
     return out, proj, shas

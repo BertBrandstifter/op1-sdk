@@ -11,9 +11,14 @@ still follow the panel's grid + mode. Spec: [`requantize-roll.md`](requantize-ro
 **v3.1:** panel and roll are one screen (the roll opens directly, settings in its header, green press
 flips the knobs between notes and take settings; commit = orange press in TAKE focus).
 
+**v4.1 (2026-10-17):** NOTE ROLL's navigation (the cursor = a grid step + a pitch row; blue press = a note on / off, new notes too; VEL). **v4.0 (2026-10-17): SYNTH ROLL** — the requantize screen in DRUM ROLL's design and handling (pages
+NOTE / FINE / QUANT / TAKE, turn = value, green press = next page); new default mode **CLEAN**: every
+note on its nearest grid point with a length of whole grid steps. Spec: [`requantize-roll.md`](requantize-roll.md).
+
 ## Open it on the OP-1
 
-Part of the default `op1plus` image. On the tape screen: **shift + blue knob press** starts a take; press again to end it — the requantize screen (piano roll + take header) opens. Green press flips the knobs between NOTES and TAKE.
+Part of the default `op1plus` image. On the tape screen: **shift + blue knob press** starts a take
+(synth playmode only; v4.0, user: in drum playmode shift + blue press stays TE's); press again to end it — SYNTH ROLL opens (page 1 NOTE). Green press turns the page; page 4 TAKE commits (orange press).
 
 ## Problem
 

@@ -35,7 +35,7 @@ def main():
     driver, dsyms = c_bin(
         [os.path.join(HERE, "crt.S"), os.path.join(HERE, "driver.c")],
         DRIVER_AT, os.path.join(OUT, "driver"),
-        {"STACK": STACK, "_FB": FB, "_cp_on": syms["_cp_on"],
+        {"STACK": STACK, "_FB": FB, "_cp_on": syms["_cp_on"], "_cp_pinned": syms["_cp_pinned"],
          "_cp_strum": syms["_cp_strum"], "_cp_set": syms["_cp_set"],
          **{"_" + k: syms[f"__sdk_hook_{v}"] for k, v in hooks.items()}},
     )
@@ -51,7 +51,9 @@ def main():
         segs.append((addr, stub))
     elf_run = os.path.join(OUT, "cptest_run.elf")
     r = run_model(elf_run, segs, dsyms["_start"], timeout=120)
-    run_gdb(elf_run, shots=[("chordplus_panel", FB)], timeout=120)
+    vals = run_gdb(elf_run, [f"/x *(unsigned*){dsyms['_fails']:#x}"], shots=[("chordplus_panel", FB)], timeout=120)
+    if r.returncode and vals:
+        print(f"failed check bits: {vals[0]}")
     print("PASS" if r.returncode == 0 else f"FAIL (exit {r.returncode}; R7 = failed check bits)")
     sys.exit(r.returncode)
 

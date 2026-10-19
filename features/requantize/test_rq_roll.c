@@ -94,7 +94,7 @@ int main(void)
 
     /* render of an unedited take == v2.5 (rq_quantize on the raw log), every mode, several takes */
     ok = 1;
-    for (mode = RQ_SNAP; mode <= RQ_STRICT; mode++)
+    for (mode = RQ_SNAP; mode <= RQ_CLEAN; mode++)
         for (seed = 1; seed < 20; seed++) {
             int k = make_take((uint32_t)seed, 60);
 
@@ -177,7 +177,10 @@ int main(void)
     rq_edit(nt, n, 0, RE_MOVE_STEP, 1, STEP);
     CHECK(nt[0].start == 24000 + RN_FINE);      /* offset kept */
     rq_edit(nt, n, 0, RE_SNAP, 0, STEP);
-    CHECK(nt[0].start == 24000);
+    CHECK(nt[0].start == 24000 && nt[0].len == 8000);     /* 4000 = half a step: rounds up */
+    rq_edit(nt, n, 0, RE_LEN, 9000, STEP);
+    rq_edit(nt, n, 0, RE_SNAP, 0, STEP);
+    CHECK(nt[0].start == 24000 && nt[0].len == 16000);    /* 17000 -> 2 steps */
     rq_edit(nt, n, 0, RE_MOVE, 3999, STEP);
     rq_edit(nt, n, 0, RE_SNAP, 0, STEP);
     CHECK(nt[0].start == 24000);                /* 3999 past: nearest is still 24000 */
@@ -243,6 +246,29 @@ int main(void)
     nt[2].key = 50;
     rq_order(nt, n, ord);
     CHECK(ord[0] == 2 && ord[1] == 1 && ord[2] == 3 && ord[3] == 0);
+
+    /* an empty cursor (-1): the selection only; VEL; a note added in the roll */
+    {
+        uint8_t d[6] = { 100, 1, 0, 0, 0, 0xff };
+
+        n = rq_notes_build((ev(&in[0], 16000, QZ_ON, 60, 1), ev(&in[1], 20000, QZ_OFF, 60, 1), in), 2, 0, nt, 256);
+        CHECK(!rq_edit(nt, n, -1, RE_PITCH, 1, STEP) && nt[0].key == 60);
+        CHECK(!rq_edit(nt, n, -1, RE_SELECT, 0, STEP));
+        CHECK(rq_edit(nt, n, -1, RE_SELECT_ALL, 0, STEP) && (nt[0].flags & RN_SEL));
+        CHECK(rq_edit(nt, n, -1, RE_PITCH, 2, STEP) && nt[0].key == 62);
+        rq_edit(nt, n, -1, RE_SELECT_ALL, 0, STEP);
+        nt[0].data[0] = 0xff;                   /* logged -1 = 127 */
+        CHECK(rq_edit(nt, n, 0, RE_VEL, -27, STEP) && nt[0].data[0] == 100 && !(nt[0].flags & RN_FIXED));
+        rq_edit(nt, n, 0, RE_VEL, -500, STEP);
+        CHECK(nt[0].data[0] == 1);
+        n = rq_note_add(nt, n, 256, 24000, 10, 67, d);
+        CHECK(n == 2 && nt[1].start == 24000 && nt[1].len == QZ_MIN_LEN && nt[1].key == 67 && nt[1].key0 == 67
+              && nt[1].flags == (RN_FIXED | RN_ADDED) && nt[1].data[0] == 100 && nt[1].played == 24000);
+        CHECK(rq_note_add(nt, n, 2, 0, 100, 60, d) == 2 && rq_note_add(nt, n, 256, 0, 100, 128, d) == 2);
+        n = rq_note_add(nt, n, 256, 32000, 4000, 69, d);
+        CHECK(rq_note_remove(nt, n, 1) == 2 && nt[1].key == 69 && nt[0].key == 62);
+        CHECK(rq_note_remove(nt, 2, 5) == 2 && rq_note_remove(nt, 2, -1) == 2);
+    }
 
     printf("%d/%d checks passed\n%s\n", checks - fails, checks, fails ? "FAIL" : "PASS");
     return fails != 0;

@@ -9,8 +9,12 @@ extern void wh_te_note_on(void *self, int a1, int a2);
 extern void engine_name(te_string *out, void *db, const char *sql);    /* composer's chain */
 extern void hook_key(int key, int down);
 extern void hook_knob(int knob, int16_t *diff);
+extern void hook_frame(uint16_t *buf);
+extern char FB[];
 extern volatile uint8_t wh_page, lf_page, ep_page[4];
 extern volatile int8_t wh_bank;
+extern volatile uint8_t wh_title_on;
+extern void wh_tick(void);
 
 #define INC         ((volatile uint32_t *)0xff801950)
 #define VOICE(i)    ((void *)(0xffb00000u + (i) * 0x24))
@@ -140,18 +144,20 @@ int main(void)
     push(59, 0);
     CHECK(4, wh_page == 1 && ep_page[0] == 0 && lf_page == 0 && keys_seen == i);
 
-    /* 5: page 2, blue knob (BASS): slot 5 up, marker kept, saved, TE's knob handler skipped */
+    /* 5: page 2, blue knob (BASS, 17 values -8..+8): one value per detent, slot 5 at the value's
+     * zone centre, marker kept, saved, TE's knob handler skipped; clamps at -8 / +8 */
     i = saves;
     n = knobs_seen;
+    low = ((K(4) & 0x0fff) << 3) * 17 >> 15;
     turn(0, 1024);
-    CHECK(5, (K(4) & 0xf000) == 0x5000 && (K(4) & 0x0fff) > 2048 && saves == i + 1
-             && knobs_seen == n);
+    CHECK(5, (K(4) & 0xf000) == 0x5000 && (((K(4) & 0x0fff) << 3) * 17 >> 15) == low + 1
+             && saves == i + 1 && knobs_seen == n);
     for (i = 0; i < 40; i++)
         turn(0, 32767);                         /* clamps inside the marker */
-    CHECK(5, K(4) == 0x5fff);
+    CHECK(5, K(4) == (0x5000 | 3975));          /* +8: zone 16 of 17 */
     for (i = 0; i < 40; i++)
         turn(0, -32767);
-    CHECK(5, K(4) == 0x5000);
+    CHECK(5, K(4) == (0x5000 | 120));           /* -8: zone 0 */
 
     /* 6: two more pushes: page 3, then page 1. White knob (DRIVE): slot 3 up; clamped at
      * drwave's slot-3 maximum (16383) */
@@ -164,6 +170,18 @@ int main(void)
     for (i = 0; i < 40; i++)
         turn(2, -32767);
     CHECK(6, K(2) == 0);
+
+    /* 19: orange knob (ROTARY, 3 values): OFF -> SLOW -> FAST in one detent each, then clamped */
+    for (i = 0; i < 3; i++)
+        turn(3, -1024);
+    low = (K(3) << 1) * 3 >> 15;
+    turn(3, 1024);
+    ok = (K(3) << 1) * 3 >> 15;
+    turn(3, 1024);
+    n = (K(3) << 1) * 3 >> 15;
+    turn(3, 1024);
+    CHECK(19, low == 0 && ok == 1 && n == 2 && ((K(3) << 1) * 3 >> 15) == 2);
+    n = knobs_seen;
 
     /* 7: shift + knob on a WHEEL sound: consumed, no change; shift + push: not WHEEL's */
     i = saves;
@@ -309,6 +327,78 @@ int main(void)
         turn(1, 30000);                         /* shift + other knobs: nothing */
         *TE_SHIFT_HELD = 0;
         CHECK(15, ok && knobs_seen == n);
+    }
+
+    /* 16: the engine screen draws: bank entry 2 (SOUL JAZZ) with three keys held and sounding
+     * (A4, C5, E5), page 1; page 2 into a second buffer */
+    {
+        static const int8_t keys[3] = { 41, 42, 28 };
+        static const double hz[3] = { 440.0, 493.88, 523.25 };    /* the keys: A4, B4, C5 */
+
+        *TE_SHIFT_HELD = 1;
+        turn(0, 1024);
+        *TE_SHIFT_HELD = 0;
+        for (i = 0; i < 8; i++)
+            knobs[i] = K(i);
+        for (i = 0; i < 3; i++) {
+            hook_key(keys[i], 1);
+            pitch((uint32_t)(hz[i] / 88200 * 4294967296.0));
+            wh_te_note_on(VOICE(i), 0, 0);
+            wh_te_render(VOICE(i), out, knobs);
+        }
+        wh_page = 0;
+        hook_frame((uint16_t *)FB);
+        wh_page = 1;
+        hook_frame((uint16_t *)(FB + 0x40000));
+        wh_page = 0;
+        for (i = 0; i < 3; i++)
+            hook_key(keys[i], 0);
+        CHECK(16, wh_bank == 1);
+    }
+
+    /* 17: keyboard picture (as STATION 1): a held key (id 41: note 4 = A, TE octave +1 -> A4) lights A4
+     * even long after the start, though its voice starts 2 semitones low (TE's glide), and goes dark
+     * on release while TE still renders the voice */
+    {
+        volatile uint16_t *fb = (volatile uint16_t *)FB;
+        const uint16_t green = (uint16_t)(((0x3d >> 3) << 11) | ((0xdc >> 2) << 5) | (0x97 >> 3));
+        int lit_held, lit_g4, lit_after;
+
+        hook_key(41, 1);
+        pitch((uint32_t)(392.0 / 88200 * 4294967296.0));
+        wh_te_note_on(VOICE(2), 0, 0);
+        for (n = 0; n < 300; n++)               /* > FLASH blocks */
+            wh_te_render(VOICE(2), out, knobs);
+        hook_frame((uint16_t *)FB);
+        lit_held = fb[(319 - 255) * 256 + 78] == green;   /* A4: white key 12, lower part */
+        lit_g4 = fb[(319 - 243) * 256 + 78] == green;     /* G4: white key 11 */
+        hook_key(41, 0);
+        for (n = 0; n < 10; n++)
+            wh_te_render(VOICE(2), out, knobs);
+        hook_frame((uint16_t *)FB);
+        lit_after = fb[(319 - 255) * 256 + 78] == green;
+        CHECK(17, lit_held && !lit_g4 && !lit_after);
+    }
+
+    /* 18: the sound's name over the organ: shown when a sound is picked, for 1 s (Seq ticks of 64
+     * samples), then gone */
+    {
+        int on_pick, on_late, off;
+
+        *TE_SHIFT_HELD = 1;
+        turn(0, 1024);
+        *TE_SHIFT_HELD = 0;
+        hook_frame((uint16_t *)FB);
+        on_pick = wh_title_on;
+        for (n = 0; n < 680; n++)               /* 0.99 s */
+            wh_tick();
+        hook_frame((uint16_t *)FB);
+        on_late = wh_title_on;
+        for (n = 0; n < 10; n++)                /* 1.004 s */
+            wh_tick();
+        hook_frame((uint16_t *)FB);
+        off = !wh_title_on;
+        CHECK(18, on_pick && on_late && off);
     }
 
     /* 13: back to a stock drwave preset: TE's render, TE's knobs */

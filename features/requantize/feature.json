@@ -2,14 +2,14 @@
   "schema": 1,
   "name": "requantize",
   "title": "Requantize a tape take",
-  "version": "3.2",
+  "version": "4.3",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
   },
   "sdk": 1,
   "prefix": "rq_",
-  "summary": "shift + blue knob press starts a take (notes + TE's record range logged); shift + blue press again opens the requantize screen on the tape screen: the take as a piano roll, grid / SNAP/QUEUE/STRICT / target track in its header, preview, commit. Commit onto the take's own track lifts the original clip (to TE's clipboard, drop restores it) and records the quantized notes over exactly the original range; onto another track it records there and mutes the original. Green press flips the knobs between the notes (select, move / resize / transpose / delete / quantize one by one or as a selection) and the take settings (grid, mode, track, zoom, commit, all notes back to AUTO); AUTO notes follow grid + mode, edited notes keep theirs.",
+  "summary": "shift + blue knob press (synth playmode) starts a take (notes + TE's record range logged); shift + blue press again opens SYNTH ROLL on the tape screen (DRUM ROLL's look): the take as a piano roll with four pages NOTE / FINE / QUANT / TAKE, a knob turn edits the value under it, green press = next page, white press = preview, orange press = the page's action (quantize the note(s), all notes AUTO, commit). Default mode CLEAN: every note starts on its nearest grid point and lasts whole grid steps (never before the take); SNAP / QUEUE / STRICT stay selectable. Commit onto the take's own track lifts the original clip (to TE's clipboard, drop restores it) and records the roll over exactly the original range; onto another track it records there and mutes the original. AUTO notes follow grid + mode, edited notes keep theirs.",
   "license": "MIT",
   "authors": [
     "unknown"
@@ -70,10 +70,11 @@
   ],
   "hooks": {},
   "controls": [
-    "shift + blue knob press: start a take / end it (opens the panel) / exit the panel / abort a running preview or commit",
-    "requantize screen (tape screen) = piano roll + take settings header; click green flips the knobs between NOTES (default) and TAKE",
-    "NOTES: blue turn note / shift zoom, blue press select; green turn move (shift: grid step), press to TAKE / shift select all; white turn pitch (shift: octave), press preview / shift delete; orange turn length (shift: grid step), press quantize / shift as played <-> auto",
-    "TAKE: blue turn grid, green turn SNAP/QUEUE/STRICT, white turn target track, orange turn zoom; click green = NOTES, click white = preview (again = stop), click orange = commit (default: replace the take on its own track), shift + click orange = every note back to AUTO"
+    "shift + blue knob press (not in drum playmode and not on the sequencer screen: there it is TE's / DRUM ROLL's / NOTE ROLL's): start a take / end it (opens SYNTH ROLL) / exit / abort a running preview or commit",
+    "SYNTH ROLL (tape screen), NOTE ROLL's navigation: the cursor = a grid step + a pitch row; knob turn = the value under it, green press = next page, blue press = a note at the cursor on / off (new notes too), white press = preview (again = stop), orange press = the page's action",
+    "P1 NOTE: STEP / PITCH / VEL / LENGTH (grid steps), orange press = quantize the note or selection; P2 TIME: NOTE (jump) / MOVE (grid steps) / NUDGE (5 ms) / LEN MS, orange press = quantize; P3 QUANT: GRID / MODE (CLEAN SNAP QUEUE STRICT) / ZOOM, orange press = every note back to AUTO; P4 TAKE: TRACK (own track = replace), orange press = commit",
+    "shift: blue turn = the cursor's pitch row; green press = select all / none, white press = select the cursor note, orange press = as played <-> AUTO",
+    "SYNTH ROLL: shift + BACK = undo, shift + FORWARD = redo (24 states of the take)"
   ],
   "tests": [
     "test_rq_core.c",
@@ -81,12 +82,26 @@
     "sim/run_rqtest.py"
   ],
   "conflicts": [],
-  "status_note": "3.2: grids longest first, 1/4T added (flashed); 3.1 (device-tested, user: very nice): panel and piano roll are one screen (green press = knobs on notes / take settings); 3.0: piano roll (requantize-roll.md); v2.4: STRICT mode (notes/chords packed one grid step apart); v2.3: 1/32T grid; v2.2: commit record pass starts 0.25 s before the take (TE's record fade-in hits silence, not the first notes); v2.1: preview selects an unmuted track; v2.0: replace = lift + record pass (TE records overdub); v1.1 transport device-tested; 2.5: keyboard log runs as a never-consuming filter after CHORD+ (logs chord notes)",
+  "status_note": "4.3: undo / redo (shift + BACK / FORWARD); 4.2: drawing: added notes deleted go for good, deleted = a thin line, one cursor frame size, rows >= 4 px; 4.1: NOTE ROLL's navigation (grid-step + pitch-row cursor, blue press = note on / off, new notes, VEL); 4.0: SYNTH ROLL: DRUM ROLL's design and page handling, default mode CLEAN (start + length on the grid); shift + blue is TE's in drum playmode and on the sequencer screen (DRUM / NOTE ROLL); fix: a shift + blue release with shift still held no longer swallows the next blue release; 3.2: grids longest first, 1/4T added (flashed); 3.1 (device-tested, user: very nice): panel and piano roll are one screen (green press = knobs on notes / take settings); 3.0: piano roll (requantize-roll.md); v2.4: STRICT mode (notes/chords packed one grid step apart); v2.3: 1/32T grid; v2.2: commit record pass starts 0.25 s before the take (TE's record fade-in hits silence, not the first notes); v2.1: preview selects an unmuted track; v2.0: replace = lift + record pass (TE records overdub); v1.1 transport device-tested; 2.5: keyboard log runs as a never-consuming filter after CHORD+ (logs chord notes)",
   "claims": [
     {
       "input": "blue_push",
       "shift": "yes",
-      "screen": "any"
+      "screen": [
+        "synth",
+        "drum",
+        "tape",
+        "mixer",
+        "tempo",
+        "album"
+      ],
+      "playmode": "synth"
+    },
+    {
+      "input": "blue_push",
+      "shift": "yes",
+      "screen": "any",
+      "modal": true
     },
     {
       "input": "blue_turn",
@@ -156,6 +171,18 @@
     },
     {
       "input": "orange_turn",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "back_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "forward_press",
       "shift": "yes",
       "screen": "tape",
       "modal": true

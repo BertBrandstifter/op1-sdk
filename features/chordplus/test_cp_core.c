@@ -60,7 +60,29 @@ int main(void)
     CHECK(!strcmp(chord(&s, 60, CP_NINE, 0), "60 64 67 74") && !strcmp(name(&s, 60, CP_NINE), "CADD9"));
     CHECK(!strcmp(chord(&s, 62, CP_SEVEN | CP_NINE, 0), "62 65 69 72 76") && !strcmp(name(&s, 62, CP_SEVEN | CP_NINE), "DMIN9"));
     CHECK(!strcmp(chord(&s, 60, CP_INV1, 0), "64 67 72"));            /* first inversion */
-    CHECK(!strcmp(chord(&s, 60, CP_INV1 | CP_INV2, 0), "67 72 76"));  /* second */
+    CHECK(!strcmp(chord(&s, 60, CP_INV2, 0), "67 72 76"));            /* second (upper A#) */
+    CHECK(!strcmp(chord(&s, 60, CP_INV1 | CP_INV2, 0), "72 76 79"));  /* both A#: third */
+    CHECK(!strcmp(chord(&s, 60, CP_SEVEN | CP_INV1 | CP_INV2, 0), "71 72 76 79"));  /* 7th in the bass */
+
+    /* upper octave: power chord, sus2, OPEN / WIDE while held (over the panel's voicing, no voice
+     * leading meanwhile), places on the keyboard */
+    CHECK(!strcmp(chord(&s, 60, CP_POWER, 0), "60 67 72") && !strcmp(name(&s, 60, CP_POWER), "C5"));
+    CHECK(!strcmp(chord(&s, 60, CP_POWER | CP_SEVEN | CP_FLIP, 0), "60 67 72") && !strcmp(name(&s, 62, CP_POWER), "D5"));
+    CHECK(!strcmp(chord(&s, 60, CP_SUS2, 0), "60 62 67") && !strcmp(name(&s, 60, CP_SUS2), "CSUS2"));
+    CHECK(!strcmp(chord(&s, 62, CP_SUS2 | CP_SEVEN, 0), "62 64 69 72") && !strcmp(name(&s, 62, CP_SUS2 | CP_SEVEN), "D7SUS2"));
+    CHECK(!strcmp(chord(&s, 60, CP_SUS2 | CP_SUS4, 0), "60 65 67"));  /* sus4 wins */
+    CHECK(!strcmp(chord(&s, 60, CP_VOPEN, 0), "52 60 67"));
+    CHECK(!strcmp(chord(&s, 60, CP_VWIDE, 0), "48 67 76"));
+    CHECK(!strcmp(chord(&s, 60, CP_VWIDE | CP_SEVEN, 0), "48 67 71 76"));
+    {
+        cp_settings l = { 0, CP_MAJOR, CP_LEAD };
+
+        CHECK(!strcmp(chord(&l, 60, CP_VOPEN, 700 * 16), "52 60 67"));     /* no voice leading */
+    }
+    CHECK(cp_black_mod_at(0) == CP_SUS4 && cp_black_mod_at(2) == CP_INV1 && cp_black_mod_at(3) == CP_FLIP
+          && cp_black_mod_at(5) == CP_VOPEN && cp_black_mod_at(7) == CP_INV2 && cp_black_mod_at(8) == CP_POWER
+          && cp_black_mod_at(9) == CP_SUS2 && cp_black_mod_at(10) == -1 && cp_black_mod_at(-1) == -1);
+    CHECK(cp_root_pc(&s, 60) == 0 && cp_root_pc(&s, 62) == 2 && cp_root_pc(&s, 61) == -1);
 
     /* key and scale: D major (white C = D), A minor (white C = A minor) */
     s.key = 2;

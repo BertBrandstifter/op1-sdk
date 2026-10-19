@@ -60,6 +60,7 @@ static void pattern_tests(void)
     memset(&r, 0x55, sizeof(r));
     CHECK(dr_load_pattern(1, text, &r) == -1);          /* another row's data */
     CHECK(dr_load_pattern(4, text, &r) == -1);
+    CHECK(dr_load_pattern(DR_PATTERNS, text, &r) == -1);
     CHECK(dr_load_pattern(2, "", &r) == -1);            /* empty row */
     CHECK(dr_load_pattern(2, 0, &r) == -1);
     CHECK(dr_load_pattern(2, "garbage!", &r) == -1);
@@ -95,6 +96,8 @@ static void settings_tests(void)
     s.cur = 3;
     s.swing = 55;
     s.zoom = 2;
+    s.owned[0] = 0xa5;
+    s.owned[1] = 0x21;
     for (i = 0; i < DR_KEYS; i++) {
         s.filt[i].type = (uint8_t)(i % 4);
         s.filt[i].cut = (uint8_t)(i * 5);
@@ -103,14 +106,15 @@ static void settings_tests(void)
     dr_store_settings(&s, text);
     CHECK(dr_load_settings(text, 4, &t) == 0 && !memcmp(&s, &t, sizeof(s)));
     CHECK(dr_load_pattern(DR_ROW_SETTINGS, text, (dr_pattern *)0) == -1);
-    s.cur = 9;
+    s.cur = 20;
+    s.owned[1] = 0xff;                                  /* bits past pattern 14 */
     s.swing = 200;
     s.zoom = 7;
     s.filt[3].type = 9;
     s.filt[4].cut = 200;
     dr_store_settings(&s, text);
     CHECK(dr_load_settings(text, 4, &t) == 0);
-    CHECK(t.cur == 1 && t.swing == 100 && t.zoom == 2 && t.filt[3].type == 0 && t.filt[4].cut == 127);
+    CHECK(t.cur == 6 && t.owned[0] == 0xa5 && t.owned[1] == 0x3f && t.swing == 100 && t.zoom == 4 && t.filt[3].type == 0 && t.filt[4].cut == 127);
 }
 
 int main(void)

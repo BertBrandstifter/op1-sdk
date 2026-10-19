@@ -1,0 +1,121 @@
+{
+  "schema": 1,
+  "name": "noalbum",
+  "title": "Album off: its disk space back",
+  "version": "0.2",
+  "status": "experimental",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "na_"
+  ],
+  "summary": "The album's two 6-minute sides take 121 MB inside the disk image (user/tape_c.raw, the FAT volume of disk mode, 384 MiB). noalbum makes them 1 s and the image 256 MiB, so the OP-1 has ~128 MB more free flash (e.g. 75.8 -> ~204 MB). TE rebuilds the disk image once on the first boot (the tape is empty afterwards). On the album screen REC and PLAY do nothing (the album recorder's own limit is in TE's encrypted code).",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "noalbum.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "na_key",
+      "mode": "filter",
+      "order": "first"
+    },
+    {
+      "point": "frame",
+      "fn": "na_frame"
+    }
+  ],
+  "hooks": {
+    "patches": [
+      {
+        "addr": "0x019761e6",
+        "expect": "41e10018",
+        "bytes": "41e10010",
+        "what": "FAT disk geometry (0x019761d8): image size 0x18000000 -> 0x10000000 (384 -> 256 MiB)"
+      },
+      {
+        "addr": "0x019761ea",
+        "expect": "42e10b00",
+        "bytes": "42e10700",
+        "what": "FAT disk geometry: sectors 0xbfffc -> 0x7fffc"
+      },
+      {
+        "addr": "0x01996e80",
+        "expect": "46e10018",
+        "bytes": "46e10010",
+        "what": "image open (fat_manager 0x01996e04): size check == 384 MiB -> 256 MiB (mismatch: TE rebuilds the image)"
+      },
+      {
+        "addr": "0x019972c0",
+        "expect": "44e10018",
+        "bytes": "44e10010",
+        "what": "image create (fat_manager 0x019971b0, 'Creating FAT image'): < 384 MiB -> < 256 MiB"
+      },
+      {
+        "addr": "0x019972c4",
+        "expect": "a0084118",
+        "bytes": "20084110",
+        "what": "boot check (0x019971b0): 'size < 384 MiB -> create' becomes 'size != 256 MiB -> create' (CC = R0 == R4; IF !CC JUMP, same target), so an existing larger image is rebuilt too"
+      },
+      {
+        "addr": "0x01a9a098",
+        "expect": "41e10018",
+        "bytes": "41e10010",
+        "what": "set the image file size (0x01a99fb4, called only by fat_manager): 384 -> 256 MiB"
+      },
+      {
+        "addr": "0x019987c0",
+        "expect": "21e1a03f41e1f200",
+        "bytes": "21e144ac41e10000",
+        "what": "album side A created with 15876000 -> 44100 frames (6 min -> 1 s, stereo)"
+      },
+      {
+        "addr": "0x019987e6",
+        "expect": "21e1a03f41e1f200",
+        "bytes": "21e144ac41e10000",
+        "what": "album side B: 15876000 -> 44100 frames"
+      },
+      {
+        "addr": "0x01996cf2",
+        "expect": "21e1a03f41e1f200",
+        "bytes": "21e144ac41e10000",
+        "what": "album import from disk mode: at most 15876000 -> 44100 frames (longer: TE deletes it)"
+      }
+    ]
+  },
+  "claims": [
+    {
+      "input": "rec_press",
+      "shift": "any",
+      "screen": "album"
+    },
+    {
+      "input": "play_press",
+      "shift": "any",
+      "screen": "album"
+    }
+  ],
+  "controls": [
+    "album screen: REC and PLAY do nothing; a note says the album is off"
+  ],
+  "tests": [],
+  "depends": [],
+  "conflicts": [],
+  "evidence": [
+    {
+      "firmware": "R246",
+      "date": "2026-10-18",
+      "what": "device (0.2): 'Creating FAT image' on the first boot ran fine; user/tape_c.raw 384 -> 256 MiB (disk panel); free 75.3 -> 82.5 MB right after (YAFFS reclaims the deleted blocks lazily)"
+    }
+  ]
+}

@@ -8,7 +8,7 @@
  * 4 0..32767 (engines use 0..EH_PAGE1_MAX in all four).
  *
  * Engines register from their "init" (idempotent table writes; init runs once before the first
- * hook, on whichever thread gets there first). Tags: 4 TRIO, 5 WHEEL, 6 WARP. 7 is never used (stock
+ * hook, on whichever thread gets there first). Tags: 2 MONO 3 (mono), 3 STATION 1 (m1), 4 TRIO, 5 WHEEL, 6 WARP. 7 is never used (stock
  * slot-5 values 0x7d00 / 0x7fff carry tag 7). */
 #ifndef EH_HOST_H
 #define EH_HOST_H

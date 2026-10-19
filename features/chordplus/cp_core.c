@@ -23,9 +23,13 @@ static const uint8_t scales[CP_SCALES][7] = {
 /* pitch class -> white-key degree (C D E F G A B = 0..6), -1 for black keys */
 static const int8_t degree_of[12] = { 0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6 };
 static const uint8_t black_mod[12] = { 0, CP_FLIP, 0, CP_SEVEN, 0, 0, CP_SUS4, 0, CP_NINE, 0, CP_INV1, 0 };
+static const uint16_t mod_at[10] = {            /* F# G# A# C# D#, lower then upper octave */
+    CP_SUS4, CP_NINE, CP_INV1, CP_FLIP, CP_SEVEN, CP_VOPEN, CP_VWIDE, CP_INV2, CP_POWER, CP_SUS2,
+};
 
 int cp_is_black(int n) { return n >= 0 && degree_of[n % 12] < 0; }
 int cp_black_mod(int n) { return n >= 0 ? black_mod[n % 12] : 0; }
+int cp_black_mod_at(int place) { return place >= 0 && place < 10 ? mod_at[place] : -1; }
 
 /* semitones from the degree-d root to the chord tone k scale steps above it */
 static int interval(const uint8_t *sc, int d, int k)
@@ -39,8 +43,16 @@ static int intervals(const cp_settings *s, int d, int mods, int *iv)
     const uint8_t *sc = scales[s->scale < CP_SCALES ? s->scale : 0];
     int third = interval(sc, d, 2), c = 0;
 
+    if (mods & CP_POWER) {                      /* root, fifth, octave */
+        iv[c++] = 0;
+        iv[c++] = 7;
+        iv[c++] = 12;
+        return c;
+    }
     if (mods & CP_FLIP)
         third = third == 4 ? 3 : third == 3 ? 4 : third;
+    if (mods & CP_SUS2)
+        third = interval(sc, d, 1);
     if (mods & CP_SUS4)
         third = 5;
     iv[c++] = 0;
@@ -99,9 +111,17 @@ static int root_of(const cp_settings *s, int n, int *d)
     return 12 * (n / 12) + (s->key % 12) + sc[*d];
 }
 
+int cp_root_pc(const cp_settings *s, int n)
+{
+    int d;
+
+    return n < 0 || n > 127 || cp_is_black(n) ? -1 : root_of(s, n, &d) % 12;
+}
+
 int cp_chord(const cp_settings *s, int n, int mods, int prev, uint8_t *out)
 {
     int iv[CP_MAX_NOTES], v[CP_MAX_NOTES], c, i, d, root, out_c = 0;
+    int voicing = mods & CP_VOPEN ? CP_OPEN : mods & CP_VWIDE ? CP_VOICINGS : s->voicing;  /* WIDE */
 
     if (n < 0 || n > 127 || cp_is_black(n))
         return 0;
@@ -110,7 +130,7 @@ int cp_chord(const cp_settings *s, int n, int mods, int prev, uint8_t *out)
     for (i = 0; i < c; i++)
         v[i] = root + iv[i];
 
-    if (s->voicing == CP_LEAD && prev > 0) {
+    if (voicing == CP_LEAD && prev > 0) {
         /* the inversion / octave whose average is nearest the previous chord's */
         int best[CP_MAX_NOTES], bd = 1 << 30, inv, o, k;
 
@@ -132,11 +152,15 @@ int cp_chord(const cp_settings *s, int n, int mods, int prev, uint8_t *out)
         for (i = 0; i < c; i++)
             v[i] = best[i];
     } else {
-        invert(v, c, ((mods & CP_INV1) ? 1 : 0) + ((mods & CP_INV2) ? 1 : 0));
-        if (s->voicing == CP_OPEN && c >= 3) {
+        invert(v, c, ((mods & CP_INV1) ? 1 : 0) + ((mods & CP_INV2) ? 2 : 0));
+        if (voicing == CP_OPEN && c >= 3) {
             v[c - 2] -= 12;                     /* drop 2 */
             sort(v, c);
-        } else if (s->voicing == CP_BASS && c < CP_MAX_NOTES) {
+        } else if (voicing == CP_VOICINGS && c >= 3) {
+            v[0] -= 12;                         /* WIDE: spread over three octaves */
+            v[1] += 12;
+            sort(v, c);
+        } else if (voicing == CP_BASS && c < CP_MAX_NOTES) {
             v[c++] = root - 12;
             sort(v, c);
         }
@@ -165,6 +189,11 @@ void cp_name(const cp_settings *s, int n, int mods, char *buf)
     if (n < 0 || n > 127 || cp_is_black(n))
         return;
     root = root_of(s, n, &d);
+    if (mods & CP_POWER) {
+        b = put(b, cp_key_names[root % 12]);
+        put(b, "5");
+        return;
+    }
     intervals(s, d, mods & ~(CP_SEVEN | CP_NINE), iv);
     third = iv[1];
     fifth = iv[2];
@@ -173,6 +202,8 @@ void cp_name(const cp_settings *s, int n, int mods, char *buf)
     b = put(b, cp_key_names[root % 12]);
     if (third == 5)
         b = put(b, (mods & CP_SEVEN) ? (mods & CP_NINE ? "9SUS4" : "7SUS4") : (mods & CP_NINE) ? "SUS4ADD9" : "SUS4");
+    else if (third == 2 || (third == 1 && (mods & CP_SUS2)))
+        b = put(b, (mods & CP_SEVEN) ? "7SUS2" : "SUS2");
     else if (minor && fifth == 6)
         b = put(b, (mods & CP_SEVEN) ? (seventh == 9 ? "DIM7" : "MIN7B5") : "DIM");
     else if (!minor && fifth == 8)

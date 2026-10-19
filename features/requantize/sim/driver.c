@@ -19,7 +19,7 @@ extern void hook_key(int key, int down);
 extern void hook_knob(int knob, int16_t *diff);
 extern void hook_frame(uint16_t *buf);
 extern char FB[];                               /* 2 panel buffers, 320 lines x 512 bytes each */
-extern volatile int rq_state, rq_nout, rq_take_focus, rq_nnotes, rq_cur;
+extern volatile int rq_state, rq_nout, rq_page, rq_nnotes, rq_cur, rq_undo_n, rq_redo_n;
 extern volatile uint32_t rq_rec_start, rq_rec_end;
 
 struct note_log { int on, note; uint32_t pos; int state, audible; };
@@ -137,7 +137,12 @@ int main(void)
     *TE_TAPE_TRACK = 0;
     *TE_TAPE_POS = 100000 << 6;
 
-    /* 0: shift + blue press starts a take */
+    /* 0: in drum playmode shift + blue press is TE's (no take); in synth playmode it starts one */
+    *TE_PLAYMODE = 1;
+    key(59, 1);
+    CHECK(0, rq_state == 0 && inputs == 2);
+    *TE_PLAYMODE = 0;
+    inputs = 0;
     key(59, 1);
     CHECK(0, rq_state == 1 && inputs == 0);
 
@@ -158,10 +163,9 @@ int main(void)
     CHECK(1, nplayed == 6 && near(rq_rec_start, o_start, 64) && near(rq_rec_end, o_end, 64));
     hook_frame((uint16_t *)FB);                 /* screenshot: TAKE indicator */
 
-    /* 2: shift + blue press -> requantize screen (roll, knobs on the notes), default target = the
-     * take's own track */
+    /* 2: shift + blue press -> SYNTH ROLL (page 1 NOTE), default target = the take's own track */
     key(59, 1);
-    CHECK(2, rq_state == 2 && rq_take_focus == 0 && rq_nnotes == 3);
+    CHECK(2, rq_state == 2 && rq_page == 0 && rq_nnotes == 3);
 
     /* 3/4: preview: tape plays (not recording), original muted, three notes audible (another
      * track selected meanwhile), stops by itself, mute + selection restored, no clip added */
@@ -178,9 +182,11 @@ int main(void)
     /* 5: commit (replace): lift removes the original clip, a record pass makes one new clip on
      * track 1 from the pre-roll to the original end, the tape stops by itself */
     nplayed = 0;
-    key(60, 0);                                 /* green: knobs to the take settings */
-    i = rq_take_focus;
-    key(62, 0);
+    key(60, 0);
+    key(60, 0);
+    key(60, 0);                                 /* green x3: page 4 TAKE */
+    i = rq_page == 3;
+    key(62, 0);                                 /* orange: commit */
     ticks(2000);
     CHECK(5, i == 1 && rq_state == 2 && *TE_TAPE_STATE == 0 && lifts == 1 && !clips[0].alive && nclips == 2);
     CHECK(6, clips[1].alive && clips[1].tag == 'Q' && clips[1].track == 0
@@ -189,7 +195,8 @@ int main(void)
     for (i = live = 0; i < nclips; i++)
         live += clips[i].alive && clips[i].track == 0 && clips[i].start < o_end && clips[i].end > o_start;
     CHECK(7, live == 1 && TE_TAPE_MUTE[0] == 0);
-    /* 8: the three notes were played while recording, note-ons on the 1/16 grid (+-1 block) */
+    /* 8: the three notes were played while recording, note-ons on the 1/16 grid (+-1 block), the
+     * default mode CLEAN: note-offs on it too */
     ok = 1;
     for (i = ons = 0; i < nplayed; i++)
         if (played[i].on) {
@@ -204,55 +211,116 @@ int main(void)
     /* 9: commit to another track: no lift, track 2 selected, original muted, new clip there */
     {
         int16_t fwd = 1024;
-        hook_knob(2, &fwd);
+        hook_knob(0, &fwd);                     /* page 4: blue = target track */
     }
     key(62, 0);
     ticks(2000);
     CHECK(9, rq_state == 2 && lifts == 1 && *TE_TAPE_TRACK == 1 && TE_TAPE_MUTE[0] == 1
              && nclips == 3 && clips[2].track == 1 && near(clips[2].start, o_start - PREROLL, 128));
 
-    /* 11: green press: knobs back to the take's three notes, cursor on the first */
+    /* 11: green press: page 1 again (wraps), the take's three notes, cursor on the first */
     key(60, 0);
-    CHECK(11, rq_take_focus == 0 && rq_nnotes == 3 && rq_cur == 0 && rq_state == 2);
+    CHECK(11, rq_page == 0 && rq_nnotes == 3 && rq_cur == 0 && rq_state == 2);
 
-    /* 12: blue turn -> second note (64), shift + white press deletes it: 2 notes left to play */
+    /* 12: (NOTE ROLL's navigation) page 2 TIME, blue turn = NOTE: the cursor to the second note
+     * (64); blue press = the note under the cursor off (deleted): 2 notes left to play */
+    key(60, 0);
     knob(0, 1, 0);
     i = rq_cur;
-    key(61, 1);
-    CHECK(12, i == 1 && rq_nout == 4 && rq_state == 2);
+    key(59, 0);
+    CHECK(12, rq_page == 1 && i == 1 && rq_nout == 4 && rq_state == 2);
 
-    /* 13: back to the first note, shift + white turn = +12 (72), green turn = +5 ms (FIXED);
-     * preview plays 72 five ms after its grid point and 67 (quantized), not 64 */
+    /* 13: back to the first note; page 1 NOTE: green turn = PITCH, 12 up (72, the cursor along);
+     * page 2 TIME: white turn = NUDGE +5 ms (FIXED); preview plays 72 five ms after its grid point
+     * and 67 (quantized), not 64 */
     knob(0, -1, 0);
-    knob(2, 1, 1);
-    knob(1, 1, 0);
+    i = rq_cur;
+    key(60, 0);
+    key(60, 0);
+    key(60, 0);                                 /* page 2 -> 3 -> 4 -> 1 */
+    for (ons = 0; ons < 12; ons++)
+        knob(1, 1, 0);
+    key(60, 0);                                 /* page 2 TIME */
+    knob(2, 1, 0);
+    CHECK(13, i == 0 && rq_cur == 0);
+    i = rq_page;
     nplayed = 0;
     key(61, 0);
-    CHECK(13, rq_state == 3);
+    CHECK(13, rq_state == 3 && i == 1);
     ticks(1500);
-    ok = rq_state == 2 && rq_take_focus == 0;
+    ok = rq_state == 2 && rq_page == 1;
     for (i = ons = 0; i < nplayed; i++)
         if (played[i].on) {
             uint32_t at = played[i].pos - (played[i].note == 72 ? 220 : 0);
             uint32_t k = (at + 2756) * 2 / 11025;
             int32_t d = (int32_t)at - (int32_t)((uint64_t)k * 11025 / 2);
 
-            /* 72 FIXED: exactly; 67 AUTO, now alone in the pass: SNAP/QUEUE keep a note inside
-             * the 25 ms late window where it was played */
+            /* 72 FIXED: exactly; 67 AUTO: CLEAN, on its grid point */
             ok &= (played[i].note == 72 ? d >= -64 && d <= 64
-                   : played[i].note == 67 && d >= -64 && d <= 1102 + 64)
+                   : played[i].note == 67 && d >= -64 && d <= 64)
                   && played[i].state == 2 && played[i].audible;
             ons++;
         }
     CHECK(14, ok && ons == 2);
-    hook_frame((uint16_t *)(FB + 320 * 512));   /* screenshot: piano roll with the edits */
 
-    /* 15: green press: knobs to the take settings; shift + orange press there (every note back to
-     * AUTO, see test_rq_roll.c) starts no commit and keeps the deleted note out */
+    /* 15: green press: page 3 QUANT; orange press there (every note back to AUTO, see
+     * test_rq_roll.c) starts no commit and keeps the deleted note out; green turn = mode: CLEAN
+     * is the default, SNAP / QUEUE / STRICT follow */
     key(60, 0);
-    i = rq_take_focus;
-    key(62, 1);
-    CHECK(15, i == 1 && rq_take_focus == 1 && rq_state == 2 && rq_nout == 4);
+    i = rq_page;
+    key(62, 0);
+    CHECK(15, i == 2 && rq_page == 2 && rq_state == 2 && rq_nout == 4);
+    knob(1, 3, 0);
+    CHECK(15, rq_nout == 4 && rq_state == 2);   /* STRICT */
+    knob(1, -3, 0);
+    hook_frame((uint16_t *)(FB + 2 * 320 * 512));   /* screenshot: QUANT page */
+
+    /* 16: a note added: page 1, blue turn = STEP to an empty place, shift + blue turn = its pitch
+     * row; blue press = a new note there (a grid step, FIXED: 2 more events); again: off */
+    key(60, 0);
+    key(60, 0);                                 /* page 3 -> 4 -> 1 */
+    for (ons = 0; ons < 3; ons++)
+        knob(0, 1, 0);                          /* three 1/16 steps on */
+    knob(0, 1, 1);
+    knob(0, 1, 1);                              /* two semitones up: an empty row */
+    i = rq_cur;
+    key(59, 0);
+    CHECK(16, rq_page == 0 && i < 0 && rq_nnotes == 4 && rq_cur == 3 && rq_nout == 6 && rq_state == 2);
+    i = rq_cur;
+    key(59, 0);                                 /* again: a note added here goes for good */
+    CHECK(16, rq_nnotes == 3 && rq_cur < 0 && rq_nout == 4);
+    key(59, 0);                                 /* and comes again */
+    knob(0, 1, 0);
+    knob(0, -1, 0);
+    CHECK(16, rq_nnotes == 4 && rq_cur == i && rq_nout == 6);
+    hook_frame((uint16_t *)(FB + 320 * 512));   /* screenshot: the piano roll, the cursor */
+
+    /* 17: undo / redo (shift + BACK / FORWARD): a note added (a press: a step), VEL turned 3 times (one
+     * step); undo x 2: as before, redo: the note back; a new edit drops the redo; selecting is no
+     * step */
+    {
+        int n0 = rq_nnotes, o0 = rq_nout, u0 = rq_undo_n;
+
+        knob(0, 1, 0);                          /* the next step: empty */
+        key(59, 0);                             /* a note */
+        knob(2, 1, 0);
+        knob(2, 1, 0);
+        knob(2, 1, 0);                          /* VEL: one step */
+        key(61, 1);                             /* select it: no step */
+        key(61, 1);
+        CHECK(17, rq_nnotes == n0 + 1 && rq_undo_n == u0 + 2 && rq_redo_n == 0);
+        key(TE_KEY_BACK, 1);
+        key(TE_KEY_BACK, 1);
+        CHECK(17, rq_nnotes == n0 && rq_nout == o0 && rq_undo_n == u0 && rq_redo_n == 2);
+        key(TE_KEY_FORWARD, 1);
+        CHECK(17, rq_nnotes == n0 + 1 && rq_nout == o0 + 2 && rq_redo_n == 1);
+        key(59, 0);                             /* off again (added: gone): a new step, no redo */
+        CHECK(17, rq_nnotes == n0 && rq_redo_n == 0);
+        key(TE_KEY_BACK, 1);
+        CHECK(17, rq_nnotes == n0 + 1 && rq_state == 2);
+        key(TE_KEY_BACK, 1);
+        CHECK(17, rq_nnotes == n0);
+    }
 
     /* 10: shift + blue press leaves the panel; shift + stop is TE's */
     key(59, 1);

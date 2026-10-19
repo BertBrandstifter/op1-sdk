@@ -10,8 +10,8 @@
 #include <stdint.h>
 #include "dr_core.h"
 
-#define DR_STORE_VERSION    1
-#define DR_ROW_SETTINGS     DR_PATTERNS         /* rows 0..3 patterns A-D, row 4 settings */
+#define DR_STORE_VERSION    2              /* 2: 14 finger patterns + owned mask (1: v0.9, A-D) */
+#define DR_ROW_SETTINGS     DR_PATTERNS         /* rows 0..13 patterns 1-14, row 14 settings */
 #define DR_ROWS             (DR_PATTERNS + 1)
 #define DR_HDR              4
 
@@ -20,10 +20,11 @@ typedef struct dr_filt {
 } dr_filt;
 
 typedef struct dr_settings {
-    uint8_t cur;                                /* pattern 0..3 */
+    uint8_t cur;                                /* pattern 0..13 */
     uint8_t swing;                              /* 0..100 */
-    uint8_t zoom;                               /* 0..2 */
+    uint8_t zoom;                               /* 0..4: 1 2 4 3 3.5 bars */
     uint8_t pad;
+    uint8_t owned[2];                           /* bit p: pattern p is DRUM ROLL's (else TE's) */
     dr_filt filt[DR_KEYS];
 } dr_settings;
 

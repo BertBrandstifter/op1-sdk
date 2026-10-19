@@ -113,6 +113,58 @@ int main(void)
     CHECK(n == 3 && out[0].pos == 3000 && out[0].ev.key == 50 && out[1].pos == 16000
           && out[2].pos == 16000 + QZ_MIN_LEN);
 
+    /* CLEAN: starts to the nearest grid point (late or early), lengths whole steps (rounded, >= 1);
+     * a chord stays a chord; a note-off without its note-on stays as played */
+    ev(0, 3000, QZ_OFF, 50);
+    ev(1, 10000, QZ_ON, 60);                    /* 2000 after 8000: -> 8000 (nearest) */
+    ev(2, 21000, QZ_OFF, 60);                   /* held 11000 = 1.4 steps -> 1 step: 16000 */
+    ev(3, 13000, QZ_ON, 64);                    /* 13000 -> 16000 */
+    ev(4, 14000, QZ_OFF, 64);                   /* held 1000 -> at least 1 step: 24000 */
+    ev(5, 23000, QZ_ON, 67);                    /* chord with 72 on 24000 */
+    ev(6, 25000, QZ_ON, 72);
+    ev(7, 37500, QZ_OFF, 67);                   /* held 14500 = 1.8 steps -> 2: 40000 */
+    ev(8, 49000, QZ_OFF, 72);                   /* held 24000 = 3 steps: 48000 */
+    n = rq_quantize(in, 9, out, 64, &st, STEP, RQ_CLEAN, 1000, 500);
+    {
+        static const struct { uint32_t pos; uint8_t kind, key; } want[] = {
+            { 3000, QZ_OFF, 50 }, { 8000, QZ_ON, 60 }, { 16000, QZ_OFF, 60 }, { 16000, QZ_ON, 64 },
+            { 24000, QZ_OFF, 64 }, { 24000, QZ_ON, 67 }, { 24000, QZ_ON, 72 }, { 40000, QZ_OFF, 67 },
+            { 48000, QZ_OFF, 72 },
+        };
+        ok = n == 9;
+        for (i = 0; ok && i < n; i++)
+            ok &= out[i].pos == want[i].pos && out[i].ev.kind == want[i].kind && out[i].ev.key == want[i].key;
+        CHECK(ok);
+    }
+    /* CLEAN, one key: a long note is cut where the key starts again; twice on one grid point: one
+     * note; triplet grid: whole triplet steps */
+    ev(0, 4100, QZ_ON, 60);                     /* -> 8000 */
+    ev(1, 16300, QZ_OFF, 60);                   /* held 12200 = 1.5 steps -> 2: 24000 ... */
+    ev(2, 16400, QZ_ON, 60);                    /* ... but 60 again at 16000: cut there */
+    ev(3, 16800, QZ_OFF, 60);                   /* -> 1 step: 24000 */
+    ev(4, 16900, QZ_ON, 60);                    /* also 16000: dropped with its note-off */
+    ev(5, 17000, QZ_OFF, 60);
+    n = rq_quantize(in, 6, out, 64, &st, STEP, RQ_CLEAN, 1000, 500);
+    CHECK(n == 4 && out[0].pos == 8000 && out[0].ev.kind == QZ_ON && out[1].pos == 16000
+          && out[1].ev.kind == QZ_OFF && out[2].pos == 16000 && out[2].ev.kind == QZ_ON
+          && out[3].pos == 24000 && out[3].ev.kind == QZ_OFF);
+    {
+        uint64_t t = ((uint64_t)8000 << 16) / 3;    /* 2666.67 */
+
+        ev(0, 2700, QZ_ON, 60);
+        ev(1, 8100, QZ_OFF, 60);                /* 5400 = 2.02 steps -> 2: grid point 3 */
+        n = rq_quantize(in, 2, out, 64, &st, t, RQ_CLEAN, 1000, 500);
+        CHECK(n == 2 && out[0].pos == 2666 && out[1].pos == 7999);
+    }
+
+    /* CLEAN: never before the take's start: 8000's nearest is 8000, from 9000 on: 16000 */
+    ev(0, 9500, QZ_ON, 60);
+    ev(1, 13000, QZ_OFF, 60);
+    rq_clean_from = 9000;
+    n = rq_quantize(in, 2, out, 64, &st, STEP, RQ_CLEAN, 1000, 500);
+    rq_clean_from = 0;
+    CHECK(n == 2 && out[0].pos == 16000 && out[1].pos == 24000);
+
     /* output limit respected */
     CHECK(rq_quantize(in, 4, out, 2, &st, STEP, 0, 1000, 500) == 2);
 

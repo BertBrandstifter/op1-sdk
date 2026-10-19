@@ -35,14 +35,15 @@ def asm_bin(src, addr, out, defsyms, entry="_start"):
     return open(out + ".bin", "rb").read(), nm(elf)
 
 
-def c_bin(srcs, addr, out, defsyms, entry="_start"):
+def c_bin(srcs, addr, out, defsyms, entry="_start", cflags=()):
     """compile C/asm test code (bench drivers) + link at addr + raw binary; return (bytes, symbols).
-    defsyms become linker symbols, so C code can declare them extern (e.g. hook entry points)."""
+    defsyms become linker symbols, so C code can declare them extern (e.g. hook entry points);
+    cflags are added after the defaults (e.g. a feature's own "-O2")."""
     objs = []
     for src in srcs:
         obj = out + "_" + os.path.splitext(os.path.basename(src))[0] + ".o"
         subprocess.run([BIN + "gcc", "-mcpu=bf524", "-Os", "-ffreestanding", "-fno-builtin",
-                        "-Wall", "-Wextra", "-I", os.path.join(SDK, "include"), "-c", src,
+                        "-Wall", "-Wextra", "-I", os.path.join(SDK, "include"), *cflags, "-c", src,
                         "-o", obj], check=True)
         objs.append(obj)
     d = [f"-Wl,--defsym={k}={v:#x}" for k, v in defsyms.items()]
@@ -55,9 +56,12 @@ def c_bin(srcs, addr, out, defsyms, entry="_start"):
 
 
 def composed(features, name):
-    """compose features (tools/compose.py) into build/apps/<name>; returns (project dir, project.json)"""
+    """compose features (tools/compose.py) into build/apps/<name>; returns (project dir, project.json).
+    Bench builds define SDK_BENCH: features with large local data (STATION 1's sample set) build
+    their small built-in variant, so the image stays below the bench drivers at 0x01F00000."""
     from compose import compose
     out, cfg, _ = compose(features, name)
+    cfg["cflags"] = cfg.get("cflags", []) + ["-DSDK_BENCH"]
     return out, cfg
 
 

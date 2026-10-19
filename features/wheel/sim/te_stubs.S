@@ -19,6 +19,9 @@ _stub:
         P1.L = LOG_FXSAVE;  P1.H = LOG_FXSAVE;
         JUMP (P1);
 .endif
+.if WHICH == 6                  /* 0x019b2674 TE frame render(buf): nothing to draw */
+        RTS;
+.endif
 .if WHICH == 3                  /* 0x019b6c74 on_key: real entry bytes, the hook replays them */
         LINK 0x0;
         UNLINK;

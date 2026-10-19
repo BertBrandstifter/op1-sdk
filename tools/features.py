@@ -40,7 +40,7 @@ CREATE TABLE controls (feature TEXT, control TEXT);
 CREATE TABLE sources (feature TEXT, path TEXT);
 CREATE TABLE tests (feature TEXT, path TEXT);
 CREATE TABLE deps (feature TEXT, other TEXT, kind TEXT, version TEXT);
-CREATE TABLE claims (feature TEXT, input TEXT, shift TEXT, screen TEXT, modal INTEGER);
+CREATE TABLE claims (feature TEXT, input TEXT, shift TEXT, screen TEXT, modal INTEGER, playmode TEXT);
 CREATE TABLE recipes (name TEXT PRIMARY KEY, boot_text TEXT, file TEXT);
 CREATE TABLE recipe_features (recipe TEXT, feature TEXT, position INTEGER);
 """
@@ -83,8 +83,9 @@ def index():
         for o in f.get("conflicts", []):
             db.execute("INSERT INTO deps VALUES (?,?,?,?)", (n, o, "conflicts", None))
         for c in fpkg.claims(f):
-            db.execute("INSERT INTO claims VALUES (?,?,?,?,?)",
-                       (n, c["input"], c["shift"], c["screen"], int(bool(c["modal"]))))
+            db.execute("INSERT INTO claims VALUES (?,?,?,?,?,?)",
+                       (n, c["input"], c["shift"], ",".join(sorted(fpkg.screens(c))), int(bool(c["modal"])),
+                        c["playmode"]))
     for path in sorted(glob.glob(os.path.join(SDK, "recipes", "*.json"))):
         r = json.load(open(path))
         db.execute("INSERT INTO recipes VALUES (?,?,?)", (r["name"], r.get("boot_text"), os.path.relpath(path, SDK)))

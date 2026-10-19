@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "name": "meminfo",
+  "title": "SDRAM usage panel (debug)",
+  "version": "0.1.0",
+  "status": "experimental",
+  "summary": "Debug, read-only: shift + speech cycles a full-screen panel: SDRAM size (memory controller), TE's heap (used, peak, free, largest free block), and a map of which 64 KB chunks of SDRAM change over time (scan starts at the first opening, only reads memory the CPU's data CPLBs cover); page 2 lists the data CPLBs. Nothing outside its own variables is written.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "sdk": 1,
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "prefix": "mi_",
+  "sources": [
+    "meminfo.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "mi_key",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "mi_frame",
+      "order": "last"
+    },
+    {
+      "point": "main_tick",
+      "fn": "mi_main"
+    }
+  ],
+  "hooks": {},
+  "claims": [
+    {
+      "input": "speech_press",
+      "shift": "yes",
+      "screen": "any"
+    }
+  ],
+  "controls": [
+    "shift + speech: off -> map -> CPLBs -> off (the first opening starts the scan)"
+  ],
+  "tests": [],
+  "depends": [],
+  "conflicts": [
+    "diskinfo"
+  ],
+  "evidence": [],
+  "docs": "README.md"
+}

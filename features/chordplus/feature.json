@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "chordplus",
   "title": "CHORD+ chord keyboard",
-  "version": "0.3",
+  "version": "0.5",
   "status": "device-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
@@ -64,8 +64,9 @@
   "hooks": {},
   "controls": [
     "shift + insert: CHORD+ on (panel opens) / panel again / off (while the panel is open)",
-    "panel: blue KEY, green SCALE, white VOICING, orange STRUM",
-    "synth keyboard while on: white keys = chords, held black keys = modifiers (no sound)"
+    "panel (5 s after the last change): blue KEY, green SCALE, white VOICING, orange STRUM",
+    "synth keyboard while on: white keys = chords, held black keys = modifiers (no sound): lower octave C# min/maj, D# 7th, F# sus4, G# 9th, A# 1st inversion; upper octave C# power, D# sus2, F# OPEN, G# WIDE voicing, A# 2nd inversion (both A#: 3rd)",
+    "insert (plain) while the panel shows: pin it (stays, no timeout) / unpin (closes); panel closed: insert is TE's"
   ],
   "tests": [
     "test_cp_core.c",
@@ -102,9 +103,15 @@
       "shift": "any",
       "screen": "any",
       "modal": true
+    },
+    {
+      "input": "insert_press",
+      "shift": "no",
+      "screen": "any",
+      "modal": true
     }
   ],
-  "status_note": "v0.3 device-verified (user: 'chord+ is nice'); v0.3 bigger panel, v0.2 shift + insert",
+  "status_note": "0.5: insert pins the panel; 0.4: upper-octave black keys (power, sus2, OPEN / WIDE voicing, inversions), panel 5 s, slash chord names; v0.3 device-verified (user: 'chord+ is nice'); v0.3 bigger panel, v0.2 shift + insert",
   "evidence": [
     {
       "firmware": "R246",

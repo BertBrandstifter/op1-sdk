@@ -1,6 +1,8 @@
 # WHEEL synth engine — spec
 
-Status: **v0.7** (2026-10-13): cleaner output. The user heard crackle when notes overlapped; measured:
+Status: **v0.9** (2026-10-19): page knobs as STATION 1 (name + bar), the sound's name over
+the organ for 1 s, keys lit as STATION 1 (a held key its own note). v0.8 (2026-10-18): new screen after "wheel · overview" (as MONO 3's refresh; see
+**Screen**). v0.7 (2026-10-13): cleaner output. The user heard crackle when notes overlapped; measured:
 every drive preset hard-clipped (up to 40 % of the samples) and played 2-3x louder than the clean
 ones, overloading TE's voice mix in chords, and the percussion attack reached full scale. Now: one
 drawbar peaks at 18000 (was 24576), percussion 14400 / 7200, a soft knee instead of the hard clip
@@ -77,13 +79,40 @@ and sequencers apply as for any stock engine (use a full-sustain envelope for or
   TRIO, SOUL JAZZ, BLUES BAR, GOSPEL, CATHEDRAL, BALLAD, FLUTE, SOFT PAD, ROCK, OVERDRIVE, SHRILL,
   REED, CLARINET, THEATRE, SPARKLE, ORGAN BASS, SMOOTH, BRIGHT, HIGH, SKA, GRIT, DREAMY, TOY,
   FULL ON), one per knob event, wrapping. Loading writes all 8 values (saved like a knob edit);
-  envelope and FX stay as they are. The header shows the entry's name (`*` once edited). No TE
+  envelope and FX stay as they are. The entry's name shows over the organ for 1 s (`P02 SOUL
+  JAZZ`, `*` once edited; see **Screen**). No TE
   preset rows: TE's factory list is capped at 176. LOFI got the same (its 14 factory presets).
 - No on/off gesture: shift + white push is LOFI's (non-modal claim) and claims cannot be scoped to
   an engine. Turn WHEEL off by picking another engine or preset.
 - On a WHEEL sound **any knob push** cycles page 1 → 2 → 3; the knobs edit WHEEL's values (saved in the
-  preset), shift + knob does nothing. The engine screen shows WHEEL's page (drawbars, settings,
-  knobs) above y 140; engine_plus' knob row (if any of its knobs is flipped) stays visible below.
+  preset): REG, PERC, ROTARY and BASS / BODY / TOP one value per detent (more when turned fast),
+  DRIVE and CLICK over ~100 detents; each bar shows the value's step (ROTARY: OFF empty, SLOW half,
+  FAST full). Shift + knob does nothing. The engine screen shows WHEEL's page (see **Screen**) above
+  y 140; engine_plus' knob row (if any of its knobs is flipped) stays visible below.
+
+## Screen
+
+After "wheel · overview" (1280 × 640 = 4 × the OP-1's screen), as MONO 3: no header line, the
+organ smaller with room around it, the page's four knobs below it. The current page's controls are
+in their knob colours (blue, green, white, orange), the rest grey / white.
+
+- **Air** above the cabinet: three dashed zigzags rising at the horn's speed (eased like the rotor:
+  SLOW → FAST speeds up, OFF stops and dims them).
+- **Cabinet**: its grille = the nine drawbars in three groups, **BASS** (16' 5⅓'), **BODY** (8'
+  4'), **TOP** (2⅔' 2' 1⅗' 1⅓' 1'), each line pulled out by the bar's level (registration +
+  offsets; the 1' bar is 0 with percussion on). Page 1: blue (REG), page 2: each group in its
+  knob's colour.
+- **Console**: the pill = DRIVE; the strip = the registration's digits (`88 80 00000`, the groups
+  split as on the grille) and the page (P1-P3); the buttons = PERC (OFF / 2ND / 3RD; lit full =
+  normal, a dot = soft, a ring = slow) and ROTARY (OFF / SLW / FST); the keyboard C3-C5 lights the
+  held keys as STATION 1 (a held key its own note, the octave from its voice, rounded, so TE's
+  glide / LFO / bend at the note start do not move it; folded into the two octaves; notes without
+  a key, sequencer / MIDI / CHORD+'s extra notes, for ~145 ms).
+- The sound's name over the organ for 1 s when a sound is picked (shift + blue) or the screen opens:
+  STATION 1's LCD (same place, scale-2 text, green): `P02 SOUL JAZZ`, `*` when edited, or `P--` with
+  `SHIFT+BLUE: SOUNDS`. Its clock is the Seq tick (`wh_tick`, 64 samples).
+- Below, as STATION 1: the page's four knob names (scale 2, knob colours) over a bar each, then
+  `PUSH:` the next page. Page 3: the FX knobs (engine host).
 
 ## How
 
@@ -116,14 +145,15 @@ and sequencers apply as for any stock engine (use a full-sustain envelope for or
 2. `sim/run_wheeltest.py`: plain drwave untouched (render, knob, push), note_on, WHEEL pitch from TE's
    buffer (441 Hz), restart, paging hidden from engine_plus/LOFI, page-2 edits keep the marker,
    page-1 clamps at drwave's ranges, shift + knob, other screens, every stored value inside
-   drwave's ranges, rename chained with LOFI's, cycle counts.
+   drwave's ranges, rename chained with LOFI's, cycle counts, screens (`build/demo/wheel_screen.png`:
+   SOUL JAZZ with A4 C5 E5 held, page 1; `wheel_screen_p2.png`: page 2).
 3. Demo: `build/demo/wheel_demo.wav` (jazz chords, rotary slow → fast → slow, rock organ).
 
 ## Device test
 
-1. Engine list → **wheel**: the WHEEL screen (drawbars + JAZZ / 3RD / SLOW). Play: organ with
-   percussion and a slow rotor.
-2. Orange knob to FAST: the rotor spins up over ~1–3 s; back to SLOW spins down.
+1. Engine list → **wheel**: the WHEEL screen (cabinet, console, JAZZ / 3RD / SLOW). Play: organ
+   with percussion and a slow rotor; the played keys light up, the air above rises slowly.
+2. Orange knob to FAST: the rotor spins up over ~1–3 s (the air speeds up); back to SLOW spins down.
 3. Knob push → page 2: BASS/BODY/TOP move the drawbars on screen; CLICK adds the tick.
 4. Preset browser → folder **wheel** → jazz organ, rock organ.
 5. **Power-cycle with a WHEEL sound as the current sound** (TE validates stored sounds at boot).

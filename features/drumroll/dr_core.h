@@ -11,7 +11,7 @@
 
 #define DR_LANES        8
 #define DR_STEPS        64
-#define DR_PATTERNS     4
+#define DR_PATTERNS     14              /* the finger sequencer's patterns */
 #define DR_KEYS         24
 #define DR_RATES        6
 #define DR_RATE_16      3               /* default 1/16 */

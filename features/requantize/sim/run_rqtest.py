@@ -36,10 +36,10 @@ def main():
         DRIVER_AT, os.path.join(OUT, "driver"),
         {"STACK": STACK, "_FB": FB, "_rq_state": syms["_rq_state"], "_rq_nout": syms["_rq_nout"],
          "_rq_rec_start": syms["_rq_rec_start"], "_rq_rec_end": syms["_rq_rec_end"],
-         **{s: syms[s] for s in ("_rq_take_focus", "_rq_nnotes", "_rq_cur")},
+         **{s: syms[s] for s in ("_rq_page", "_rq_nnotes", "_rq_cur", "_rq_undo_n", "_rq_redo_n")},
          **{"_" + k: syms[f"__sdk_hook_{v}"] for k, v in hooks.items()}},
     )
-    segs = [(0x01E00000, code), (DRIVER_AT, driver), (FB, bytes(2 * FB_BYTES))]
+    segs = [(0x01E00000, code), (DRIVER_AT, driver), (FB, bytes(3 * FB_BYTES))]
     for addr, which in STUBS.items():
         stub, _ = asm_bin(
             os.path.join(HERE, "te_stubs.S"), addr, os.path.join(OUT, f"stub{addr:08x}"),
@@ -50,7 +50,11 @@ def main():
         segs.append((addr, stub))
     elf_run = os.path.join(OUT, "rqtest_run.elf")
     r = run_model(elf_run, segs, d["_start"], timeout=180)
-    run_gdb(elf_run, shots=[("requantize_take", FB), ("requantize_roll", FB + FB_BYTES)], timeout=180)
+    vals = run_gdb(elf_run, [f"/x *(unsigned*){d['_fails']:#x}"],
+                   shots=[("requantize_take", FB), ("synthroll_note", FB + FB_BYTES),
+                          ("synthroll_quant", FB + 2 * FB_BYTES)], timeout=180)
+    if r.returncode and vals:
+        print(f"failed check bits: {vals[0]}")
     print("checks (v2, emulated clip tape with overdub + lift + key latency): take/panel/exit, preview, "
           "commit replaces the take (lift, one clip with the original range, no merge, auto-stop), "
           "replay on the 1/16 grid while recording, commit to another track, piano roll (delete, "

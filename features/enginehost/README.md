@@ -11,7 +11,7 @@ engine's page 2). Tag 7 is never used (stock drwave slot-5 values 0x7d00 / 0x7ff
 have slots 6-8 = 0, so they never match. Page 1 stays within drwave's slot ranges (engines use
 0..16383). Everything is in range: no range-check hook, presets load on stock firmware as drwave.
 
-Tags: **4 TRIO**, **5 WHEEL**, **6 WARP**, free: 1-3.
+Tags: **2 MONO 3**, **3 STATION 1**, **4 TRIO**, **5 WHEEL**, **6 WARP**, free: 1.
 
 - `eh_register(tag, render)` from the engine's `init`; render(vi, out, knobs, inc, flags) with
   `EH_FRESH` (first block of a new note) and `EH_BLOCK` (first voice of this audio block: shared
@@ -26,4 +26,4 @@ Tags: **4 TRIO**, **5 WHEEL**, **6 WARP**, free: 1-3.
 
 ## Open it on the OP-1
 
-Library — nothing to open on the device. It hosts WHEEL, WARP and TRIO (they appear in the engine list through it) and is pulled into the `op1plus` image automatically.
+Library — nothing to open on the device. It hosts WHEEL, WARP, TRIO, STATION 1 and MONO 3 (they appear in the engine list through it) and is pulled into the `op1plus` image automatically.

@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "name": "diskinfo",
+  "title": "Flash usage panel (debug)",
+  "version": "0.1.0",
+  "status": "experimental",
+  "summary": "Debug, read-only: shift + speech shows a full-screen panel with the internal flash's free / total space and the biggest folders and files (album sides, tape, samples, factory content) in MB, measured with TE's own YAFFS2 calls. Nothing is written.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "sdk": 1,
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "prefix": "di_",
+  "sources": [
+    "diskinfo.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "di_key",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "di_frame"
+    }
+  ],
+  "hooks": {},
+  "claims": [
+    {
+      "input": "speech_press",
+      "shift": "yes",
+      "screen": "any"
+    }
+  ],
+  "controls": [
+    "shift + speech: show / hide the panel (measures once per opening)"
+  ],
+  "tests": [],
+  "depends": [],
+  "conflicts": [],
+  "evidence": [],
+  "docs": "README.md"
+}

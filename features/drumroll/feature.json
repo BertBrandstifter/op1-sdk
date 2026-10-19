@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "name": "drumroll",
-  "title": "DRUM ROLL step sequencer",
-  "version": "0.9",
+  "title": "DRUM ROLL step editor for the finger sequencer",
+  "version": "2.1",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
@@ -11,7 +11,7 @@
   "prefix": [
     "dr_"
   ],
-  "summary": "Channel-rack drum sequencer for the drum kit in a TE look: 8 lanes, each one drum sample with its own length (1-64 steps) and rate (1/4 .. 1/32, triplets), drawn to scale with bar / beat lines, loop lines and a playhead per lane. Every step has VEL, TONE (-24..+24 semitones), LEN (1/8 step .. 16 steps or FULL), NUDGE, PROB and RATCH; every sample a filter (LP / BP / HP, cutoff, resonance) and a level, also for keys played by hand. Follows the tape position while the tape runs, own clock otherwise, TE's tempo; 4 patterns, swing; patterns, swing and filters are kept in TE's op1.db (table sdk_drumroll) and come back after a restart; page 6 clears a pattern (asks first). Shift + green press on the drum screen opens it.",
+  "summary": "The finger sequencer's step editor: shift + blue press on TE's finger screen ('(shift arrow) BLUE: EDITOR') (sequencer key, drum playmode) opens a channel-rack grid of the selected finger pattern in a TE look. A pattern edited there plays with 8 lanes, each one drum sample with its own length (1-64 steps) and rate (1/4 .. 1/32, triplets), drawn to scale with bar / beat lines, loop lines and a playhead per lane; every step has VEL, TONE, LEN, NUDGE, PROB and RATCH, every sample a filter (LP / BP / HP, cutoff, resonance) and a level. TE's finger keys start and stop the patterns: DRUM ROLL follows TE's step events, TE's compressed view shows a summary, TE's step record still works. The 14 patterns, swing and filters are kept in TE's op1.db (table sdk_drumroll); page 6 PAT sets the pattern length for all lanes (TE's length changes do the same) and clears a pattern (asks first). The black keys on TE's drum finger screen are punch-in effects while held, three banks of 10 (green press picks A / B / C): PO-20-style, arcade, time + mix.",
   "license": "MIT",
   "authors": [
     "unknown"
@@ -21,7 +21,9 @@
     "drumroll.c",
     "dr_core.c",
     "dr_dsp.c",
-    "dr_store.c"
+    "dr_store.c",
+    "dr_fs.c",
+    "dr_punch.c"
   ],
   "libs": [
     "gfx"
@@ -69,28 +71,57 @@
         "what": "drum sampler voice note_on"
       }
     ],
-    "entry_hooks": [
+    "call_sites": [
       {
-        "func": "0x0193f86c",
-        "expect": "00e83000",
-        "c": "dr_te_drum_pick",
-        "filter": true,
-        "what": "drum engine pick: 'drum roll' row -> DRUM ROLL on the sound (TE skipped), dbox -> off"
+        "site": "0x019ede2a",
+        "expect": "0x019eccf0",
+        "to": "_dr_fs_get_note",
+        "what": "finger player (drum) reads a step's note: step events, DRUM ROLL's patterns -> -1"
+      },
+      {
+        "site": "0x019ec534",
+        "expect": "0x019ecc5c",
+        "to": "_dr_fs_set_note",
+        "what": "finger screen: delete the cursor step"
+      },
+      {
+        "site": "0x019ec802",
+        "expect": "0x019ecc5c",
+        "to": "_dr_fs_set_note",
+        "what": "finger screen: step record, hand 0"
+      },
+      {
+        "site": "0x019ec840",
+        "expect": "0x019ecc5c",
+        "to": "_dr_fs_set_note",
+        "what": "finger screen: step record, hand 1"
+      },
+      {
+        "site": "0x019ecade",
+        "expect": "0x019ecc5c",
+        "to": "_dr_fs_set_note",
+        "what": "finger screen: clear the pattern"
       }
     ]
   },
   "controls": [
-    "drum engine list: 'drum roll' (next to dbox) turns DRUM ROLL on for the drum sound (its kit stays; kits picked afterwards are its sounds, dbox turns it off); DRUM ROLL is the sound's engine page (T1), T2-T4 stay TE's; shift + green press closes / opens it",
-    "tape screen (drum playmode): shift + white press = play / stop DRUM ROLL (to record it; it follows the tape position while the tape runs); not while the requantize screen is open",
+    "finger screen (sequencer key, drum playmode, finger sequencer picked; note '(shift arrow) BLUE: EDITOR' top left): shift + blue press opens DRUM ROLL on the selected finger pattern and closes it (shift + green press closes too)",
     "knob turn = the value under that knob, green press = next page, shift + blue turn = browse lanes; blue press = cursor step on / off (any page); white press = hear the cursor step",
-    "P1 STEP: step / ON / VEL / PROB; P2 NOTE: step / TONE / LEN / RATCH; P3 TIME: step / NUDGE / SWING / ZOOM; P4 LANE: SAMPLE / LENGTH / RATE / MUTE; P5 SOUND: FILTER / CUTOFF / RESO / LEVEL; P6 CLEAR: blue / white / orange press asks 'CLEAR PATTERN X?' (any knob turn: left NO / right YES, any press: ok)",
-    "shift + green turn: pattern A-D; shift + white press: play / stop; shift + orange press: clear the lane (again: undo); shift + blue press does nothing while open (no requantize take)",
-    "drum keys while open: select their lane (TE still plays them)"
+    "P1 STEP: step / ON / VEL / PROB; P2 NOTE: step / TONE / LEN / RATCH; P3 TIME: step / NUDGE / SWING / ZOOM; P4 LANE: SAMPLE / LENGTH / RATE / MUTE; P5 SOUND: FILTER / CUTOFF / RESO / LEVEL; P6 PAT: blue turn = pattern length (all lanes + TE's); blue / white / orange press asks 'CLEAR PATTERN n?' (any knob turn: left NO / right YES, any press: ok)",
+    "shift + green turn: finger pattern 1-14; shift + orange press: clear the lane (again: undo); shift + white press does nothing while open",
+    "the keyboard stays TE's (pattern keys start the patterns, step record); the view follows TE's selected pattern",
+    "the first edit of a finger pattern makes it DRUM ROLL's (8 lanes, all step parameters); TE keeps a summary of it",
+    "TE's finger screen: changing a pattern's length sets every DRUM ROLL lane of it to that length (in its rate's steps)",
+    "while open: shift + white press = STEP REC on / off: the keyboard plays drums into the cursor step (the first key replaces the step, more add; a drum without a lane gets an empty one), FORWARD / BACK = step on / back",
+    "shift + BACK = undo, shift + FORWARD = redo (16 steps; in the editor and on TE's drum finger screen with it closed; TE's own finger screen edits too)",
+    "TE's drum finger screen (open or closed), the black keys held = punch-in effects of bank A / B / C (green press on the finger screen with the editor closed: next bank): A FILL RETRIG RETRIG-FAST GLITCH RISE LP-SWEEP HP-SWEEP BLINDS SOLO-1 SOLO-1+2; B 8-BIT LASER FALL COIN RND-PITCH OCT-UP OCT-DOWN ECHO REVERSE SHUFFLE; C HALF-TIME DOUBLE-TIME TRIPLET LOOP-BEAT BUILD SOLO-1-4 SOLO-5-8 NO-KICK FADE CUT; shift + black = TE's step record"
   ],
   "tests": [
     "test_dr_core.c",
     "test_dr_dsp.c",
     "test_dr_store.c",
+    "test_dr_fs.c",
+    "test_dr_punch.c",
     "sim/run_drtest.py"
   ],
   "depends": [],
@@ -99,76 +130,116 @@
     {
       "input": "blue_turn",
       "shift": "any",
-      "screen": "drum",
+      "screen": "sequencer",
       "modal": true
     },
     {
       "input": "green_turn",
       "shift": "any",
-      "screen": "drum",
+      "screen": "sequencer",
       "modal": true
     },
     {
       "input": "white_turn",
       "shift": "any",
-      "screen": "drum",
+      "screen": "sequencer",
       "modal": true
     },
     {
       "input": "orange_turn",
       "shift": "any",
-      "screen": "drum",
+      "screen": "sequencer",
       "modal": true
     },
     {
-      "input": "green_push",
+      "input": "blue_push",
       "shift": "yes",
-      "screen": "drum"
+      "screen": "sequencer",
+      "playmode": "drum"
     },
     {
       "input": "blue_push",
       "shift": "any",
-      "screen": "drum",
+      "screen": "sequencer",
       "modal": true
     },
     {
       "input": "green_push",
-      "shift": "no",
-      "screen": "drum",
+      "shift": "any",
+      "screen": "sequencer",
       "modal": true
     },
     {
       "input": "white_push",
       "shift": "any",
-      "screen": "drum",
+      "screen": "sequencer",
       "modal": true
     },
     {
       "input": "orange_push",
       "shift": "any",
-      "screen": "drum",
+      "screen": "sequencer",
       "modal": true
     },
     {
-      "input": "white_push",
+      "input": "keyboard_press",
+      "shift": "no",
+      "screen": "sequencer",
+      "playmode": "drum"
+    },
+    {
+      "input": "keyboard_press",
+      "shift": "any",
+      "screen": "sequencer",
+      "modal": true
+    },
+    {
+      "input": "back_press",
+      "shift": "any",
+      "screen": "sequencer",
+      "modal": true
+    },
+    {
+      "input": "forward_press",
+      "shift": "any",
+      "screen": "sequencer",
+      "modal": true
+    },
+    {
+      "input": "back_press",
       "shift": "yes",
-      "screen": "tape"
+      "screen": "sequencer",
+      "playmode": "drum"
+    },
+    {
+      "input": "forward_press",
+      "shift": "yes",
+      "screen": "sequencer",
+      "playmode": "drum"
+    },
+    {
+      "input": "green_push",
+      "shift": "no",
+      "screen": "sequencer",
+      "playmode": "drum"
     }
   ],
-  "status_note": "v0.9: patterns kept across restarts (op1.db), page 6 CLEAR with yes / no dialog; v0.8: 'drum roll' in the drum engine list, DRUM ROLL only on the engine page (T1); v0.7 tape-screen play / stop; v0.6 back-to-back + ratchet fix; v0.3 device-tested; v0.1 device-tested",
+  "status_note": "v2.1: punch-ins on both held patterns (TE's taken over while held), repeats loop the last step with a hit; v2.0: punch-in banks A / B / C (green press), new arcade / time effects, shift + black always TE's; v1.9: undo / redo (shift + BACK / FORWARD), TE's finger screen edits too; v1.8: punch-ins reordered, FILL FAST / GLITCH FAST / LP FAST / HP FILTER left out; v1.7: STEP REC; v1.6: punch-ins = the PO-20 arcade's 16 (shift + black for 6), window while held; v1.5: zoom 3.5 bars, shift arrow in the texts, punch-in effects on the black keys (drum finger screen); v1.4: zoom 1 / 2 / 3 / 4 bars; v1.3: shift + blue press opens and closes it, no badge while closed; v1.2: playhead always shown (view follows a held pattern key, TE patterns too, view follows playback); v1.1: blue press opens it (note on the finger screen); pattern length for all lanes (page 6 PAT, follows TE's length); v1.0: DRUM ROLL is the finger sequencer's step editor on the finger screen, 14 finger patterns, DRUM ROLL patterns play with 8 lanes following TE's step events; the drum screen gesture, the engine list row and the own play / tape clock are gone; v0.9 op1.db; v0.3 / v0.1 device-tested (stand-alone)",
   "evidence": [
     {
       "firmware": "R246",
       "date": "2026-10-14",
       "what": "device: v0.1 sequencing, screen, filters (image ba877d1c; user: 'love it')"
-    }
-  ],
-  "content_sql": [
+    },
     {
-      "file": "content/op1_factory.db",
-      "sql": [
-        "INSERT INTO drum_types (id, type, default_params) VALUES (64, 'drum roll', '[0,0,2917,974,7167,0,2592,4607]')"
-      ]
+      "firmware": "R246",
+      "date": "2026-10-17",
+      "what": "device: v1.0 finger sequencer editor (image b930a7ae; user: 'nice!')"
+    },
+    {
+      "firmware": "R246",
+      "date": "2026-10-17",
+      "what": "device: v1.1 blue press, editor note, pattern length (image 00055b04; user: 'really love it!')"
     }
   ]
 }

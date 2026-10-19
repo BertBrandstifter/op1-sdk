@@ -9,7 +9,7 @@ static uint16_t *fb;
 
 /* 3x5 glyphs for ASCII 32..90, 3 bits per row, top row in bits 14..12; 0x7fff = no glyph */
 static const uint16_t font[59] = {
-    0x0000, 0x7fff, 0x7fff, 0x2eba, 0x7fff, 0x7fff, 0x7fff, 0x7fff,     /* 35 # (a 3x5 hash reads as H) */
+    0x0000, 0x7fff, 0x7fff, 0x2eba, 0x7fff, 0x7fff, 0x7fff, 0x2400,     /* 35 # (a 3x5 hash reads as H), 39 ' */
     0x7fff, 0x7fff, 0x0aa8, 0x05d0,                                     /* 42 '*' */ 0x7fff, 0x01c0, 0x0002, 0x12a4,
     0x7b6f, 0x2c97, 0x73e7, 0x73cf, 0x5bc9, 0x79cf, 0x79ef, 0x7252,
     0x7bef, 0x7bcf, 0x0410, 0x7fff, 0x7fff, 0x0e38, 0x7fff, 0x7282,     /* 63 '?' */
@@ -130,4 +130,16 @@ int gfx_dec(int x, int y, int32_t v, uint16_t c, int scale)
     if (v < 0)
         *--p = '-';
     return gfx_text(x, y, p, c, scale);
+}
+
+int gfx_shift(int x, int y, uint16_t c, int scale)
+{
+    static const uint8_t rows[5] = { 0x04, 0x0e, 0x1f, 0x0e, 0x0e };
+    int row, col;
+
+    for (row = 0; row < 5; row++)
+        for (col = 0; col < 5; col++)
+            if (rows[row] & (0x10 >> col))
+                gfx_rect(x + col * scale, y + row * scale, scale, scale, c);
+    return x + 6 * scale;
 }

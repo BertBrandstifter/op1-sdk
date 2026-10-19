@@ -28,6 +28,7 @@ KNOBS = ("blue", "green", "white", "orange")
 INPUTS = {f"{k}_press" for k in KEYS} | {f"{k}_{a}" for k in KNOBS for a in ("turn", "push")}
 SCREENS = ("any", "synth", "drum", "tape", "mixer", "tempo", "sequencer", "album")
 SHIFT = ("no", "yes", "any")
+PLAYMODES = ("any", "synth", "drum")
 
 # never in a package: TE firmware, images, dumps, disassembly, build output
 FORBIDDEN_EXT = (".op1", ".ldr", ".dis", ".bin", ".elf", ".o", ".dfu")
@@ -72,16 +73,25 @@ def claims(f):
         c = dict(c)
         c.setdefault("screen", "any")
         c.setdefault("shift", "no")
+        c.setdefault("playmode", "any")
         c.setdefault("modal", False)
         out.append(c)
     return out
 
 
+def screens(c):
+    """a claim's screens as a set ("screen" is one name or a list)"""
+    s = c.get("screen", "any")
+    return set(s) if isinstance(s, list) else {s}
+
+
 def claim_overlap(a, b):
-    """same input, compatible shift state, overlapping screen"""
+    """same input, compatible shift state, overlapping screen and playmode"""
+    sa, sb = screens(a), screens(b)
     return (a["input"] == b["input"]
             and (a["shift"] == b["shift"] or "any" in (a["shift"], b["shift"]))
-            and (a["screen"] == b["screen"] or "any" in (a["screen"], b["screen"])))
+            and ("any" in sa or "any" in sb or bool(sa & sb))
+            and (a["playmode"] == b["playmode"] or "any" in (a["playmode"], b["playmode"])))
 
 
 def check_claims(order):
@@ -152,8 +162,8 @@ def validate(fdir, compile_check=True, package=None):
         E.append('prefix: symbol prefix like "rq_" (or a list)')
 
     srcs = f.get("sources", [])
-    if not srcs:
-        E.append("sources: at least one .c/.S file")
+    if not srcs and not (f.get("content_files") or f.get("content_sql")):
+        E.append("sources: at least one .c/.S file (or content_files / content_sql for a content-only feature)")
     for s in srcs:
         if not _inside(fdir, s):
             E.append(f"{s}: outside the package")
@@ -187,7 +197,7 @@ def validate(fdir, compile_check=True, package=None):
         if not any(s.get("fn", "").startswith(x) for x in prefixes):
             E.append(f"shared {s['point']}: fn '{s.get('fn')}' lacks the prefix")
     for kind, hs in f.get("hooks", {}).items():
-        if kind not in ("call_sites", "entry_hooks", "pointers"):
+        if kind not in ("call_sites", "entry_hooks", "pointers", "patches"):
             E.append(f"hooks: unknown kind '{kind}'")
             continue
         for h in hs:
@@ -198,10 +208,12 @@ def validate(fdir, compile_check=True, package=None):
     for c in f.get("claims", []):
         if c.get("input") not in INPUTS:
             E.append(f"claims: unknown input '{c.get('input')}' (see docs/feature-package.md)")
-        if c.get("screen", "any") not in SCREENS:
+        if not screens(c) or not screens(c) <= set(SCREENS):
             E.append(f"claims: unknown screen '{c.get('screen')}'")
         if c.get("shift", "no") not in SHIFT:
             E.append(f"claims: shift must be one of {', '.join(SHIFT)}")
+        if c.get("playmode", "any") not in PLAYMODES:
+            E.append(f"claims: playmode must be one of {', '.join(PLAYMODES)}")
     if "claims" not in f:
         E.append("claims: required (empty list if the feature takes no input)")
     for d in dep_entries(f):

@@ -144,8 +144,9 @@ int dr_load_settings(const char *text, int filters, dr_settings *out)
         ((uint8_t *)out)[i] = b[i];
     out->cur = (uint8_t)(out->cur % DR_PATTERNS);
     out->swing = (uint8_t)clampi(out->swing, 0, 100);
-    out->zoom = (uint8_t)clampi(out->zoom, 0, 2);
+    out->zoom = (uint8_t)clampi(out->zoom, 0, 4);
     out->pad = 0;
+    out->owned[1] &= (uint8_t)((1 << (DR_PATTERNS - 8)) - 1);
     for (i = 0; i < DR_KEYS; i++) {
         dr_filt *f = &out->filt[i];
 

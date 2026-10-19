@@ -157,8 +157,8 @@ int rq_edit(rq_note *nt, int n, int cur, int op, int32_t amount, uint64_t step_q
 {
     int i, sel, all = 1, changed = 0;
 
-    if (cur < 0 || cur >= n)
-        return 0;
+    if (cur >= n || (cur < 0 && op == RE_SELECT))
+        return 0;                               /* cur -1 (an empty cursor): the selection only */
     if (op == RE_SELECT) {
         nt[cur].flags ^= RN_SEL;
         return 1;
@@ -198,6 +198,13 @@ int rq_edit(rq_note *nt, int n, int cur, int op, int32_t amount, uint64_t step_q
         case RE_PITCH:
             t->key = (uint8_t)(t->key + amount < 0 ? 0 : t->key + amount > 127 ? 127 : t->key + amount);
             break;
+        case RE_VEL: {
+            int v = (int8_t)t->data[0];
+
+            v = (v < 0 ? 127 : v) + amount;     /* logged -1 = 127 */
+            t->data[0] = (uint8_t)(v < 1 ? 1 : v > 127 ? 127 : v);
+            break;
+        }
         case RE_DELETE:
             t->flags = all ? t->flags & ~RN_DEL : t->flags | RN_DEL;
             break;
@@ -216,8 +223,14 @@ int rq_edit(rq_note *nt, int n, int cur, int op, int32_t amount, uint64_t step_q
         case RE_MOVE_STEP:
             t->start = step_from(step_q16, a, amount);
             break;
-        case RE_SNAP:
-            t->start = rq_grid_nearest(step_q16, a);
+        case RE_SNAP:                           /* as CLEAN: start and length on the grid */
+            {
+                uint32_t k = rq_grid_floor(step_q16, rq_grid_nearest(step_q16, a)), steps;
+
+                steps = (uint32_t)((((uint64_t)t->len << 16) + step_q16 / 2) / step_q16);
+                t->start = rq_grid_pt(step_q16, k);
+                t->len = rq_grid_pt(step_q16, k + (steps ? steps : 1)) - t->start;
+            }
             break;
         case RE_LEN:
             t->len = add_clamped(t->len, amount, QZ_MIN_LEN);
@@ -229,11 +242,37 @@ int rq_edit(rq_note *nt, int n, int cur, int op, int32_t amount, uint64_t step_q
         default:
             return 0;
         }
-        if (op != RE_PITCH && op != RE_DELETE && op != RE_PLAYED)
+        if (op != RE_PITCH && op != RE_DELETE && op != RE_PLAYED && op != RE_VEL)
             t->flags |= RN_FIXED;               /* timing now the user's */
         changed = 1;
     }
     return changed;
+}
+
+int rq_note_add(rq_note *nt, int n, int max, uint32_t start, uint32_t len, int key, const uint8_t data[6])
+{
+    rq_note *t;
+    int i;
+
+    if (n >= max || key < 0 || key > 127)
+        return n;
+    t = &nt[n];
+    t->played = t->start = start;
+    t->played_len = t->len = len < QZ_MIN_LEN ? QZ_MIN_LEN : len;
+    for (i = 0; i < 6; i++)
+        t->data[i] = data[i];
+    t->key = t->key0 = (uint8_t)key;
+    t->flags = RN_FIXED | RN_ADDED;
+    return n + 1;
+}
+
+int rq_note_remove(rq_note *nt, int n, int i)
+{
+    if (i < 0 || i >= n)
+        return n;
+    for (; i < n - 1; i++)
+        nt[i] = nt[i + 1];
+    return n - 1;
 }
 
 /* ------------------------------------------------------------------ order */

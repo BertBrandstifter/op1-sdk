@@ -136,6 +136,12 @@ enum {                              /* MIDI status bytes the dispatcher routes *
 #define TE_DELETE           ((void (*)(void *p))0x01a5e310)             /* NULL ok */
 #define TE_MALLOC           ((void *(*)(uint32_t size))0x01a9f348)
 #define TE_FREE             ((void (*)(void *p))0x01aa0040)
+/* VisualDSP heaps (heap table 0x018e628c): heap 0 = 0x00000100 + 16 MB (malloc), heap 1 =
+ * 0x03040000 + 15.75 MB: TE's sample memory (SampleBuffer.cpp sample buffers, tar.cpp updates).
+ * heap_malloc returns 0 when the heap has no room (TE's callers assert, the allocator does not).
+ * Thread context (it locks), never the audio thread. Measured with features/meminfo. */
+#define TE_HEAP_MALLOC      ((void *(*)(int heap, uint32_t size))0x01aa0318)
+#define TE_HEAP_SAMPLES     1
 #define TE_MEMCPY           ((void *(*)(void *dst, const void *src, uint32_t n))0x01aa6e10)
 #define TE_MEMMOVE          ((void *(*)(void *dst, const void *src, uint32_t n))0x01aa6e64)
 #define TE_MEMSET           ((void *(*)(void *dst, int c, uint32_t n))0x01a9f3d8)
@@ -146,6 +152,16 @@ enum {                              /* MIDI status bytes the dispatcher routes *
 #define TE_STRING_INIT      ((te_string *(*)(te_string *s, const char *cstr))0x019baac6)   /* ctor */
 #define TE_STRING_ASSIGN    ((te_string *(*)(te_string *s, const char *p, uint32_t n))0x019ba9c0)
 #define TE_STRING_DESTROY   ((void (*)(te_string *s))0x01a17bd8)
+
+/* yaffs2 files (paths "/yaffs2/...", e.g. "/yaffs2/content/op1_factory.db"), as SampleBuffer.cpp
+ * reads a sample (0x01a3492a): open(path, 0, 0x100) = read only, returns a descriptor or -1; read
+ * returns the bytes read (0 at the end, < 0 on an error); close. Thread context (yaffs locks),
+ * never the audio thread: a read can take milliseconds. */
+#define TE_FILE_OPEN        ((int (*)(const char *path, int oflag, int mode))0x01a997f4)
+#define TE_FILE_READ        ((int (*)(int fd, void *buf, uint32_t n))0x01a99c90)
+#define TE_FILE_CLOSE       ((int (*)(int fd))0x01a99908)
+#define TE_FILE_RDONLY      0
+#define TE_FILE_MODE        0x100
 
 /* data cache: SDRAM is cached; DMA (screen, audio) only sees data after a flush */
 #define TE_DCACHE_FLUSH     ((void (*)(void *start, void *end, int invalidate))0x01aa185c)
@@ -224,6 +240,7 @@ enum {                              /* key ids passed to on_key; device-verified
     TE_KEY_REC = 33, TE_KEY_PLAY = 34, TE_KEY_STOP = 35,
     TE_KEY_BACK = 36, TE_KEY_FORWARD = 37, TE_KEY_SHIFT = 38,     /* re-checked on device */
     TE_KEY_MIC = 43, TE_KEY_COM = 44,
+    TE_KEY_ALBUM = 44,              /* the same key: on the device it opens the album (edit mode 6) */
     TE_KEY_BLUE_PUSH = 59, TE_KEY_GREEN_PUSH = 60, TE_KEY_WHITE_PUSH = 61, TE_KEY_ORANGE_PUSH = 62,
     TE_KEY_MAX = 62
     /* 56/57: virtual keys injected by OP_Main. The volume knob sends no key event. */
@@ -255,6 +272,8 @@ enum {                              /* key ids passed to on_key; device-verified
 #define TE_PLAYMODE         ((volatile int32_t *)0x01de4c40)   /* 0 synth, 1 drum, 2 game */
 #define TE_PLAYMODE_TARGET  ((volatile int32_t *)0xff801038)   /* != TE_PLAYMODE while switching */
 #define TE_DRUM_SLOT        ((volatile int32_t *)0xff8016d8)    /* current drum sound 0..7 */
+#define TE_SYNTH_OCTAVE     ((volatile int32_t *)0x01dfe4e0)    /* [8] octave per synth sound (finger
+                                                                 * player adds 12 x it; RE 2026-10-17) */
 #define TE_DRUM_OCTAVE      ((volatile int32_t *)0x01dfe500)    /* [8] octave per drum sound, -4..4;
                                                                  * drum note-on adds 12 * this + extra */
 #define TE_DRUM_SHIFT_NOTE  ((volatile int32_t *)0x018c2180)    /* key idx held with shift, else -1;
@@ -266,6 +285,13 @@ enum {                              /* key ids passed to on_key; device-verified
  * shift+green sync type; shift+white and shift+orange are unused there. */
 #define TE_EDIT_MODE        ((volatile int32_t *)0xff907d58)
 #define TE_EDIT_MODE_TEMPO  4
+#define TE_EDIT_MODE_TAPE   2                                   /* device-checked (diskinfo MODE) */
+#define TE_EDIT_MODE_ALBUM  6                                   /* device-checked: album key 44 */
+#define TE_EDIT_MODE_SEQ    7                                   /* sequencer screen (sequencer key 21,
+                                                                 * 0x019ac724; RE 2026-10-17) */
+#define TE_SYNTH_SEQ_TYPE   ((volatile int32_t *)0x01ab3144)    /* TE_SEQ_* of the synth sequencer */
+#define TE_DRUM_SEQ_TYPE    ((volatile int32_t *)0x01ab3148)    /* TE_SEQ_* of the drum sequencer
+                                                                 * (synth: 0x01ab3144), PlayerManager */
 #define TE_EDIT_MODE_DRUM   1                                   /* DrumController 0x01aabaa8, vtable 0x0190fa64
                                                                  * (ctor 0x01977774 -> id 1; RE 2026-10-14) */
 

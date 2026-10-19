@@ -110,6 +110,84 @@ static int strict(const rq_event *in, int n, rq_event *out, int max, uint64_t st
     return k.n;
 }
 
+/* CLEAN: per key, the out[] index of its last note-on / note-off, the note-on's grid index and
+ * played position, whether a note is open, whether its note-off is dropped with it */
+static int cl_on[QZ_KEYS], cl_off[QZ_KEYS];
+static uint32_t cl_k[QZ_KEYS], cl_pos[QZ_KEYS];
+static uint8_t cl_open[QZ_KEYS], cl_skip[QZ_KEYS];
+
+uint32_t rq_clean_from;
+
+static uint32_t nearest_k(uint64_t step_q16, uint32_t pos)
+{
+    uint32_t k = (uint32_t)(((uint64_t)pos << 16) / step_q16);
+
+    while (grid_pt(step_q16, k + 1) <= pos)
+        k++;
+    while (k && grid_pt(step_q16, k) > pos)
+        k--;
+    if (pos - grid_pt(step_q16, k) > grid_pt(step_q16, k + 1) - pos || grid_pt(step_q16, k) < rq_clean_from)
+        k++;                                    /* nearest; never before the take */
+    while (grid_pt(step_q16, k) < rq_clean_from)
+        k++;
+    return k;
+}
+
+/* in is sorted */
+static int clean(const rq_event *in, int n, rq_event *out, int max, uint64_t step_q16)
+{
+    sink k = { out, 0, max, 0, 0 };
+    int i, key;
+
+    for (i = 0; i < QZ_KEYS; i++) {
+        cl_on[i] = cl_off[i] = -1;
+        cl_open[i] = cl_skip[i] = 0;
+    }
+    for (i = 0; i < n; i++) {
+        const qz_ev *e = &in[i].ev;
+        uint32_t pos = in[i].pos, q, steps;
+
+        key = e->key;
+        if (e->kind == QZ_ON) {
+            q = grid_pt(step_q16, nearest_k(step_q16, pos));
+            if (cl_on[key] >= 0 && out[cl_on[key]].pos == q) {
+                cl_skip[key] = 1;               /* the same key twice on one grid point: one note */
+                continue;
+            }
+            if (cl_open[key]) {                 /* still held: ends where it starts again */
+                qz_ev off = *e;
+
+                off.kind = QZ_OFF;
+                cl_off[key] = k.n;
+                put(&k, q, &off);
+            } else if (cl_off[key] >= 0 && out[cl_off[key]].pos > q) {
+                out[cl_off[key]].pos = q;       /* the last note of this key: cut */
+            }
+            cl_k[key] = nearest_k(step_q16, pos);
+            cl_pos[key] = pos;
+            cl_on[key] = k.n;
+            cl_open[key] = 1;
+            cl_skip[key] = 0;
+            put(&k, q, e);
+            continue;
+        }
+        if (cl_skip[key]) {                     /* the dropped note's note-off */
+            cl_skip[key] = 0;
+            continue;
+        }
+        if (!cl_open[key]) {                    /* its note-on was before the take: as played */
+            put(&k, pos, e);
+            continue;
+        }
+        steps = (uint32_t)((((uint64_t)(pos - cl_pos[key]) << 16) + step_q16 / 2) / step_q16);
+        cl_off[key] = k.n;
+        cl_open[key] = 0;
+        put(&k, grid_pt(step_q16, cl_k[key] + (steps ? steps : 1)), e);
+    }
+    rq_sort(out, k.n, 1);
+    return k.n;
+}
+
 int rq_quantize(rq_event *in, int n, rq_event *out, int max, qz_state *s,
                 uint64_t step_q16, int mode, uint32_t window, uint32_t chord)
 {
@@ -119,6 +197,8 @@ int rq_quantize(rq_event *in, int n, rq_event *out, int max, qz_state *s,
     rq_sort(in, n, 0);
     if (mode == RQ_STRICT && step_q16)
         return strict(in, n, out, max, step_q16, window, chord);
+    if (mode == RQ_CLEAN && step_q16)
+        return clean(in, n, out, max, step_q16);
     qz_init(s);
     qz_set_grid(s, step_q16, 0);
     qz_set_window(s, window);

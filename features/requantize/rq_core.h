@@ -12,7 +12,7 @@ typedef struct rq_event {
     qz_ev ev;                   /* kind, key (note), data: whatever replay needs */
 } rq_event;
 
-enum { RQ_SNAP = 0, RQ_QUEUE = 1, RQ_STRICT = 2 };
+enum { RQ_SNAP = 0, RQ_QUEUE = 1, RQ_STRICT = 2, RQ_CLEAN = 3 };
 
 /* Quantize in[0..n) (any order; sorted by pos, stable, first) into out (max entries), sorted by
  * position. Grid: step_q16 (16.16 samples) from tape position 0 = TE's bar grid. window: late
@@ -20,7 +20,10 @@ enum { RQ_SNAP = 0, RQ_QUEUE = 1, RQ_STRICT = 2 };
  * mode RQ_SNAP / RQ_QUEUE: the live quantizer's rules. RQ_STRICT: the first chord goes to its
  * grid point (late-window rule), every following note or chord to the next grid step after the
  * previous one, pauses or not; each note keeps its held length, cut at the next chord's step
- * (min. QZ_MIN_LEN), the last chord keeps its full length. Returns the number of events written.
+ * (min. QZ_MIN_LEN), the last chord keeps its full length. RQ_CLEAN: every note starts on its
+ * nearest grid point and lasts a whole number of grid steps (its held length rounded, at least
+ * one); a note of a key still sounding is cut where the key starts again, a second note of a key
+ * on the same grid point is dropped. Returns the number of events written.
  * s is scratch (the quantizer state is large). */
 int rq_quantize(rq_event *in, int n, rq_event *out, int max, qz_state *s,
                 uint64_t step_q16, int mode, uint32_t window, uint32_t chord);
@@ -28,5 +31,9 @@ int rq_quantize(rq_event *in, int n, rq_event *out, int max, qz_state *s,
 /* Stable insertion sort by position (takes are short and nearly sorted); offs_first: at equal
  * positions note-offs go before note-ons (a note cut exactly where the same key starts again). */
 void rq_sort(rq_event *e, int n, int offs_first);
+
+/* RQ_CLEAN: no note starts before this tape position (the take's record start; default 0): a
+ * nearest grid point before it becomes the first one at or after it */
+extern uint32_t rq_clean_from;
 
 #endif

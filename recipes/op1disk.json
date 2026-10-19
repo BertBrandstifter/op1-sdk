@@ -1,0 +1,23 @@
+{
+  "name": "op1disk",
+  "boot_text": "op1sdk D",
+  "features": [
+    "chordplus",
+    "lofi",
+    "wheel",
+    "warp",
+    "trio",
+    "m1",
+    "mono",
+    "reso",
+    "shimmer",
+    "fxpack",
+    "drumroll",
+    "noteroll",
+    "requantize",
+    "engine_plus",
+    "diskinfo",
+    "drumtrim",
+    "noalbum"
+  ]
+}

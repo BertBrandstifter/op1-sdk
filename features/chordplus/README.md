@@ -1,6 +1,9 @@
 # CHORD+ chord keyboard — spec
 
-Status: **v0.3** (2026-10-13): bigger panel (nearly full screen, size 2-3 text). v0.2: toggle moved to **shift + insert** (the live quantizer left op1plus at
+Status: **v0.5** (2026-10-17, user: "when the panel is shown and I press insert, it stays on top"): **insert** (plain) while the panel shows **pins** it (no timeout; "PINNED" top right), insert again unpins and closes it; with the panel closed insert stays TE's. **v0.4** (2026-10-17, user: "extra modes, chord inversion and chord voicings that are
+triggered / influenced by the black keys … make the chord+ overlay windows for 2 more sec"): the
+upper octave's black keys = power chord, sus2, OPEN / WIDE voicing, more inversion; panel 5 s; chord
+names with the bass after a slash. **v0.3** (2026-10-13): bigger panel (nearly full screen, size 2-3 text). v0.2: toggle moved to **shift + insert** (the live quantizer left op1plus at
 the user's request; requantize stays). v0.1: shift + insert. Code:
 `features/chordplus/` (first in recipe `op1plus`). Idea: sloop's chord keyboard (white keys = scale
 chords, black keys = modifiers), ideas only, own code.
@@ -16,22 +19,28 @@ Part of the default `op1plus` image. **Shift + insert** opens the CHORD+ panel (
 - **White keys** play the seven chords of the chosen key and scale: C = I, D = ii, E = iii, F = IV,
   G = V, A = vi, B = vii° (in C major: C, Dm, Em, F, G, Am, B°). The key's octave stays the key's
   octave; KEY transposes (KEY D: the C key plays D major).
-- **Held black keys** change the next chord and make no sound:
+- **Held black keys** change the next chord and make no sound. The two octaves of black keys do
+  different things (v0.4; by their place on the keyboard, whatever the octave):
 
-| black key | modifier |
-|---|---|
-| C# | major ↔ minor third |
-| D# | + 7th (diatonic: Cmaj7, Dm7, G7, Bm7b5) |
-| F# | third → fourth (sus4) |
-| G# | + 9th |
-| A# | inversion (hold two A# for the second inversion) |
+| black key | lower octave | upper octave |
+|---|---|---|
+| C# | major ↔ minor third | **POWER** chord (root, fifth, octave) |
+| D# | + 7th (diatonic: Cmaj7, Dm7, G7, Bm7b5) | **SUS2** (third → second; sus4 wins) |
+| F# | third → fourth (sus4) | **OPEN** voicing (drop 2) while held |
+| G# | + 9th | **WIDE** voicing (lowest note an octave down, the next an octave up) while held |
+| A# | first inversion | **second inversion**; both A# = third inversion (the 7th in the bass) |
 
-  Modifiers combine (D# + G# = 9 chords). A small badge top right shows CHORD and the last chord's
-  name (e.g. `DMIN7`).
+  Modifiers combine (D# + G# = 9 chords; upper F# / G# override the panel's VOICING while held, no
+  voice leading meanwhile). A small badge top right shows CHORD and the last chord's name, an
+  inverted chord with its bass after a slash (e.g. `DMIN7`, `C/E`). The panel lists both octaves
+  and lights the held keys.
+- How: CHORD+'s `on_key` handler only watches the 10 black key ids (13 14 15 32 22 23 24 25 26 27,
+  lower F# G# A# C# D# then the upper; TE delivers on_key before the key's keyboard note); without
+  that (e.g. notes from elsewhere) a black note means its lower-octave modifier (v0.3 behaviour).
 
 ## Panel
 
-Turning CHORD+ on opens the panel for 3 s (every change restarts the 3 s). Shift + insert
+Turning CHORD+ on opens the panel for 5 s (v0.4; was 3 s; every change restarts the 5 s). A plain insert press while it shows pins it (v0.5): it stays until insert is pressed again (then it closes); shift + insert while it shows (pinned or not) turns CHORD+ off. Shift + insert
 while CHORD+ is on and the panel is closed opens it again; while the panel is open it turns
 CHORD+ **off**. Panel knobs (one step per detent):
 

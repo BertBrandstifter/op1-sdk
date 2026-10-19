@@ -32,10 +32,12 @@ void gfx_begin(uint16_t *buf);          /* target the frame TE just rendered */
 void gfx_pixel(int x, int y, uint16_t c);
 void gfx_rect(int x, int y, int w, int h, uint16_t c);
 void gfx_disc(int cx, int cy, int r, uint16_t c);      /* filled circle */
-/* 3x5 font (digits, A-Z, space - : . = / + ? * #; lower case drawn as upper case), scale >= 1.
+/* 3x5 font (digits, A-Z, space - : . = / + ? * # '; lower case drawn as upper case), scale >= 1.
  * Returns the x after the last character (advance 4 * scale per character). */
 int gfx_text(int x, int y, const char *s, uint16_t c, int scale);
 int gfx_hex(int x, int y, uint32_t v, int digits, uint16_t c, int scale);
 int gfx_dec(int x, int y, int32_t v, uint16_t c, int scale);
+/* the shift key's arrow (5x5, filled, pointing up) at the text's size; returns the x after it */
+int gfx_shift(int x, int y, uint16_t c, int scale);
 
 #endif

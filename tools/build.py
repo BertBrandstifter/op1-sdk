@@ -22,9 +22,16 @@ project.json:
   "pointers": [                                 32-bit code pointers (vtable slots, callbacks) to redirect;
     {"addr": "0x01910ca8", "expect": "0x019e7934", "c": "my_filter_process"}
   ],                                            "c" = C function called directly with TE's arguments
+  "patches": [                                  raw bytes to replace (e.g. an instruction's constant);
+    {"addr": "0x019761e6", "expect": "41e10018", "bytes": "41e10010"}   same length, checked
+  ],
   "content_sql": [                              SQL run on a content database of the update (e.g. a row
     {"file": "content/op1_factory.db",          in TE's engine list); plain statements on the existing
      "sql": ["INSERT INTO synth_types ..."]}    file, so its SQLite format stays the one TE reads
+  ],
+  "content_files": [                            files added to (or replaced in) the update, e.g. a factory
+    {"file": "content/audio/factory_drum/x.raw", drum kit's audio (metadata from a file in the same
+     "from": "/abs/path/x.raw"}                 directory); compose.py fills it from features' manifests
   ]
 }
 Instead of "to" (your own assembly), a hook can name a C function with "c"; build.py then generates
@@ -40,7 +47,7 @@ Every call site / entry hook / pointer must match "expect" in the stock image, o
 Output: <project>/build/<name>.{elf,bin,map} and the .op1 (unless --no-pack).
 """
 
-import argparse, hashlib, json, os, sqlite3, subprocess, sys, tempfile
+import argparse, copy, hashlib, json, os, sqlite3, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SDK = os.path.dirname(HERE)
@@ -270,8 +277,21 @@ def patch_firmware(stock, cfg, code, syms):
             sys.exit(f"pointer {addr:#x}: expected {expect:#010x}, found {found:#010x}")
         p.write(addr, to.to_bytes(4, "little"))
         print(f"  pointer {addr:#010x}: {expect:#010x} -> {pt['to']} {to:#010x}")
+    for pa in cfg.get("patches", []):                # raw byte patches (e.g. an instruction's constant)
+        addr = int(pa["addr"], 0)
+        expect, new = (bytes.fromhex(pa[k].replace(" ", "")) for k in ("expect", "bytes"))
+        found = p.read(addr, len(expect))
+        if found != expect or len(new) != len(expect):
+            sys.exit(f"patch {addr:#x}: expected bytes {expect.hex()}, found {found.hex()}")
+        p.write(addr, new)
+        print(f"  patch {addr:#010x}: {found.hex()} -> {new.hex()}")
     p.add_block(LOAD, code)
     members[i] = (members[i][0], p.build())
+    for cf in cfg.get("content_files", []):
+        old = next((len(d or b"") for m, d in members if m.name == cf["file"]), None)
+        members = add_file(members, cf["file"], open(cf["from"], "rb").read())
+        size = os.path.getsize(cf["from"])
+        print(f"  {cf['file']}: " + (f"{size:,} bytes added" if old is None else f"{old:,} -> {size:,} bytes"))
     for cs in cfg.get("content_sql", []):
         j = next((k for k, (m, _) in enumerate(members) if m.name == cs["file"]), None)
         if j is None:
@@ -280,6 +300,23 @@ def patch_firmware(stock, cfg, code, syms):
         for q in cs["sql"]:
             print(f"  {cs['file']}: {q}")
     return members
+
+
+def add_file(members, name, data):
+    """add (or replace) a file in the update: metadata copied from a file in the same directory, placed
+    after that directory's last member (so te-boot installs it like TE's own content)"""
+    j = next((k for k, (m, _) in enumerate(members) if m.name == name), None)
+    if j is not None:
+        members[j] = (members[j][0], data)
+        return members
+    d = os.path.dirname(name)
+    sib = [k for k, (m, b) in enumerate(members) if m.isfile() and os.path.dirname(m.name) == d]
+    if not sib:
+        sys.exit(f"content_files: no file in {d}/ of the update to model {name} on")
+    info = copy.copy(members[sib[-1]][0])
+    info.name = name
+    info.size = len(data)
+    return members[:sib[-1] + 1] + [(info, data)] + members[sib[-1] + 1:]
 
 
 def run_sql(db, statements):

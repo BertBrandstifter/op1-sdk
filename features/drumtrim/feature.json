@@ -1,0 +1,161 @@
+{
+  "schema": 1,
+  "name": "drumtrim",
+  "title": "Factory drum kits without silent tails",
+  "version": "0.1",
+  "status": "sim-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "dt_"
+  ],
+  "summary": "Content only, no TE code: TE's 14 factory drum kits with every hit cut 64 frames after its last sample above -60 dB of its own peak, the start / end points moved to match; 11.18 MB -> 9.76 MB of flash (-1.43 MB), the sound unchanged. Made locally from your stock firmware with drumtrim.py (TE's data, never packed).",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [],
+  "shared": [],
+  "hooks": {},
+  "claims": [],
+  "controls": [
+    "none: the factory drum kits (preset browser, folder drum) play as before"
+  ],
+  "tests": [
+    "run_dttest.py"
+  ],
+  "depends": [],
+  "conflicts": [],
+  "content_files": [
+    {
+      "file": "content/audio/factory_drum/neoprene.raw",
+      "from": "build/factory_drum/neoprene.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/neoprene.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/gallium.raw",
+      "from": "build/factory_drum/gallium.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/gallium.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/electret.raw",
+      "from": "build/factory_drum/electret.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/electret.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/bronze.raw",
+      "from": "build/factory_drum/bronze.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/bronze.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/awa beef.raw",
+      "from": "build/factory_drum/awa beef.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/awa beef.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/allspice.raw",
+      "from": "build/factory_drum/allspice.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/allspice.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/tantalum.raw",
+      "from": "build/factory_drum/tantalum.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/tantalum.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/smartphone.raw",
+      "from": "build/factory_drum/smartphone.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/smartphone.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/red maple.raw",
+      "from": "build/factory_drum/red maple.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/red maple.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/polyimide.raw",
+      "from": "build/factory_drum/polyimide.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/polyimide.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/ghee.raw",
+      "from": "build/factory_drum/ghee.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/ghee.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/cork.raw",
+      "from": "build/factory_drum/cork.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/cork.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/acetate.raw",
+      "from": "build/factory_drum/acetate.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/acetate.sql"
+      }
+    },
+    {
+      "file": "content/audio/factory_drum/peek.raw",
+      "from": "build/factory_drum/peek.raw",
+      "optional": true,
+      "sql": {
+        "file": "content/op1_factory.db",
+        "from": "build/peek.sql"
+      }
+    }
+  ],
+  "evidence": []
+}

@@ -10,7 +10,7 @@
 #define RN_MAX      1024
 #define RN_FINE     220                 /* fine move / length step: 5 ms */
 
-enum { RN_FIXED = 1, RN_DEL = 2, RN_SEL = 4, RN_OPEN = 8 };
+enum { RN_FIXED = 1, RN_DEL = 2, RN_SEL = 4, RN_OPEN = 8, RN_ADDED = 16 };   /* ADDED: in the roll */
 
 typedef struct rq_note {
     uint32_t played, played_len;        /* as played (tape samples) */
@@ -33,22 +33,31 @@ int rq_notes_build(rq_event *ev, int n, uint32_t end, rq_note *nt, int max);
 int rq_render(rq_note *nt, int n, rq_event *tmp, rq_event *out, int max, qz_state *s,
               uint64_t step_q16, int mode, uint32_t window, uint32_t chord);
 
-/* Edits on the targets: the selected notes, or note `cur` when none is selected. */
+/* Edits on the targets: the selected notes, or note `cur` when none is selected (cur -1: an empty
+ * cursor, the selection only). */
 enum {
     RE_MOVE,                            /* start += amount samples (FIXED) */
     RE_MOVE_STEP,                       /* start by amount grid steps (FIXED) */
     RE_LEN,                             /* length += amount samples (FIXED) */
     RE_LEN_STEP,                        /* end by amount grid steps (FIXED) */
     RE_PITCH,                           /* key += amount (0..127) */
-    RE_SNAP,                            /* start to the nearest grid point (FIXED) */
+    RE_SNAP,                            /* as RQ_CLEAN: start to the nearest grid point, length
+                                         * whole grid steps (rounded, >= 1) (FIXED) */
     RE_PLAYED,                          /* all targets AUTO: FIXED as played; else back to AUTO */
     RE_DELETE,                          /* all targets deleted: restore; else delete */
     RE_SELECT,                          /* toggle the selection of `cur` only */
     RE_SELECT_ALL,                      /* any selected: clear the selection; else select all */
     RE_AUTO_ALL,                        /* every note back to AUTO (the whole take quantized) */
+    RE_VEL,                             /* velocity += amount (1..127) */
 };
 /* Returns 1 if anything changed. */
 int rq_edit(rq_note *nt, int n, int cur, int op, int32_t amount, uint64_t step_q16);
+
+/* a note added in the roll: FIXED + ADDED at start, len (>= QZ_MIN_LEN), pitch key, replay data (as
+ * a logged note's). Returns the new count (n when full). */
+int rq_note_add(rq_note *nt, int n, int max, uint32_t start, uint32_t len, int key, const uint8_t data[6]);
+/* note i out of the list (the later ones move down one); returns the new count */
+int rq_note_remove(rq_note *nt, int n, int i);
 
 /* ord[0..n) = note indices by start, then pitch, then index */
 void rq_order(const rq_note *nt, int n, int *ord);
