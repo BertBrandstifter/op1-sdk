@@ -169,8 +169,8 @@ int main(void)
     CHECK(1, drwave_renders == 0 && n >= 439 && n <= 443);
 
     /* 2: poly, in TE's order (every voice once per block, by index): a new note on voice 2 sounds
-     * and voice 1 goes on; held keys A (voice 3) and B (voice 4) sound together, B's key up leaves A
-     * (release off: B is gone after its 21 ms) */
+     * and voice 1 goes on; held keys A (voice 3) and B (voice 4) sound together; RELEASE off: B's key
+     * up leaves B to TE's envelope (it sounds on); RELEASE on: A's key up releases A (decay 1 ms) */
     pitch(HZ(330.0));
     wh_te_note_on(VOICE(2), 0, 0);
     block(knobs);
@@ -189,8 +189,15 @@ int main(void)
     hook_key(40, 0);
     for (n = 0; n < 30; n++)
         block(knobs);
-    ok &= level[3] && !level[4];
+    ok &= level[3] && level[4];
+    mo_param_set(knobs, P_RELEASE, 1);
+    mo_param_set(&K(0), P_RELEASE, 1);
     hook_key(39, 0);
+    for (n = 0; n < 30; n++)
+        block(knobs);
+    ok &= !level[3] && level[4];
+    mo_param_set(knobs, P_RELEASE, 0);
+    mo_param_set(&K(0), P_RELEASE, 0);
     CHECK(2, ok);
 
     /* 3: knob push cycles 7 pages */

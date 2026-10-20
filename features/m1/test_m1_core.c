@@ -78,6 +78,19 @@ static double rms(int from, int len)
     return sqrt(s / len);
 }
 
+static int peak(int from, int len)
+{
+    int i, pk = 0;
+
+    for (i = from; i < from + len; i++) {
+        int a = buf[i] < 0 ? -buf[i] : buf[i];
+
+        if (a > pk)
+            pk = a;
+    }
+    return pk;
+}
+
 static int crossings(int from, int len)
 {
     int i, n = 0, low = 1;
@@ -177,6 +190,10 @@ static void test_pitch(void)
     render(&v, inc_hz(220), p, SR);
     n = crossings(0, SR);
     CHECK(n >= 437 && n <= 443);
+    p[M1_BPITCH] = zk(24 - 12, 49);             /* and an octave down: B only at 16' */
+    render(&v, inc_hz(440), p, SR);
+    n = crossings(0, SR);
+    CHECK(n >= 218 && n <= 222);
 }
 
 static void test_all_waves(void)
@@ -195,7 +212,7 @@ static void test_all_waves(void)
             render(&v, m1_inc_of_key(keys[k]), p, SR);
             for (i = 0; i < SR; i++)
                 clip += buf[i] == 32767 || buf[i] == -32768;
-            bad += clip > 8;
+            bad += clip > 8 || peak(0, SR) > 18000;    /* headroom for TE's voice mix */
             silent += rms(0, SR / 10) < 30;           /* BREATH at the lowest key: ~100 */
             if (s->loop != M1_NOLOOP && rms(SR - 4410, 4410) < 30)
                 dead_loops++;
@@ -249,6 +266,32 @@ static void test_filter_levels(void)
     p[M1_BFADE] = 0;
     render(&v, inc_hz(220), p, SR / 2);
     CHECK(amp(440, 8192, 8192) < amp(220, 8192, 8192) * 0.05);
+}
+
+/* MIX A..B is a crossfade, not two layers at full level: A = B at the centre is as loud as A alone
+ * (the old law gave +6 dB there, which overloaded TE's voice mix in chords) */
+static void test_mix_law(void)
+{
+    int16_t p[M1_PARAMS];
+    m1_voice v;
+    int w = find("SAW", "SAW WAVE");
+    double one, both;
+
+    CHECK(w >= 0);
+    if (w < 0)
+        return;
+    params(p, w);
+    render(&v, inc_hz(440), p, SR / 2);
+    one = rms(4096, 16384);
+    p[M1_WAVE_B] = zk(w + 1, m1_nwaves() + 1);  /* the same wave in B: correlated, so peaks add */
+    p[M1_MIX] = 16384;
+    render(&v, inc_hz(440), p, SR / 2);
+    both = rms(4096, 16384);
+    CHECK(both > one * 0.9 && both < one * 1.1);
+    CHECK(peak(4096, 16384) < 18000);           /* a voice stays well short of full scale */
+    p[M1_MIX] = 0;                              /* the ends are one wave at full level */
+    render(&v, inc_hz(440), p, SR / 2);
+    CHECK(fabs(rms(4096, 16384) - one) < one * 0.05);
 }
 
 /* every page 2 / 3 parameter and MIX / CUTOFF stepped through its range: the measured effect only
@@ -380,7 +423,7 @@ static void test_rom(void)
         else
             ok &= strstr(m1_wave_name(w), " NT") == 0;
     }
-    CHECK(nt == 14 && ok);                      /* 12 "NT" + BASSTHUMB1 / 2 */
+    CHECK(nt == 14 && ok);                      /* the 14 "NT" multisounds */
     {                                           /* single cycles in tune at C4, C7, C8 (+-3 cents) */
         static const char *const one[] = { "SAW WAVE", "SQUAREWAVE", "DWGS SINE", "DWGS TRI" };
         static const int key[] = { 60, 96, 108 };
@@ -413,6 +456,7 @@ int main(void)
     test_pitch();
     test_all_waves();
     test_filter_levels();
+    test_mix_law();
     test_restart();
     test_monotonic();
     test_rom();

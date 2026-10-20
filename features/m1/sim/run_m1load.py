@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run STATION 1's sample loader (m1_main) in the Blackfin simulator.
 
-    run_m1load.py        (needs build/m1_rom.bin: gen_m1.py --sf2; skipped without)
+    run_m1load.py        (needs build/m1_rom.bin: gen_m1.py --rom / --sf2; skipped without)
 
 Builds enginehost + m1 with the SoundFont tables (not SDK_BENCH) and stubs TE's yaffs open / read /
 close and heap_malloc, serving build/m1_rom.bin from memory. Checks: no M1 sound = nothing loaded;
@@ -27,7 +27,7 @@ STUBS = {0x01A997F4: 0, 0x01A99C90: 1, 0x01A99908: 2, 0x01AA0318: 3, 0x01AA185C:
 
 def main():
     if not os.path.exists(ROM):
-        print("SoundFont data: none (gen_m1.py --sf2), skipped")
+        print("SoundFont data: none (gen_m1.py --rom / --sf2), skipped")
         return 0
     data = open(ROM, "rb").read()
     proj, cfg = composed(["enginehost", "m1"], "m1load")

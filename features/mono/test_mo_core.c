@@ -392,18 +392,20 @@ static void test_envelopes(void)
         }
     }
     CHECK(ok);
-    base(&p);                                   /* release off: gone in ~21 ms; on: the decay time */
+    base(&p);                                   /* release off: the key up changes nothing (TE's envelope
+                                                 * ends the note); on: the decay time */
     p.wave[0] = MO_SQUARE;
     p.ldec = 22;
     note(&v, 1000, &p, SR / 4);
-    mo_release(&v);
+    mo_release(&v, &p);
     play(&v, 1000, &p, SR / 4, SR / 4);
-    CHECK(env_at(SR / 4 + 2205) < env_at(SR / 4 - 882) * 0.01);
+    CHECK(env_at(SR / 4 + 2205) > env_at(SR / 4 - 882) * 0.9 && env_at(SR / 2 - 882) > env_at(SR / 4 - 882) * 0.9);
     p.release = 1;
     note(&v, 1000, &p, SR / 4);
-    mo_release(&v);
+    mo_release(&v, &p);
     play(&v, 1000, &p, SR / 4, SR / 4);
     CHECK(env_at(SR / 4 + 2205) > env_at(SR / 4 - 882) * 0.5);
+    CHECK(env_at(SR / 2 - 882) < env_at(SR / 4 - 882) * 0.4);   /* ldec 22 = 0.69 s: ~0.23 at 0.24 s */
 }
 
 /* glide: constant time, linear in pitch: half way at T/2 for an octave and for two */

@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "mono",
   "title": "MONO 3 synth engine (classic 3-oscillator mono synth, polyphonic)",
-  "version": "0.4",
+  "version": "0.5",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"

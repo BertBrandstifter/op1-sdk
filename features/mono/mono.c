@@ -12,8 +12,9 @@
  * Poly: every TE voice has its own MONO voice (mo_core.c); the 4 newest notes sound (an older one
  * fades out within a block: the cost stays at TRIO's level); a new note glides from where the last
  * one was (poly portamento). Key events (on_key observe) pair a held key with the TE voice it starts;
- * its key up releases that voice's contours (a request the render thread applies). Notes without a
- * key (sequencer, MIDI) keep their contours; TE's envelope ends them.
+ * with RELEASE on its key up releases that voice's contours (a request the render thread applies).
+ * RELEASE off, and notes without a key (sequencer, MIDI, unison's extra voices), keep their
+ * contours; TE's envelope ends them.
  *
  * mo_setup / mo_engine_name / mo_key / mo_note_key / mo_knob / mo_frame: as STATION 1 (m1.c);
  * mo_tick (seq_tick) is the clock of the sound's name over the panel. */
@@ -243,7 +244,7 @@ static void mo_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint3
     }
     if (req_release & (1 << vi)) {
         req_release &= (uint8_t)~(1 << vi);
-        mo_release(v);
+        mo_release(v, &p);
     }
     {                                           /* past the newest MAX_SOUNDING: fade out over a block */
         int younger = 0;

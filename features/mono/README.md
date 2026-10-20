@@ -1,7 +1,9 @@
 # MONO 3 synth engine — spec
 
-Status: **v0.4** (2026-10-19): page knobs as STATION 1 (name + bar), the sound's name over the
-panel for 1 s, keys lit as STATION 1 (a held key its own note). Code: `features/mono/` (engine host,
+Status: **v0.5** (2026-10-20): RELEASE off = a key up leaves the note to TE's envelope (0.4 cut
+it within 21 ms in poly; unison's extra voices already rang on). v0.4 (2026-10-19): page knobs as
+STATION 1 (name + bar), the sound's name over the panel for 1 s, keys lit as STATION 1 (a held key
+its own note). Code: `features/mono/` (engine host,
 tag 2). A classic three-oscillator mono synth voice made polyphonic: three oscillators with range,
 wave and level each, noise, a 4-pole ladder filter with its contour, the loudness contour, glide.
 16 sounds in the bank, from fat basses to leads, brass and pads. Own code and data.
@@ -21,7 +23,7 @@ pages.
 | 3 OSC 2 | **RANGE** | **FREQUENCY** −7 .. +7 st | **WAVE** | **VOLUME** |
 | 4 OSC 3 | **RANGE** | **FREQUENCY** | **WAVE** (ramp in place of shark) | **VOLUME** |
 | 5 FILTER CONTOUR | **ATTACK** 1 ms .. 10 s | **DECAY** 1 ms .. 10 s | **SUSTAIN** 0 .. 10 | **KEYBOARD** off, 1/3, 2/3, full |
-| 6 LOUDNESS CONTOUR | **ATTACK** | **DECAY** | **SUSTAIN** | **RELEASE** off (21 ms) / on (= DECAY) |
+| 6 LOUDNESS CONTOUR | **ATTACK** | **DECAY** | **SUSTAIN** | **RELEASE** off (TE's envelope) / on (= DECAY) |
 | 7 | the sound's FX knobs (engine host) | | | |
 
 - **Oscillators**: waves triangle, shark (osc 3: ramp, a rising saw), saw, square, wide pulse (1/3),
@@ -35,7 +37,8 @@ pages.
   CONTOUR adds Hertz (not octaves): up to +4.95 kHz at 10, its peak at the end of the attack.
   KEYBOARD: the cutoff follows the key by 1/3, 2/3 or fully, around F2.
 - **Contours** (filter and loudness): attack, decay to the sustain level; RELEASE on = a key up
-  releases both with their DECAY times, off = in 21 ms. TE's envelope
+  releases both with their DECAY times; off = the contours go on and TE's envelope (its release)
+  ends the note, in poly as in unison. TE's envelope
   shapes the note afterwards as for every engine; the preset `mono 3` sets it to full sustain, so the
   loudness contour is the sound's own. Notes without a key (sequencer, MIDI) do not release the
   contours: TE's envelope ends them.
@@ -88,7 +91,8 @@ panel smaller with room around it, the page's four knobs below it.
   by its slots 5-8, which TE's LFO never touches): the LFO's offset on slots 1-4 would scramble
   them in the copy TE hands over. The field table is in `mono.c` (`fields[]`).
 - A voice (`mo_core.c`) per TE voice; key events (`on_key` observe, as STATION 1's keyboard) pair a
-  key with the voice it starts; its key up releases that voice's contours.
+  key with the voice it starts; with RELEASE on its key up releases that voice's contours (off:
+  TE's envelope ends it, as the notes without a key: sequencer, MIDI, unison's extra voices).
 - Per 128-sample block (88.2 kHz): glide (a constant step in log pitch), each oscillator into the
   mixer (polyBLEP at its edges; 16-bit mixer multiplies), noise; per 32 samples both contours and
   the cutoff (in Hz: the exponential part + the contour's Hertz, then the table position); per
@@ -99,7 +103,7 @@ panel smaller with room around it, the page's four knobs below it.
 
 ## Tests
 
-1. `test_mo_core.c` (host, 51 checks, ASan / UBSan clean): log2 / exp2; every wave in tune, every
+1. `test_mo_core.c` (host, 52 checks, ASan / UBSan clean): log2 / exp2; every wave in tune, every
    range an octave apart; osc 2 / 3 FREQUENCY steps (±1 cent); polyBLEP (aliasing); the waves'
    harmonics and levels; the filter: 24 dB/oct, self-oscillation on the cutoff law (±20 cents), the threshold (0.88 rings out, 0.95 oscillates), −10 dB bass loss at
    emphasis 5, stable at every cutoff with everything at full; keyboard control; the contour's Hertz; both contours' curves (±8 %) and the release switch;
@@ -107,7 +111,7 @@ panel smaller with room around it, the page's four knobs below it.
    parameter through its range moves its effect one way (the filter ones on white noise through the
    filter alone).
 2. `sim/run_monotest.py`: drwave untouched, the `mono 3` preset = bank entry 1, tag 2 routing, 441 Hz
-   pitch, poly in TE's render order (held notes together, a key up releases its voice), 7 pages,
+   pitch, poly in TE's render order (held notes together; a key up: RELEASE off = the voice sounds on, on = it releases), 7 pages,
    fields (clamps, one step per detent, the tag kept), bank with P--, page-7 FX knob, engine-list
    rename, cycles, TE's LFO scrambling slot 3's low bits leaves the sound alone, the 4-voice limit,
    screens.

@@ -45,6 +45,7 @@ static volatile uint8_t consumed;
 volatile int8_t m1_bank = -1;                   /* bench reads */
 static volatile uint8_t bank_edited;
 static volatile int8_t bank_slot = -1;
+static volatile uint8_t own_edited;             /* per sound slot (bit): P-- changed since shown */
 static int16_t own_knobs[8][8];                 /* per sound slot: P--, the sound before the bank */
 
 static const uint8_t hi_max[4] = { 48, 63, 63, 63 };   /* B PITCH = semitones + 24 */
@@ -305,43 +306,15 @@ int m1_key(int key, int down)
 
 /* built-in bank: name, wave A, wave B (OFF), mix %, cutoff %, B pitch (semitones), detune, F.ENV %,
  * F.DECAY %, res %, key track %, A decay (amount: 0 = hold, 63 = fastest), B fade (0 = instant)
- * (6-bit steps). Waves are the
- * multisound numbers of the sample set (0 PIANO .. 99 DWGS SINE), or of the built-in waves. */
+ * (6-bit steps). Waves are the multisound numbers of the sample set (0 PIANO .. 99 DWGS SINE), or
+ * of the built-in waves. bank_rom is generated from the M1's internal program bank (MPC-00) by
+ * m1_bank.py: its original multisounds, octaves and layer levels. */
 typedef struct {
     const char *name;
     int8_t a, b, mix, cut, bpitch, det, fenv, fdec, res, ktrk, adec, bfade;
 } bank_entry;
 
-static const bank_entry bank_rom[] = {
-    { "M1 PIANO",     0,  OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "PIANO PAD",    0,  31,  40, 100, 0,  6,  0,  0,  0,  0,  0,  34 },
-    { "UNIVERSE",     29, 31,  50, 85,  0,  20, 20, 60, 0,  30, 0,  20 },
-    { "HOUSE ORGAN",  6,  OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "MAGIC ORGAN",  7,  OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "E.PIANO",      1,  77,  25, 100, 0,  4,  0,  0,  0,  0,  0,  0 },
-    { "DWGS EP",      78, 77,  35, 90,  12, 0,  0,  0,  0,  20, 28, 0 },
-    { "CLAV",         3,  OFF, 0,  70,  0,  0,  40, 30, 15, 40, 0,  0 },
-    { "HARPSICHORD",  4,  OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "FRETLESS",     16, OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "E.BASS",       15, OFF, 0,  65,  0,  0,  45, 25, 10, 30, 0,  0 },
-    { "SYNTH BASS",   17, OFF, 0,  40,  0,  0,  60, 25, 35, 30, 0,  0 },
-    { "STRINGS",      31, 31,  50, 100, 0,  24, 0,  0,  0,  0,  0,  0 },
-    { "CHOIR",        30, 29,  40, 100, 0,  10, 0,  0,  0,  0,  0,  12 },
-    { "BRASS",        32, 33,  50, 70,  0,  14, 35, 40, 10, 30, 0,  0 },
-    { "TENOR SAX",    34, OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "PAN FLUTE",    27, OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "KALIMBA",      23, OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "MALLETS",      19, 25,  30, 100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "BELL PAD",     20, 31,  55, 90,  0,  8,  0,  0,  0,  0,  34, 36 },
-    { "KOTO",         39, OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "LORE",         42, OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "RHYTHM",       41, OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "WIND BELLS",   45, OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "BOTTLES",      28, OFF, 0,  100, 0,  0,  0,  0,  0,  0,  0,  0 },
-    { "SAW LEAD",     91, 91,  50, 55,  0,  30, 40, 45, 25, 40, 0,  0 },
-    { "SQUARE",       89, OFF, 0,  60,  0,  0,  20, 40, 10, 40, 0,  0 },
-    { "DIGI BELL",    85, 92,  30, 100, 12, 0,  0,  0,  0,  0,  34, 0 },
-};
+#include "m1_bank.inc"
 
 static const bank_entry bank_builtin[] = {
     { "SAW LEAD",     0, 0,   50, 55,  0,  30, 40, 45, 25, 40, 0,  0 },
@@ -414,6 +387,7 @@ int m1_knob(int knob, int16_t *diff)
                 m1_bank = -1;
                 bank_slot = (int8_t)slot;
                 bank_edited = 0;
+                own_edited &= (uint8_t)~(1u << slot);
             }
         }
         return 1;
@@ -421,6 +395,8 @@ int m1_knob(int knob, int16_t *diff)
     if (m1_page == 3)
         return eh_fx_knob(slot, knob, (int16_t)d);
     bank_edited = 1;
+    if (!(m1_bank >= 0 && bank_slot == slot))
+        own_edited |= (uint8_t)(1u << slot);
     if (m1_page == 0 && knob < 2) {             /* WAVE A / B: one multisound per detent */
         int n = m1_nwaves() + knob, z = (k[knob] < 0 ? 0 : k[knob]) * 2 * n >> 15;
         int step = (d < 0 ? -d : d) >> 10;
@@ -618,7 +594,14 @@ void m1_frame(uint16_t *buf)
     } else {                                    /* P--: the sound itself; wave A, where the bank is */
         x = gfx_text(79, 11, "P-- ", C_GREEN, 2);
         gfx_text(x, 11, m1_wave_name(m1_wave_of(p[M1_WAVE_A])), C_GREEN, 2);
-        gfx_text(79, 24, "SHIFT+BLUE: SOUNDS", C_GREEN, 1);
+        if (own_edited >> slot & 1) {           /* once changed: wave B, as on a bank sound */
+            x = gfx_text(79, 24, "B ", C_GREEN, 1);
+            x = gfx_text(x, 24, m1_wave_name(wb), C_GREEN, 1);
+            if (wb >= 0 && s)
+                gfx_dec(gfx_text(x + 4, 24, s > 0 ? "+" : "", C_GREEN, 1), 24, s, C_GREEN, 1);
+        } else {
+            gfx_text(79, 24, "SHIFT+BLUE: SOUNDS", C_GREEN, 1);
+        }
     }
     if ((ld = load_text(txt)) != 0) {           /* the sample data is not there (yet) */
         gfx_rect(76, 23, 138, 8, GFX_BLACK);

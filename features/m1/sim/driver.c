@@ -286,5 +286,52 @@ int main(void)
         lit_after = fb[(319 - 188) * 256 + 72] == green;
         CHECK(10, lit_held && !lit_after);
     }
+
+    /* 11: P-- (bank 4 back to P--): the LCD's second line says SHIFT+BLUE: SOUNDS until the sound is
+     * changed, then wave B (here after WAVE B one step); wave A stays on top; browsing to a bank sound
+     * and back to P-- shows the hint again. Screen run_m1test.py: m1_screen_own (the changed P--) */
+    {
+        volatile uint16_t *fb = (volatile uint16_t *)(FB + 0x80000);
+        static uint16_t hint[8 * 136], top[14 * 136];
+        int x, y, same_top = 1, other = 0, back = 1;
+
+        *TE_SHIFT_HELD = 1;
+        for (n = 0; n < 5; n++)
+            turn(0, -1024);
+        *TE_SHIFT_HELD = 0;
+        CHECK(11, m1_bank == -1);
+        hook_frame((uint16_t *)fb);
+        for (y = 0; y < 8; y++)
+            for (x = 0; x < 136; x++)
+                hint[y * 136 + x] = fb[(319 - (79 + x)) * 256 + 24 + y];
+        for (y = 0; y < 14; y++)
+            for (x = 0; x < 136; x++)
+                top[y * 136 + x] = fb[(319 - (79 + x)) * 256 + 10 + y];
+        turn(1, 1024);                          /* WAVE B */
+        hook_frame((uint16_t *)fb);
+        for (y = 0; y < 8; y++)
+            for (x = 0; x < 136; x++)
+                other |= fb[(319 - (79 + x)) * 256 + 24 + y] != hint[y * 136 + x];
+        for (y = 0; y < 14; y++)
+            for (x = 0; x < 136; x++)
+                same_top &= fb[(319 - (79 + x)) * 256 + 10 + y] == top[y * 136 + x];
+        CHECK(11, other && same_top);
+        *TE_SHIFT_HELD = 1;
+        turn(0, 1024);                          /* P01 */
+        turn(0, -1024);                         /* P-- */
+        *TE_SHIFT_HELD = 0;
+        hook_frame((uint16_t *)(FB + 0x40000));     /* scratch draw: the hint is back */
+        for (y = 0; y < 8; y++)
+            for (x = 0; x < 136; x++)
+                back &= ((volatile uint16_t *)(FB + 0x40000))[(319 - (79 + x)) * 256 + 24 + y] == hint[y * 136 + x];
+        CHECK(11, m1_bank == -1 && back);
+        m1_page = 3;                            /* restore m1_screen_fx */
+        *TE_SHIFT_HELD = 1;
+        for (n = 0; n < 5; n++)
+            turn(0, 1024);
+        *TE_SHIFT_HELD = 0;
+        hook_frame((uint16_t *)(FB + 0x40000));
+        m1_page = 0;
+    }
     return fails;
 }

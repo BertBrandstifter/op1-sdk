@@ -102,8 +102,10 @@ void mo_note(mo_voice *v, uint32_t inc, const mo_params *p)
     v->sounding = 1;
 }
 
-void mo_release(mo_voice *v)
+void mo_release(mo_voice *v, const mo_params *p)
 {
+    if (!p->release)                            /* TE's envelope (its release) ends the note */
+        return;
     if (v->fenv.stage)
         env_start(&v->fenv, 3);
     if (v->lenv.stage)

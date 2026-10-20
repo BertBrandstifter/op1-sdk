@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """STATION 1 engine data generator.
 
+    gen_m1.py --rom "<path>/public_m1_samples" --pcm "<path>/full_decrypted_44k1_mono_FULL.wav"
+              [--plugin <M1 plugin binary>] [--budget 1500000]
+        -> the M1's 100 factory multisounds from its ROM (the KORG Collection M1's ROM extraction: a
+           folder with manifest.tsv and one WAV per zone; the full decrypted ROM for the single
+           cycles; key splits / root keys / tuning / levels from the installed M1 plugin), or
     gen_m1.py --sf2 "<path>/<sample set>.sf2" [--budget 1500000]
         -> the 100 multisounds of your own sample set (.sf2), converted for the OP-1 (the samples
            are not ours: build/ is committed with a NOTICE, not MIT, and never packed):
@@ -23,7 +28,9 @@ Conversion, per sample (spec: README.md "Data"):
      pitch is unchanged;
   3. store 4-bit block ADPCM (16 samples in 9 bytes: shift + predictor header, 8 bytes of nibbles;
      decoder in m1_core.c) or PCM16 for tiny samples (single cycles, < 2048 samples).
-If the total exceeds --budget, the rate factor drops in steps (2.4 -> 1.8) until it fits.
+Every sample stays at its source rate when that fits --budget (the M1 ROM, 31.25 kHz: it does; the room
+left keeps the samples ADPCM would hiss most on as PCM16); else the rate factor drops in steps
+(2.4 -> 1.8) until it fits.
 Needs numpy. Prints a size / quality report."""
 
 import argparse, math, os, struct, sys
@@ -43,6 +50,10 @@ MAX_SHIFT = 13
 # +8 dB at 5-10 kHz, +20 dB at 10-16 kHz)
 MIN_RATE, FULL_RATE_BYTES = 16000.0, 8192
 NAME_LEN = 12
+# source-rate data (the M1 ROM, 31.25 kHz) fills the budget less: the room left keeps as PCM16 the samples
+# whose ADPCM noise rises above the sound in some third octave (1 kHz up) by more than this, worst first
+# (E.Piano, MagicOrgan: quiet upper bands that ADPCM fills with noise; noisy sounds mask theirs)
+PCM_HISS = 0.0
 
 
 # ------------------------------------------------------------------ codec (bit-exact with m1_core.c)
@@ -195,7 +206,127 @@ def multisounds(presets, insts, shdr):
     return out
 
 
+# ------------------------------------------------------------------ M1 ROM (sample extraction folder)
+
+ROM_RATE = 31250.0          # the M1's sample rate (the extraction's WAVs say 44.1 kHz: 209 zones measure 31.25)
+ROM_PLUGIN = "/Library/Audio/Plug-Ins/VST/M1.vst/Contents/MacOS/M1"
+ROM_LEVEL_DB = 0.1          # zone level byte (signed): dB per step, from the zones' levels in the SoundFont
+ROM_GAIN = 10 ** (-2.0 / 20)    # the SoundFont's level (median of the zones at level 0), so the bank keeps v0.6's headroom
+
+
+def rom_tables(plugin, man0, nmulti=100):
+    """the multisound definitions (20-byte records: zone start u32, flags, zone count, name[10]) and their
+    zones (24 bytes: top key, ?, fine tune (cents, signed), root key (> 127: no transpose), level (signed),
+    ..., start u32, loop u32 (26 bits + flags), end u32) from the M1 plugin, found by the factory names
+    and checked against the extraction's sample offsets"""
+    d = open(plugin, "rb").read()
+    names = [m["name"].encode("latin1").ljust(10) for m in man0[:3]]
+    i = d.find(names[0])
+    while i >= 0 and (d[i + 20:i + 30] != names[1] or d[i + 40:i + 50] != names[2]):
+        i = d.find(names[0], i + 1)
+    if i < 0:
+        sys.exit(f"{plugin}: no multisound table (expected the M1 plugin)")
+    t1 = i - 6
+    defs = []
+    for k in range(nmulti):
+        r = d[t1 + 20 * k:t1 + 20 * k + 20]
+        defs.append((int.from_bytes(r[0:4], "little"), r[4], r[5], r[6:16].decode("latin1").rstrip()))
+    z0 = man0[0]["zones"][0]
+    key, t2 = struct.pack("<I", z0["start"]), None
+    i = d.find(key)
+    while i >= 0 and t2 is None:
+        if int.from_bytes(d[i + 8:i + 12], "little") == z0["end"]:
+            t2 = i - 12 - 24 * defs[0][0]
+        i = d.find(key, i + 1)
+    if t2 is None:
+        sys.exit(f"{plugin}: no zone table")
+    out = []
+    for k, (zs, flags, zc, name) in enumerate(defs):
+        zones = []
+        for j in range(zc):
+            z = d[t2 + 24 * (zs + j):t2 + 24 * (zs + j) + 24]
+            st, lp, en = struct.unpack("<III", z[12:24])
+            zones.append(dict(top=z[0], fine=z[2] - 256 * (z[2] > 127), root=z[3], level=z[4] - 256 * (z[4] > 127),
+                              start=st, loop=lp & 0x3FFFFFF, end=en))
+        m = man0[k]
+        if name != m["name"] or len(zones) != len(m["zones"]) or any(
+                (a["start"], a["loop"], a["end"]) != (b["start"], b["loop"], b["end"]) for a, b in zip(zones, m["zones"])):
+            sys.exit(f"{plugin}: multisound {k} ({name}) does not match the extraction's manifest")
+        out.append((name, zones))
+    return out
+
+
+def rom_load(folder, pcm_path, plugin):
+    """the 100 factory multisounds (bank 0, slots 0..99) of the M1 ROM extraction: manifest.tsv + one WAV
+    per zone; key ranges, root keys, fine tune and levels from the M1 plugin's tables. Single cycles that
+    loop back before their WAV starts (the DWGS waves: the extraction kept half the cycle) come from the
+    full decrypted ROM (pcm_path). Returns what sf2_load + multisounds return for convert()."""
+    import csv, wave
+    import numpy as np
+    man = {}
+    for r in csv.DictReader(open(os.path.join(folder, "manifest.tsv")), delimiter="\t"):
+        if r["kind"] == "multisound" and r["bank"] == "0" and int(r["slot"]) < 100:
+            m = man.setdefault(int(r["slot"]), dict(name=r["name"], zones=[]))
+            m["zones"].append(dict(file=r["filename"], start=int(r["start"]), loop=int(r["loop"]), end=int(r["end"])))
+    man0 = [man[k] for k in range(100)]
+    tables = rom_tables(plugin, man0)
+    full = None
+    chunks, shdr, ms, n = [], [], [], 0
+    for k, (name, zones) in enumerate(tables):
+        zs, lo, fixed = [], 0, None
+        for j, z in enumerate(zones):
+            if z["loop"] < z["start"]:              # loop body starts before the WAV: read it from the full ROM
+                if full is None:
+                    if not pcm_path:
+                        sys.exit(f"{name}: its loop starts before its WAV (the extraction kept half of the "
+                                 "single cycle): pass --pcm <the full decrypted ROM .wav>")
+                    w = wave.open(pcm_path)
+                    full = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
+                x = full[z["loop"]:z["end"]]
+                ls = 0
+            else:
+                w = wave.open(os.path.join(folder, man0[k]["zones"][j]["file"]))
+                x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
+                if len(x) != z["end"] - z["start"]:
+                    sys.exit(f"{name} zone {j}: WAV length {len(x)} != {z['end'] - z['start']}")
+                ls = z["loop"] - z["start"]
+            looped = ls < len(x)
+            x = x.astype(np.float64) * (ROM_GAIN * 10 ** (z["level"] * ROM_LEVEL_DB / 20))
+            nt = z["root"] > 127                    # "NT": plays at the ROM rate on every key
+            root = 60 if nt else z["root"]
+            fixed = root if nt else fixed
+            hi = 127 if j == len(zones) - 1 else z["top"]
+            if hi >= lo:
+                shdr.append(dict(name=f"{name} {j}", start=n, end=n + len(x), ls=n + ls if looped else n + len(x),
+                                 le=n + len(x), rate=ROM_RATE, root=root, corr=z["fine"]))
+                zs.append((lo, hi, len(shdr) - 1, looped))
+                chunks.append(x)
+                n += len(x)
+            lo = max(lo, hi + 1)
+        ms.append((" ".join(name.split()).upper()[:NAME_LEN - 2], fixed, zs))
+    names = [m[0] for m in ms]                      # the M1 has two "DWGS Organ": DWGS ORGAN1 / 2
+    for i, (name, fixed, zs) in enumerate(ms):
+        if names.count(name) > 1:
+            ms[i] = (f"{name}{names[:i].count(name) + 1}", fixed, zs)
+    return ms, shdr, np.concatenate(chunks)
+
+
 # ------------------------------------------------------------------ analysis + resampling
+
+def hiss(np, q, dec, rate):
+    """ADPCM noise against the sound, worst third octave from 1 kHz up (dB; > 0: noise above the sound)"""
+    q = np.asarray(q, dtype=np.float64)
+    S = np.abs(np.fft.rfft(q)) ** 2
+    E = np.abs(np.fft.rfft(q - np.asarray(dec, dtype=np.float64))) ** 2
+    f = np.fft.rfftfreq(len(q), 1 / rate)
+    worst, lo = -99.0, 1000.0
+    while lo * 2 ** (1 / 3) < rate / 2:
+        m = (f >= lo) & (f < lo * 2 ** (1 / 3))
+        if m.any():
+            worst = max(worst, 10 * math.log10((E[m].sum() + 1e-9) / (S[m].sum() + 1e-9)))
+        lo *= 2 ** (1 / 3)
+    return worst
+
 
 def bandwidth(np, x, rate):
     n = len(x)
@@ -250,14 +381,17 @@ def froot_of(h):
     return 440.0 * 2 ** ((h["root"] - 69) / 12) * 2 ** (-h["corr"] / 1200)
 
 
-def tune_loops(shdr, keys):
+def tune_loops(shdr, keys, pcm):
     """short loops (<= 4096 samples) hold a whole number of cycles: take the pitch from the loop when
-    it is within 30 cents of the SoundFont's (the DWGS saw is 7 cents flat by its root key)"""
+    it is within 30 cents of the SoundFont's (the DWGS saw is 7 cents flat by its root key). Loops of a
+    fading tail (one-shots on the M1 loop a few quiet samples) are left alone."""
     n = 0
     for si, looped in keys:
         h = shdr[si]
         L = h["le"] - h["ls"]
         if not looped or not 0 < L <= 4096 or "f_loop" in h:
+            continue
+        if abs(pcm[h["ls"]:h["le"]]).max() < 0.1 * abs(pcm[h["start"]:h["le"]]).max():
             continue
         f = froot_of(h)
         cycles = round(L * f / h["rate"])
@@ -269,13 +403,18 @@ def tune_loops(shdr, keys):
     return n
 
 
-def convert(path, budget):
+def sf2_source(path):
     import numpy as np
     presets, insts, shdr, smpl = sf2_load(path)
-    pcm = np.frombuffer(smpl, dtype="<i2").astype(np.float64)
-    ms = multisounds(presets, insts, shdr)
+    return multisounds(presets, insts, shdr), shdr, np.frombuffer(smpl, dtype="<i2").astype(np.float64)
+
+
+def convert(src, budget):
+    """src: (multisounds, sample headers, samples as float) from sf2_source or rom_load"""
+    import numpy as np
+    ms, shdr, pcm = src
     keys = sorted({(z[2], z[3]) for _, _, zs in ms for z in zs})
-    print(f"{tune_loops(shdr, keys)} short loops tuned to their exact period")
+    print(f"{tune_loops(shdr, keys, pcm)} short loops tuned to their exact period")
     prep = {}
     for si, looped in keys:
         h = shdr[si]
@@ -314,7 +453,7 @@ def convert(path, budget):
         size = 2 * n if tiny else (n + BLOCK - 1) // BLOCK * 9
         return size + (size & 1)
 
-    for fac in (2.4, 2.3, 2.2, 2.1, 2.0, 1.9, 1.8):
+    for fac in (math.inf, 2.4, 2.3, 2.2, 2.1, 2.0, 1.9, 1.8):     # inf: every sample at its source rate
         total, plan, mips = 0, {}, 0
         for key, (x, loop, bw) in prep.items():
             rate = shdr[key[0]]["rate"]
@@ -331,6 +470,38 @@ def convert(path, budget):
         print(f"rate factor {fac}: {total} bytes (mip levels {mips}) > budget {budget}, trying lower")
     else:
         sys.exit(f"does not fit the budget {budget} even at rate factor 1.8 ({total} bytes)")
+
+    # everything at its source rate and room left: the samples ADPCM codes worst (most hiss) as PCM16
+    enc, up = {}, []
+    if fac == math.inf:
+        for key, (x, loop, bw) in prep.items():
+            if not plan[key][1]:
+                q = [int(v) for v in np.clip(np.round(x), -32768, 32767)]
+                enc[key] = encode(q)
+                enc[key] += (hiss(np, q, enc[key][1], shdr[key[0]]["rate"]),)
+        cand = []                                   # (key, extra bytes as PCM16, dB of noise removed)
+        for key in sorted(enc, key=lambda k: -enc[k][3]):
+            n, lv = len(prep[key][0]), plan[key][2]
+            if enc[key][3] > PCM_HISS:
+                cand.append((key, sum(size_of(math.ceil(n / 2 ** j), True) - size_of(math.ceil(n / 2 ** j), False)
+                                      for j in range(lv + 1)), enc[key][3] - PCM_HISS))
+        G = 256                                     # 0/1 knapsack in 256-byte steps: most dB in the room left
+        cap = max(0, budget - total) // G
+        best = [(0.0, ())] * (cap + 1)
+        for i, (_, more, v) in enumerate(cand):
+            w = -(-more // G)
+            for c in range(cap, w - 1, -1):
+                if best[c - w][0] + v > best[c][0]:
+                    best[c] = (best[c - w][0] + v, best[c - w][1] + (i,))
+        for i in best[cap][1]:
+            key, more, _ = cand[i]
+            plan[key] = (plan[key][0], True, plan[key][2])
+            total += more
+            up.append(f"{shdr[key[0]]['name']} {enc[key][3]:+.0f}")
+        left = [f"{shdr[k[0]]['name']} {enc[k][3]:+.0f}" for k in sorted(enc, key=lambda k: -enc[k][3])
+                if not plan[k][1] and enc[k][3] > PCM_HISS]
+        print(f"{len(up)} samples kept as PCM16 (ADPCM noise above the sound in a third octave, dB): "
+              + ", ".join(up) + f"; {total} bytes" + ("; still ADPCM: " + ", ".join(left) if left else ""))
 
     rom, samples, index, snrs = bytearray(), [], {}, []
     for n_done, (key, (x, loop, bw)) in enumerate(prep.items()):
@@ -353,7 +524,7 @@ def convert(path, budget):
                 rom += struct.pack(f"<{len(q)}h", *q)
                 fmt = FMT_PCM16
             else:
-                data, dec, hist = encode(q)
+                data, dec, hist = enc[key][:3] if j == 0 and key in enc else encode(q)
                 rom += data
                 fmt = FMT_ADPCM
                 if ls is not None:
@@ -382,7 +553,7 @@ def convert(path, budget):
     adpcm = [s for s, _ in snrs]
     print(f"rate factor {fac}: {len(rom)} bytes ({len(rom) / 1048576:.2f} MB) for {len(multis)} multisounds, "
           f"{len(samples) - nmips} samples + {nmips} octave-down copies, mip levels {mips} bytes "
-          f"(raw 16-bit: {len(smpl) / 1048576:.2f} MB)")
+          f"(raw 16-bit: {2 * sum(len(p[0]) for p in prep.values()) / 1048576:.2f} MB)")
     if adpcm:
         print(f"ADPCM SNR: median {sorted(adpcm)[len(adpcm) // 2]:.1f} dB, lowest "
               + ", ".join(f"{n} {s:.1f}" for s, n in snrs[:4]))
@@ -536,6 +707,9 @@ def main():
     ap.add_argument("--sf2", help="your sample set (.sf2)")
     ap.add_argument("--budget", type=int, default=1_500_000, help="max bytes of sample data (default 1500000)")
     ap.add_argument("--static", action="store_true", help="write the committed tables / built-in / test files")
+    ap.add_argument("--rom", help="the M1 ROM sample extraction (folder with manifest.tsv and the WAVs)")
+    ap.add_argument("--pcm", help="with --rom: the full decrypted ROM (.wav), for the DWGS single cycles")
+    ap.add_argument("--plugin", default=ROM_PLUGIN, help=f"with --rom: the M1 plugin binary (default {ROM_PLUGIN})")
     a = ap.parse_args()
     if a.static:
         write_tables()
@@ -544,11 +718,13 @@ def main():
                    "Built-in waves (own, MIT): used without a SoundFont and in the benches.", False)
         write_testvec()
         print("wrote m1_tables.h, m1_testvec.h")
-    if a.sf2:
-        rom, samples, zones, multis = convert(a.sf2, a.budget)
+    if a.sf2 or a.rom:
+        src = rom_load(a.rom, a.pcm, a.plugin) if a.rom else sf2_source(a.sf2)
+        rom, samples, zones, multis = convert(src, a.budget)
+        what = "the KORG M1 ROM (" + os.path.basename(os.path.normpath(a.rom)) + ")" if a.rom else os.path.basename(a.sf2)
         write_data(os.path.join(HERE, "build", "m1_data.inc"), rom, samples, zones, multis,
-                   f"From {os.path.basename(a.sf2)}: not MIT (see NOTICE), never packed.", True, rom_file=True)
-    if not a.static and not a.sf2:
+                   f"From {what}: not MIT (see NOTICE), never packed.", True, rom_file=True)
+    if not a.static and not a.sf2 and not a.rom:
         ap.print_help()
 
 

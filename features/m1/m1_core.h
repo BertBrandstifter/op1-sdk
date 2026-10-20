@@ -2,7 +2,7 @@
  * its own envelope. Pure C (no TE dependencies): runs on the OP-1 and in the host unit tests
  * (test_m1_core.c). Spec: README.md.
  *
- * Multisounds come from build/m1_data.inc (gen_m1.py --sf2: the sample set (.sf2), committed with
+ * Multisounds come from build/m1_data.inc (gen_m1.py --rom: the M1 ROM samples, committed with
  * build/NOTICE, not MIT) or, without it and in the simulator benches, from the built-in waves (m1_builtin.inc).
  * Samples are 4-bit block ADPCM or PCM16, played with linear interpolation at TE's voice rate
  * (88.2 kHz, 128 samples per block) from TE's per-sample pitch increments. Output is a raw,

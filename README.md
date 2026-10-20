@@ -26,8 +26,9 @@ them, each engine with its own bank (**shift + blue turn**), knob push flips pag
 
 **Sound quality first**: the engines render at the OP-1's internal 88.2 kHz; MONO 3's
 oscillators are band-limited (no aliasing whine on high notes) and its filter stays stable at every
-setting; STATION 1 packs 6.3 MB of samples into 1.4 MB with the added noise ~53 dB below the note
-(single-cycle waves kept 16-bit and tuned to 0.0 cents). Their simulator tests sweep every
+setting; STATION 1 plays the M1's own ROM samples at the M1's own 31.25 kHz, with its key splits
+and tuning (3.7 MB packed into 1.4 MB without resampling; single-cycle waves kept 16-bit and tuned
+to 0.0 cents). Their simulator tests sweep every
 parameter through its full range, so each knob moves its sound one way, as the screen says.
 
 **Effects** — new rows in TE's FX list (synth, drum and master):

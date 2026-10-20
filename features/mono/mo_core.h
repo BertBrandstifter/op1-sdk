@@ -36,7 +36,7 @@ typedef struct mo_params {
     uint8_t latt, ldec, lsus;   /* loudness contour */
     uint8_t pink;               /* noise colour: 0 white, 1 pink */
     uint8_t kbd;                /* 0..MO_KBDS - 1 */
-    uint8_t release;            /* 0: release 21 ms; 1: release with the DECAY times (classic) */
+    uint8_t release;            /* 0: key up leaves the contours to TE's envelope; 1: release with the DECAY times */
 } mo_params;
 
 typedef struct mo_env {
@@ -62,7 +62,9 @@ typedef struct mo_voice {
 void mo_voice_init(mo_voice *v);
 /* a new note (inc = its pitch): glide from v->cur; both contours start (from where they are) */
 void mo_note(mo_voice *v, uint32_t inc, const mo_params *p);
-void mo_release(mo_voice *v);                   /* the note's key is up: both contours release */
+/* the note's key is up: RELEASE on = both contours release with their DECAY times; off = they go on
+ * (TE's envelope ends the note, as for notes without a key) */
+void mo_release(mo_voice *v, const mo_params *p);
 void mo_render(mo_voice *v, int16_t *out, int n, const uint32_t *inc, const mo_params *p);
 /* the filter + loudness part of mo_render on a given mixer signal (tests feed noise); key = the
  * note's position for keyboard control, MIDI key Q16 */

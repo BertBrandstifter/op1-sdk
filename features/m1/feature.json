@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "m1",
   "title": "STATION 1 synth engine (sample workstation, two multisounds layered)",
-  "version": "0.5",
+  "version": "0.8",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
@@ -11,7 +11,7 @@
   "prefix": [
     "m1_"
   ],
-  "summary": "Pick STATION 1 in the engine list or the 'station 1' preset: two of 100 sampled multisounds layered (piano, organs, strings, choir, brass, bells, single-cycle waves ...), B transposed and detuned, A decaying while B fades in, into a low-pass filter with its own envelope, resonance and key tracking. Page 1 (wave A, wave B, mix, cutoff) can be moved by TE's LFO. Shift + blue turn browses 28 built-in sounds; page 4 = the sound's FX knobs. The screen shows a station: LCD with the sound and its waves, fader, LEDs, MIX bar and a keyboard lighting the sounding keys, above the page's four knobs. The samples (KORG M1 multisounds, about 1.4 MB) are committed in build/ with a NOTICE (not MIT, never packed; gen_m1.py regenerates them); without them the engine plays 8 built-in waves. Presets stay drwave presets with in-range values. With m1_drumkit.py, two drum kits (m1 drums, m1 perc) are built in as factory drum kits. The samples are a content file of the update, loaded at runtime into TE's sample memory (not the SDK region).",
+  "summary": "Pick STATION 1 in the engine list or the 'station 1' preset: two of 100 sampled multisounds layered (piano, organs, strings, choir, brass, bells, single-cycle waves ...), B transposed and detuned, A decaying while B fades in, into a low-pass filter with its own envelope, resonance and key tracking. Page 1 (wave A, wave B, mix, cutoff) can be moved by TE's LFO. Shift + blue turn browses 28 built-in sounds, rebuilt from the M1 factory programs (m1_bank.py); page 4 = the sound's FX knobs. The screen shows a station: LCD with the sound and its waves, fader, LEDs, MIX bar and a keyboard lighting the sounding keys, above the page's four knobs. The samples (the KORG M1's own ROM multisounds at 31.25 kHz with its key splits and tuning, about 1.4 MB) are committed in build/ with a NOTICE (not MIT, never packed; gen_m1.py --rom regenerates them); without them the engine plays 8 built-in waves. Presets stay drwave presets with in-range values. With m1_drumkit.py, two drum kits (m1 drums, m1 perc) are built in as factory drum kits. The samples are a content file of the update, loaded at runtime into TE's sample memory (not the SDK region).",
   "license": "MIT",
   "authors": [
     "unknown"
@@ -127,7 +127,7 @@
       "file": "content/op1_factory.db",
       "sql": [
         "INSERT INTO synth_types (id, type, default_params) SELECT MAX(id) + 1, 'station 1', '[81,  81,  0,  16383,  13824,  12288,  12288,  12288]' FROM synth_types",
-        "INSERT INTO synth_presets (patch, folder) VALUES ('{\"adsr\":[64,8128,24575,4000,4000,64,4000,4000],\"fx_active\":false,\"fx_params\":[8000,14368,9438,20044,0,0,0,0],\"fx_type\":\"delay\",\"knobs\":[81,81,0,16383,13824,12288,12288,12288],\"lfo_active\":false,\"lfo_params\":[24172,3068,0,16000,0,0,0,0],\"lfo_type\":\"tremolo\",\"name\":\"station 1\",\"octave\":0,\"synth_version\":1,\"type\":\"drwave\"}', 'station 1')"
+        "INSERT INTO synth_presets (patch, folder) VALUES ('{\"adsr\":[64,8128,24575,4000,4000,64,4000,4000],\"fx_active\":false,\"fx_params\":[8000,14368,9438,20044,0,0,0,0],\"fx_type\":\"delay\",\"knobs\":[81,243,0,16383,13056,12288,12288,12288],\"lfo_active\":false,\"lfo_params\":[24172,3068,0,16000,0,0,0,0],\"lfo_type\":\"tremolo\",\"name\":\"station 1\",\"octave\":0,\"synth_version\":1,\"type\":\"drwave\"}', 'station 1')"
       ]
     }
   ],

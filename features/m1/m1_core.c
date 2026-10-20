@@ -5,12 +5,14 @@
  * 9-byte block, predictor history restored at the loop start), then interpolate them linearly at
  * 88.2 kHz, at the block's mean TE increment. High notes play an octave-down copy of the sample
  * (pre-rendered by gen_m1.py, chosen at note on), so the step stays <= 1 (single cycles) / 2 there. Levels (A decay,
- * B fade-in, mix) ramp per 32 samples. Filter: trapezoidal state-variable low-pass (Simper), coefficients four
+ * B fade-in, crossfaded mix) ramp per 32 samples; a voice peaks at about half scale, so chords leave
+ * headroom in TE's voice mix, and the output has a soft knee (as WHEEL) rather than a hard clip.
+ * Filter: trapezoidal state-variable low-pass (Simper), coefficients four
  * times per block; off when the cutoff is fully open with no envelope and no resonance. */
 #include "m1_core.h"
 #include "m1_tables.h"
 
-/* the multisounds: from a SoundFont when gen_m1.py --sf2 made one; the benches use the built-in.
+/* the multisounds: from a SoundFont when gen_m1.py --rom / --sf2 made one; the benches use the built-in.
  * The SoundFont's sample data is a file (M1_ROM_FILE) that m1.c loads at runtime (m1_set_rom); the
  * host tests (not __bfin__) and the SoundFont bench (-DM1_ROM_INLINE) build it in instead. */
 #if !defined(__bfin__) && !defined(M1_ROM_INLINE)
@@ -37,9 +39,9 @@ static const uint8_t *volatile m1_rom;          /* 0 until loaded: notes stay si
 #define SUB         32
 #define CLAMP       60000
 #define INC69       21426141u                   /* 440 Hz at 88.2 kHz, 2^32 per cycle */
-#define GAIN_ONE    24000                       /* one oscillator, Q15 */
-#define GAIN_TWO    17000                       /* each of two at the mix centre */
+#define GAIN_ONE    16000                       /* a voice's waves together, Q15 (peak ~0.5 FS) */
 #define SEMI_CUT    301                         /* one semitone on the CUTOFF scale (9 octaves / 32767) */
+#define KNEE        24576                       /* soft knee 3/4 up, as WHEEL: never a hard clip */
 
 static const int8_t filt[8][2] = {              /* ADPCM predictors, /64 (as gen_m1.py) */
     { 0, 0 }, { 60, 0 }, { 115, -52 }, { 98, -55 }, { 122, -60 }, { 30, 0 }, { 90, -24 }, { 126, -63 },
@@ -241,6 +243,19 @@ void m1_osc_start(m1_osc *o, const m1_sample *s)
     }
 }
 
+/* output stage: linear up to 3/4 of full scale, then a smooth knee approaching +-32767
+ * (y = T + R d / (d + R)) instead of a hard clip; the divide only runs above the knee */
+static inline int16_t soft(int32_t x)
+{
+    int32_t ax = x < 0 ? -x : x, d, y;
+
+    if (ax <= KNEE)
+        return (int16_t)x;
+    d = ax - KNEE;
+    y = KNEE + (int32_t)(((uint32_t)(32767 - KNEE) * (uint32_t)d) / (uint32_t)(d + 32767 - KNEE));
+    return (int16_t)(x < 0 ? -y : y);
+}
+
 /* ------------------------------------------------------------------ voice */
 
 static uint32_t semi_ratio(int s);
@@ -381,7 +396,7 @@ static uint32_t semi_ratio(int s)                /* 2^(s / 12), Q16, s = -24 .. 
 void m1_render(m1_voice *v, int16_t *out, int n, const uint32_t *inc, const int16_t *p)
 {
     int16_t xa[128], xb[128];
-    int i, s, mix = p[M1_MIX] < 0 ? 0 : p[M1_MIX], on_b = v->b.s != 0;
+    int i, s, mix = p[M1_MIX] < 0 ? 0 : p[M1_MIX] > 32767 ? 32767 : p[M1_MIX], on_b = v->b.s != 0;
     int det = (m1_steps_of(p[M1_DETUNE]) * 969) >> 6;          /* 63 steps: 25 cents = 954 / 65536 */
     uint32_t ra = (uint32_t)(65536 - det), rb = (uint32_t)(((uint64_t)semi_ratio(m1_semis_of(p[M1_BPITCH]))
                                                             * (uint32_t)(65536 + det)) >> 16);
@@ -399,13 +414,13 @@ void m1_render(m1_voice *v, int16_t *out, int n, const uint32_t *inc, const int1
     lb1 = bf ? lb0 + (((32767 - lb0) * m1_bfade[bf]) >> 15) : 32767;
     v->la = la1;
     v->lb = lb1;
-    if (on_b) {
-        int wa = mix < 16384 ? 32767 : (32767 - mix) * 2, wb = mix >= 16384 ? 32767 : mix * 2;
+    if (on_b) {                                 /* a true A/B crossfade: they add to one wave's level */
+        int wa = 32767 - mix, wb = mix;
 
-        ga0 = (((GAIN_TWO * wa) >> 15) * la0) >> 15;
-        ga1 = (((GAIN_TWO * wa) >> 15) * la1) >> 15;
-        gb0 = (((GAIN_TWO * wb) >> 15) * lb0) >> 15;
-        gb1 = (((GAIN_TWO * wb) >> 15) * lb1) >> 15;
+        ga0 = (((GAIN_ONE * wa) >> 15) * la0) >> 15;
+        ga1 = (((GAIN_ONE * wa) >> 15) * la1) >> 15;
+        gb0 = (((GAIN_ONE * wb) >> 15) * lb0) >> 15;
+        gb1 = (((GAIN_ONE * wb) >> 15) * lb1) >> 15;
     } else {
         ga0 = (GAIN_ONE * la0) >> 15;
         ga1 = (GAIN_ONE * la1) >> 15;
@@ -444,7 +459,7 @@ void m1_render(m1_voice *v, int16_t *out, int n, const uint32_t *inc, const int1
                 acc[i] = (xa[i] * ga) >> 15;
         if (cut >= 32700 && !fenv && !res) {    /* filter fully open: the samples as they are */
             for (i = s; i < e; i++)
-                out[i] = (int16_t)(acc[i] > 32767 ? 32767 : acc[i] < -32768 ? -32768 : acc[i]);
+                out[i] = soft(acc[i]);
             ic1 = ic2 = 0;
             continue;
         }
@@ -462,7 +477,7 @@ void m1_render(m1_voice *v, int16_t *out, int n, const uint32_t *inc, const int1
             ic2 = 2 * v2 - ic2;
             ic1 = ic1 > CLAMP ? CLAMP : ic1 < -CLAMP ? -CLAMP : ic1;
             ic2 = ic2 > CLAMP ? CLAMP : ic2 < -CLAMP ? -CLAMP : ic2;
-            out[i] = (int16_t)(v2 > 32767 ? 32767 : v2 < -32768 ? -32768 : v2);
+            out[i] = soft(v2);
         }
     }
     v->lp = ic2;

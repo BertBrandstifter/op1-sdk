@@ -10,7 +10,7 @@ multisound per detent; page 1 clamp; 6-bit fields step one per detent and keep t
 to +24); shift + blue = bank (8 entries in range, tag 3); page 4 = FX knobs; "station 1" -> "drwave" in the
 engine list; screen draw (bank entry 2, page 1; SINE PAD on page 4); the keyboard lights a held key's
 voice and clears it on release (TE keeps rendering the voice). Prints cycles per voice block.
-When build/m1_data.inc exists (gen_m1.py --sf2), a second run measures the SoundFont data: m1_core.c
+When build/m1_data.inc exists (gen_m1.py --rom / --sf2), a second run measures the SoundFont data: m1_core.c
 alone at 0x00100000 (-O2, as in the image), worst cycles per voice block over keys 36..108 (sounding) for piano,
 clav, harpsichord, organ 2, strings, lore and saw, alone, layered and with every filter / level stage on.
 HLT = exit 0 = pass, ABORT = exit 1 = fail (R7 = failed check bits, see driver.c)."""
@@ -42,7 +42,7 @@ def main():
          "_engine_name": syms["_compose_engine_name"], "_m1_page": syms["_m1_page"], "_m1_bank": syms["_m1_bank"],
          "_hook_key": syms["__sdk_hook_019b6c74"], "_hook_frame": syms["__sdk_hook_019ab8b2"], "_FB": 0x03000000, "_hook_knob": syms["__sdk_hook_019b6c0c"]},
     )
-    segs = [(0x01E00000, code), (DRIVER_AT, driver), (0x03000000, bytes(320 * 512)), (0x03040000, bytes(320 * 512))]
+    segs = [(0x01E00000, code), (DRIVER_AT, driver), (0x03000000, bytes(320 * 512)), (0x03040000, bytes(320 * 512)), (0x03080000, bytes(320 * 512))]
     for addr, which in STUBS.items():
         stub, _ = asm_bin(
             os.path.join(HERE, "te_stubs.S"), addr, os.path.join(OUT, f"stub{which}"),
@@ -54,7 +54,7 @@ def main():
     elf_run = os.path.join(OUT, "m1test_run.elf")
     r = run_model(elf_run, segs, d["_start"], timeout=300)
     vals = run_gdb(elf_run, [f"*(unsigned*){d[s]:#x}" for s in ("_cycles_plain", "_cycles_two", "_cycles_heavy")]
-                   + [f"/x *(unsigned*){d['_fails']:#x}"], [("m1_screen", 0x03000000), ("m1_screen_fx", 0x03040000)], timeout=300)
+                   + [f"/x *(unsigned*){d['_fails']:#x}"], [("m1_screen", 0x03000000), ("m1_screen_fx", 0x03040000), ("m1_screen_own", 0x03080000)], timeout=300)
     if len(vals) == 4 and r.returncode:
         print(f"failed check bits: {vals[3]}")
     if len(vals) >= 3:
@@ -67,7 +67,7 @@ def main():
 
 def rom_bench():
     if not os.path.exists(os.path.join(HERE, "..", "build", "m1_data.inc")):
-        print("SoundFont data: none (gen_m1.py --sf2), skipped")
+        print("SoundFont data: none (gen_m1.py --rom / --sf2), skipped")
         return 0
     at = 0x00100000
     drv, d = c_bin([os.path.join(HERE, "crt.S"), os.path.join(HERE, "rom_driver.c"),
