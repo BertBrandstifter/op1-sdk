@@ -1,10 +1,6 @@
 STATION 1 sound library: not MIT
 
-The multisounds (m1_data.inc, m1_rom.*) are converted from the KORG M1's ROM samples (the 100
-factory multisounds of the KORG Collection M1, extracted), with the key splits, root keys, tuning
-and levels of the M1 plugin's multisound tables. The drum kits are converted from "KORG M1
-Waveforms.sf2", a SoundFont of the M1's ROM multisounds and drum samples. The sample content
-belongs to its rights holders (KORG Inc.); it is not our work and not covered by the MIT license
+The multisounds are converted and are not our work and are not covered by the MIT license
 of this repository.
 
   m1_data.inc         tables of the 100 multisounds (gen_m1.py --rom)
