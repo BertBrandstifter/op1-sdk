@@ -155,7 +155,7 @@ And thanks to Teenage Engineering for building the OP-1.
   copy. Images you build contain TE's firmware: they are for your own device, don't redistribute
   `.op1`/`.ldr` files.
 - MIT licensed ([`LICENSE`](LICENSE)), except the sound library in `features/m1/build/`
-  (KORG M1 multisounds, not ours: [`NOTICE`](features/m1/build/NOTICE)). Not affiliated with or endorsed by Teenage Engineering.
+  (M1 multisounds, not ours: [`NOTICE`](features/m1/build/NOTICE)). Not affiliated with or endorsed by Teenage Engineering.
 - Flashing always carries a small risk; restoring stock works by re-flashing `op1_246.op1`.
 
 ## Dig deeper
