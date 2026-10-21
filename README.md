@@ -21,14 +21,13 @@ them, each engine with its own bank (**shift + blue turn**), knob push flips pag
 | **WARP** | 16 | 8 waves x 16 phase/output warps, sweep, motion, unison, colour |
 | **TRIO** | 16 | SID-style 3 oscillators (ring/sync/AND) into an SVF filter, drive, noise |
 | **MONO 3** | 16 | classic 70s-style mono synth, played with 4 voices: 3 band-limited oscillators (range / wave / level), noise, a 4-pole ladder filter that self-oscillates in tune, filter and loudness contours, glide — fat basses, leads, brass, pads |
-| **STATION 1** | 28 | late-80s-style sample workstation: **100 sampled multisounds** (pianos, organs, strings, choir, brass, bells, basses, waves), two layered per sound, B transposed / fading in, low-pass with envelope; sample library included (+ two drum kits for the drum sampler) |
+| **STATION 1** | 28 | late-80s-style sample workstation: **100 sampled multisounds** (pianos, organs, strings, choir, brass, bells, basses, waves), two layered per sound, B transposed / fading in, low-pass with envelope; a sound library included (+ two drum kits for the drum sampler) |
 | **engine_plus** | | DRIVE / FILTER / RESO / CRUSH parameters for TE's own engines (fm, digital, string, cluster, phase, dna, voltage, iter) |
 
 **Sound quality first**: the engines render at the OP-1's internal 88.2 kHz; MONO 3's
 oscillators are band-limited (no aliasing whine on high notes) and its filter stays stable at every
-setting; STATION 1 plays the M1's own ROM samples at the M1's own 31.25 kHz, with its key splits
-and tuning (3.7 MB packed into 1.4 MB without resampling; single-cycle waves kept 16-bit and tuned
-to 0.0 cents). Their simulator tests sweep every
+setting; STATION 1 plays a sound library at 31.25 kHz, with its key splits
+and tuning. Their simulator tests sweep every
 parameter through its full range, so each knob moves its sound one way, as the screen says.
 
 **Effects** — new rows in TE's FX list (synth, drum and master):
@@ -69,7 +68,7 @@ writes them to `build/demo/`):
 <table>
   <tr>
     <td><img src="images/sim/mono_screen.png" alt="MONO 3 synth engine screen" width="400"><br><b>MONO 3</b>: synth panel, page 1 (cutoff, emphasis, contour, glide)</td>
-    <td><img src="images/sim/m1_screen.png" alt="STATION 1 synth engine screen" width="400"><br><b>STATION 1</b>: two multisounds layered (built-in waves, 100 sampled multisounds)</td>
+    <td><img src="images/sim/m1_screen.png" alt="STATION 1 synth engine screen" width="400"><br><b>STATION 1</b>: two multisounds layered (built-in waves, a sound library)</td>
   </tr>  
   <tr>
     <td><img src="images/sim/warp_screen.png" alt="WARP synth engine screen" width="400"><br><b>WARP</b>: preset SYNC LEAD, saw through the SYNC warp</td>
@@ -155,7 +154,7 @@ And thanks to Teenage Engineering for building the OP-1.
 - The OP-1's firmware is proprietary, so this repo contains **none of it** — you patch your own
   copy. Images you build contain TE's firmware: they are for your own device, don't redistribute
   `.op1`/`.ldr` files.
-- MIT licensed ([`LICENSE`](LICENSE)), except the STATION 1 sample library in `features/m1/build/`
+- MIT licensed ([`LICENSE`](LICENSE)), except the sound library in `features/m1/build/`
   (KORG M1 multisounds, not ours: [`NOTICE`](features/m1/build/NOTICE)). Not affiliated with or endorsed by Teenage Engineering.
 - Flashing always carries a small risk; restoring stock works by re-flashing `op1_246.op1`.
 

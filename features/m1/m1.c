@@ -307,8 +307,8 @@ int m1_key(int key, int down)
 /* built-in bank: name, wave A, wave B (OFF), mix %, cutoff %, B pitch (semitones), detune, F.ENV %,
  * F.DECAY %, res %, key track %, A decay (amount: 0 = hold, 63 = fastest), B fade (0 = instant)
  * (6-bit steps). Waves are the multisound numbers of the sample set (0 PIANO .. 99 DWGS SINE), or
- * of the built-in waves. bank_rom is generated from the M1's internal program bank (MPC-00) by
- * m1_bank.py: its original multisounds, octaves and layer levels. */
+ * of the built-in waves. bank_rom holds the sound library's original multisounds,
+ * octaves and layer levels. */
 typedef struct {
     const char *name;
     int8_t a, b, mix, cut, bpitch, det, fenv, fdec, res, ktrk, adec, bfade;

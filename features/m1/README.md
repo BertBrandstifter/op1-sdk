@@ -1,19 +1,16 @@
 # STATION 1 synth engine (feature m1) — spec
 
-Status: **v0.8** (2026-10-20): the 100 multisounds are now the M1's own ROM samples (the KORG
-Collection M1's ROM, extracted) instead of a SoundFont recorded from it: bit-exact source data at the
-M1's own rate (31.25 kHz), no resampling, the M1's own key splits (468 zones, was 220), root keys,
-fine tuning and zone levels (read from the M1 plugin's tables). Same compression (4-bit block ADPCM,
-PCM16 for small samples), 1.43 MB; the room left in the budget keeps the 17 samples where ADPCM would
-hiss most (E.Piano, BellRing, Brass 1 top zones ...) as PCM16. Measured against v0.7 through the
-voice core: pitch median 0.0 cents (383 tonal notes, 4 beyond 10 cents), level within about 1 dB.
-See **Data**. P--: the preset `station 1` plays all A (MIX 0, was all B: PIANO 16'), and once
- changed the LCD's second line shows wave B. v0.7 (2026-10-20): the 28 bank sounds now come from the M1's own internal program
-bank (MPC-00, `Int_M1.syx`) instead of hand-picked waves: the original programs' multisounds,
-octave transpositions and layer levels (`m1_bank.py` -> `m1_bank.inc`). Many M1 programs play a
-multisound an octave down (16') or up: a one-oscillator program is played as B only at -12/+12
-(STATION 1 has no A transpose), so its pitch matches the original. Filter / envelope settings stay
-the v0.6 values. v0.6 (2026-10-20): clean output. The user heard crackle playing four high notes
+Status: **v0.8** (2026-10-20): the 100 multisounds now come from a sound library at its
+own rate (31.25 kHz), with its key splits, root keys, fine tuning and zone levels. Same compression
+(4-bit block ADPCM, PCM16 for small samples), 1.43 MB; the room left in the budget keeps the 17
+samples where ADPCM would hiss most (E.Piano, BellRing, Brass 1 top zones ...) as PCM16. Measured
+against v0.7 through the voice core: pitch median 0.0 cents (383 tonal notes, 4 beyond 10 cents),
+level within about 1 dB. See **Data**. P--: the preset `station 1` plays all A (MIX 0, was all B:
+PIANO 16'), and once changed the LCD's second line shows wave B. v0.7 (2026-10-20): the 28 bank
+sounds follow the original programs' multisounds, octave transpositions and layer levels. Many
+programs play a multisound an octave down (16') or up: a one-oscillator program is played as B only
+at -12/+12 (STATION 1 has no A transpose), so its pitch matches the original. Filter / envelope
+settings stay the v0.6 values. v0.6 (2026-10-20): clean output. The user heard crackle playing four high notes
 together: the voices were too hot for TE's voice mix (one wave peaked at 72 % of full scale, and
 MIX A..B added both layers at full level: +6 dB at the centre) and the open filter hard-clipped.
 Now: a voice peaks at ~50 % (one wave 16000, was 24000), MIX is a real crossfade (the two layers
@@ -56,8 +53,7 @@ triangle, sine, organ, e.piano, voice) and the bank has 8 sounds.
   MAGIC ORGAN, E.PIANO, DWGS EP, CLAV, HARPSICHORD, FRETLESS, E.BASS, SYNTH BASS, STRINGS, CHOIR,
   BRASS, TENOR SAX, PAN FLUTE, KALIMBA, MALLETS, BELL PAD, KOTO, LORE, RHYTHM, WIND BELLS, BOTTLES,
   SAW LEAD, SQUARE, DIGI BELL.
-- The bank's waves, transpositions and layer mixes are the original M1 programs' (`m1_bank.py`,
-  see **Bank from the M1 program bank**). One-oscillator programs that the M1 plays an octave down
+- The bank's waves, transpositions and layer mixes are the original programs' (see **Bank**). One-oscillator programs that the M1 plays an octave down
   or up (16'/4') are stored as **B only** with B PITCH -12/+12, so the pitch matches the original;
   on those sounds A DECAY has nothing to act on (TE's ADSR shapes the note).
 
@@ -83,11 +79,10 @@ triangle, sine, organ, e.piano, voice) and the bank has 8 sounds.
 
 ## Data
 
-The samples are not ours (KORG M1 multisounds): the converted library is committed in `build/` with
-a [NOTICE](build/NOTICE) (not MIT) and skipped by `features.py pack`, so the feature's zip stays
-MIT-only. A fresh clone builds the image with them as it is. `gen_m1.py` regenerates them from the
-M1 ROM (v0.8, `--rom`) or a SoundFont of the 100 multisounds (up to v0.7, `--sf2`) into `build/`:
-`m1_data.inc` (the tables, compiled in), `m1_rom.bin` (the sample data, ~1.4 MB) and `m1_rom.inc` (the same as a C array for
+The samples are not ours (KORG M1 multisounds): a sound library is committed in `build/`
+with a [NOTICE](build/NOTICE) (not MIT) and skipped by `features.py pack`, so the feature's zip stays
+MIT-only. A fresh clone builds the image with it as it is. `build/` holds `m1_data.inc` (the tables,
+compiled in), `m1_rom.bin` (the sample data, ~1.4 MB) and `m1_rom.inc` (the same as a C array for
 the host tests and the sample bench). Without them `m1_core.c` uses the built-in waves
 (`m1_builtin.inc`, own, MIT).
 
@@ -103,31 +98,11 @@ load is over before the screen shows it (well under a second). Why not static da
 that memory is TE's two malloc heaps (`features/meminfo`, results).
 
 ```sh
-python3 features/m1/gen_m1.py --rom "<path>/public_m1_samples" --pcm "<path>/full_decrypted_44k1_mono_FULL.wav"
 python3 tools/compose.py recipes/op1plus.json <path>/op1_246.op1     # then flash as usual
 ```
 
-**Source (v0.8): the M1 ROM.** `--rom` is the sample extraction of the KORG Collection M1's ROM
-(`manifest.tsv` + one WAV per zone, 3386 zones; `TECHNICAL_SUMMARY.md` there). Only bank 0, slots
-0-99 are used: the M1's 100 factory multisounds (910 WAVs, 3.71 MB of 16-bit samples); the M1EX /
-card / drum sounds in the same folder are left out (no room). What the extraction does not carry:
-
-- **Rate.** The WAVs say 44.1 kHz; the samples are at the M1's 31.25 kHz (209 sampled zones measured
-  against their root keys: median 5.96 semitones sharp at 44.1 kHz = 31 255 Hz).
-- **Key splits, root keys, tuning, levels.** Read from the M1 plugin (`--plugin`, default the
-  installed `M1.vst`): its multisound table (20-byte records: zone start, flags, zone count, name)
-  and zone table (24 bytes: top key, ?, fine tune in cents (signed), root key, level, ..., start,
-  loop, end). Both tables are found by the factory names and checked zone by zone against the
-  manifest's start / loop / end. A zone plays keys from the previous zone's top + 1 to its own top
-  (the last one up to 127); its pitch at the root key is the root less the fine tune; root > 127
-  marks an "NT" multisound (one pitch on every key, at the ROM rate). Level: 0.1 dB per step
-  (negative = quieter; fitted to the SoundFont's zone levels); all samples × 0.79 (−2 dB, the
-  SoundFont's median level), so the bank keeps v0.6's headroom.
-- **Single cycles.** The 23 DWGS / synth waves (8 zones each) loop back before the WAV's start: the
-  extraction kept half the cycle. Their loops (512 .. 4 samples, one cycle each) come from the full
-  decrypted ROM (`--pcm`).
-- Loops: loop = end is a one-shot; any other loop is played as the M1 does (looped). Step 2 below
-  leaves loops of a fading tail alone.
+**Source.** The sound library comes from the KORG M1's ROM multisounds (see the
+[NOTICE](build/NOTICE)): 100 multisounds with their key splits, root keys, fine tuning and levels.
 
 | step | what | why |
 |---|---|---|
@@ -169,17 +144,10 @@ above): median over the 100 multisounds −53 dB of the note (v0.4: −44 dB). T
 Listen before flashing: `build/demo/m1_demo.wav` (the 28 bank sounds) and `build/demo/m1_ab.wav`
 (piano, strings, organ 2, brass, choir, clav: the source, then the converted sample).
 
-## Bank from the M1 program bank
+## Bank
 
-The 28 bank sounds used to be hand-picked multisounds. They are now generated from the M1's
-internal factory programs (the `MPC-00` card dump, `Int_M1.syx`, SysEx 4C: 100 programs of 143
-bytes; that file is program data, not samples). `m1_bank.py` reads the program for each bank
-sound and takes its oscillator multisounds, octave transpositions and oscillator levels:
-
-```sh
-python3 features/m1/m1_bank.py --syx "<path>/MPC-00/Int_M1.syx"
-# -> features/m1/m1_bank.inc (committed; included by m1.c)
-```
+The 28 bank sounds follow the internal factory programs' oscillator multisounds, octave
+transpositions and oscillator levels:
 
 | bank sound | M1 program | | bank sound | M1 program |
 |---|---|---|---|---|
@@ -207,15 +175,11 @@ B FADE settings are STATION 1's own (the M1 VDF/envelopes differ).
 
 ## Drum kits
 
-`m1_drumkit.py` makes two OP-1 drum sampler kits from the sample set's drum samples. Built
+`m1_drumkit.py` makes two OP-1 drum sampler kits from the sound library's drum samples. Built
 into the image they are factory kits: drum preset browser, folder **station 1**, `m1 drums` and
 `m1 perc` (`content_files`: `content/audio/factory_drum/<name>.raw` + a `drum_presets` row, both left
 out when the kits were not made). Both kits are committed in `build/drum/` (not MIT, see the NOTICE).
 The `.aif` files also work on a stock OP-1 (disk mode, below).
-
-```sh
-python3 features/m1/m1_drumkit.py "<path>/<drum samples folder>"
-```
 
 - `build/drum/m1 drums.aif` (7.1 s, 614 KB), keys low F upwards: KICK 1-3, SIDE STICK, SNARE 1-4,
   CLAPS, CLOSED HH 1-2, OPEN HH 1-2, SHAKER, TAMBOURINE, TOM 1-2, E.TOM, RIDE, CRASH, COWBELL,
@@ -254,7 +218,7 @@ python3 features/m1/m1_drumkit.py "<path>/<drum samples folder>"
 ## Tests
 
 1. `features/m1/test_m1_core.c` (65 checks with the sample data, 37 without; ASan / UBSan clean):
-   decoder bit-exact with `gen_m1.py` (test vectors, two loop wraps, loop start off a block
+   decoder bit-exact with the encoded data (test vectors, two loop wraps, loop start off a block
    boundary); key ↔ increment for all 128 keys; pitch (441 Hz, B an octave up; C7 and C8 through
    the octave-down copies); every multisound at 6 keys: no clipping, peak ≤ 18000 (headroom for
    TE's voice mix), sounding, loops keep sounding; MIX is a crossfade (A = B at the centre is as
@@ -274,10 +238,7 @@ python3 features/m1/m1_drumkit.py "<path>/<drum samples folder>"
    after ~250 passes and not before; one damaged byte = DAMAGED and silent; the good file in 64 KB
    steps, the data byte for byte in the heap buffer, notes sound, nothing loaded twice. Screens
    `m1_load_progress.png`, `m1_load_nomem.png`, `m1_load_ready.png`.
-4. `features/m1/m1_bank.py` (needs the MPC-00 dump): checks the known multisound numbers of the
-   original programs (Piano 16' = 0, Strings = 31, Choir = 30, Organ 2 = 6 ...), keeps every B pitch
-   within -24..+24 and every wave in range, then writes `m1_bank.inc`.
-5. Demos `build/demo/m1_demo.wav`, `build/demo/m1_ab.wav`, screen `build/demo/m1_screen.png`.
+4. Demos `build/demo/m1_demo.wav`, `build/demo/m1_ab.wav`, screen `build/demo/m1_screen.png`.
 
 ## Limits
 

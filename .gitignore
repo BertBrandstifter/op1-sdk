@@ -15,7 +15,7 @@ analysis/
 hooks_op1r10.json
 features.db
 build/
-# the STATION 1 sound library is committed (features/m1/build/NOTICE: not MIT)
+# the sound library is committed (features/m1/build/NOTICE: not MIT)
 !features/m1/build/
 # editor backups
 *.bak
