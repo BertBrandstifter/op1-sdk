@@ -42,6 +42,27 @@ extern volatile int rq_state;
 #define FS_NOTE(p, s, h) (*(volatile int32_t *)(0x01dda720 + (p) * 0x100 + (s) * 8 + (h) * 4))
 #define FS_LEN(p)       (*(volatile int32_t *)(0x01ddb520 + 4 * (p)))
 #define FS_PLAYER_BUILT (*(volatile int32_t *)0x01ddc5a4)
+#define FS_HELD(a, i)   (*(volatile uint8_t *)(0x01ddc5a8 + 0x6ac + 0x80 * (a) + (i)))   /* the fingers */
+static uint8_t seen_held[2][24];                /* a finger flag was up during tick() */
+
+static void clear_seen(void)
+{
+    int a, i;
+
+    for (a = 0; a < 2; a++)
+        for (i = 0; i < 24; i++)
+            seen_held[a][i] = 0;
+}
+
+static int held_now(void)                       /* finger flags up now */
+{
+    int a, i, n = 0;
+
+    for (a = 0; a < 2; a++)
+        for (i = 0; i < 24; i++)
+            n += FS_HELD(a, i) != 0;
+    return n;
+}
 #define FS_SELECTED     (*(volatile int32_t *)0x01ddc5c4)
 #define FS_STEP(a)      (*(volatile int32_t *)(0x01ddc5b4 + 4 * (a)))
 
@@ -320,6 +341,13 @@ static void tick(int n)
     while (n--) {
         te_player_block();                      /* TE's player first (TE's seq tick), then the hook */
         hook_tick();
+        {
+            int a, i;
+
+            for (a = 0; a < 2; a++)
+                for (i = 0; i < 24; i++)
+                    seen_held[a][i] |= FS_HELD(a, i);
+        }
         block++;
     }
 }
@@ -699,8 +727,12 @@ int main(void)
      * (within one block), the snare on 5 and 13, the hat on 1 and 3 (TONE +12 -> extra 12) */
     nlog = 0;
     b0 = (int)block;
+    clear_seen();
     FS_ARTIST(0) = 2;
     tick(1378);
+    /* the finger screen animates DRUM ROLL's notes as TE's: artist 0's fingers for keys 0, 1, 4, 9
+     * (kick, its hits: 53, 54, 57, 62), none of artist 1's */
+    CHECK(4, seen_held[0][0] && seen_held[0][1] && seen_held[0][4] && seen_held[0][9] && !seen_held[1][0]);
     for (i = 0, n = 0, ok = 1; i < nlog; i++)
         if (lg[i].on && lg[i].note == 53 && !lg[i].te) {
             int want = b0 + (int)((uint32_t)n * 22050 / 64);
@@ -722,7 +754,9 @@ int main(void)
     FS_ARTIST(1) = 13;
     a = nlog;
     b0 = (int)block;
+    clear_seen();
     tick(9 * 5513 / 64 + 2);
+    CHECK(5, seen_held[1][11]);                 /* artist 1's finger for key 11 */
     i = find_on(a, 53 + 11);
     CHECK(5, i >= 0 && lg[i].extra == 7 && lg[i].block >= (uint32_t)(b0 + 8 * 5512 / 64)
              && lg[i].block <= (uint32_t)(b0 + 8 * 5513 / 64 + 1) && dr_play[13].on && dr_play[2].on);
@@ -736,6 +770,7 @@ int main(void)
     CHECK(6, !dr_play[2].on && !dr_play[13].on);
     tick(3000);
     CHECK(6, count_on(a, 53, 0) == 0 && active == 0 && max_active <= 10 && violations == 0);
+    CHECK(6, held_now() == 0);                  /* every note ended: no finger left down */
     /* ... and after 3 steps without step events (TE's player stopped, the artist still set) */
     FS_ARTIST(0) = 2;
     tick(10);

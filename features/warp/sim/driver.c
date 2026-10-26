@@ -90,12 +90,14 @@ int main(void)
     *TE_SYNTH_SLOT = 2;
     TE_SYNTH_TYPE[2] = TE_INSTR_DRWAVE;
 
-    /* 0: plain drwave and a tag-7 look-alike stay TE's */
+    /* 0: plain drwave stays TE's, also with tag 7 (MALLET's) in slot 5 alone (stock slot 5 is
+     * 0x7d00 / 0x7fff, slots 6-8 zero) */
     for (i = 0; i < 8; i++)
         knobs[i] = stock[i];
     wh_te_render(VOICE(0), out, knobs);
-    for (i = 4; i < 8; i++)
-        knobs[i] = P2(7, 100);
+    knobs[4] = P2(7, 100);
+    for (i = 5; i < 8; i++)
+        knobs[i] = 0;
     wh_te_render(VOICE(0), out, knobs);
     CHECK(0, drwave_renders == 2 && out[0] == 1234);
 
@@ -196,17 +198,17 @@ int main(void)
         wp_page = 0;
     }
 
-    /* 7: engine list: "warp" -> "drwave"; "wheel" and "lofi" still renamed by their features */
+    /* 7: engine list: "warp" -> "drwave"; "wheel" and "mallet" still renamed by their features */
     {
         static te_string a, b, c, d;
 
-        name(&a, "warp"); name(&b, "wheel"); name(&c, "lofi"); name(&d, "warps");
+        name(&a, "warp"); name(&b, "wheel"); name(&c, "mallet"); name(&d, "warps");
         engine_name(&a, 0, 0);
         engine_name(&b, 0, 0);
         engine_name(&c, 0, 0);
         engine_name(&d, 0, 0);
         CHECK(7, a.size == 6 && a.bx.sso[0] == 'd' && b.size == 6 && b.bx.sso[0] == 'd'
-                 && c.size == 5 && c.bx.sso[0] == 'p' && d.size == 5 && d.bx.sso[0] == 'w');
+                 && c.size == 6 && c.bx.sso[0] == 'd' && d.size == 5 && d.bx.sso[0] == 'w');
     }
 
     /* 8: cost per voice block: plain sine, SAW + SYNC, FM + unison + colour + motion + sweep */

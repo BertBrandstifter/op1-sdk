@@ -53,16 +53,29 @@ static const char *const te_fx[EH_TE_FX_TYPES][5] = {
     { "NITRO", "FREQ", "FOLLOW", "RES", "FREQ 2" },
     { "CWO", "FREQ", "DELAY", "FEEDBACK", "SIDEBAND" },
 };
-static const char *const sdk_fx[9][5] = {
+static const char *const sdk_fx[17][5] = {
     { "RESO", "DECAY", "TONE", "CHORD", "MIX" },
     { "SHIMMER", "DECAY", "TONE", "SHIMMER", "MIX" },
     { "PHASER", "RATE", "DEPTH", "FEEDBACK", "MIX" },       /* FX MIX types, its TYPE order */
     { "FLANGER", "RATE", "DEPTH", "FEEDBACK", "MIX" },
+    { "CHORUS", "RATE", "DEPTH", "VOICES", "MIX" },
+    { "COMB", "FREQ", "FEEDBACK", "DAMP", "MIX" },
+    { "RING MOD", "FREQ", "DEPTH", "RATE", "MIX" },
+    { "TREMOLO", "RATE", "DEPTH", "SHAPE", "MIX" },
     { "FOLD", "DRIVE", "BIAS", "TONE", "MIX" },
     { "FUZZ", "DRIVE", "TONE", "CHAR", "MIX" },
+    { "BITCRUSH", "BITS", "RATE", "JITTER", "MIX" },
     { "DJ FILTER", "FILTER", "RESO", "DRIVE", "MIX" },
+    { "LADDER", "CUTOFF", "RESO", "DRIVE", "MIX" },
+    { "AUTO-WAH", "SENS", "RESO", "FREQ", "MIX" },
+    { "VOWEL", "VOWEL", "RESO", "SHIFT", "MIX" },
     { "TRANSIENT", "ATTACK", "SUSTAIN", "OUTPUT", "MIX" },
     { "TEXTURE", "KIND", "LEVEL", "TONE", "BREATH" },
+};
+
+/* FX MIX TYPE: 32 slots -> its effect, sdk_fx order (as fxpack_core.c slot_type) */
+static const uint8_t fxmix_slot[32] = {
+    0, 0, 0, 0, 3, 1, 1, 1, 1, 2, 2, 6, 6, 4, 5, 7, 7, 7, 7, 8, 9, 9, 10, 11, 13, 13, 13, 12, 14, 14, 14, 14,
 };
 
 /* name + 4 knob names of the sound's FX (t = TE_FX_*, f = its stored params) */
@@ -75,11 +88,8 @@ static const char *const *fx_names(const volatile int16_t *f, int t)
             return sdk_fx[0];
         if (t == TE_FX_SPRING && m == 0x4000)
             return sdk_fx[1];
-        if (t == TE_FX_PHONE && m == 0x6000) {          /* FX MIX: TYPE in param 5 */
-            int type = (((f[4] & 0x1fff) << 2) * 7) >> 15;
-
-            return sdk_fx[2 + (type > 6 ? 6 : type)];
-        }
+        if (t == TE_FX_PHONE && m == 0x6000)            /* FX MIX: TYPE slot in param 5 */
+            return sdk_fx[2 + fxmix_slot[(f[4] & 0x1fff) >> 8]];
     }
     return te_fx[t];
 }

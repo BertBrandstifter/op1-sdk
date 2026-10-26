@@ -11,16 +11,19 @@ features below have been flashed and played on a real OP-1.
 
 One image ("op1plus"), composed from the feature library — build it, flash it, have fun.
 
-**Synth engines** — six new rows in TE's engine list with **114 ready-to-play sounds** between
-them, each engine with its own bank (**shift + blue turn**), knob push flips pages:
+**Synth engines** — seven new rows in TE's engine list with **114 ready-to-play sounds** between
+them (plus PSS-11's built-in 8, or 39 with a ROM library), each engine with its own bank
+(**shift + blue turn**), knob push flips pages:
 
 | | sounds | |
 |---|---|---|
 | **LOFI** | 14 | chiptune waves + 16 pitch-tracking bytebeat formulas |
+| **MALLET** | 16 | struck instruments by modal synthesis: marimba, vibraphone (with motor), xylophone, glockenspiel, steelpan, handpan, kalimba, tubular bells |
 | **WHEEL** | 24 | tonewheel organ: registrations, percussion, click, drive, rotary speaker |
 | **WARP** | 16 | 8 waves x 16 phase/output warps, sweep, motion, unison, colour |
 | **TRIO** | 16 | SID-style 3 oscillators (ring/sync/AND) into an SVF filter, drive, noise |
 | **MONO 3** | 16 | classic 70s-style mono synth, played with 4 voices: 3 band-limited oscillators (range / wave / level), noise, a 4-pole ladder filter that self-oscillates in tune, filter and loudness contours, glide — fat basses, leads, brass, pads |
+| **PARTY** | 8 | Yamaha PSS-11 AWM tone generator (GEW7) recreated after MAME: 8/12-bit samples, chip envelope and LFO, two layers, filter, bank. No Yamaha sounds included: 8 own waves until you build the library from your own ROM dump with `gen_pss11.py --pss-rom` |
 | **STATION 1** | 28 | late-80s-style sample workstation: **100 sampled multisounds** (pianos, organs, strings, choir, brass, bells, basses, waves), two layered per sound, B transposed / fading in, low-pass with envelope; a sound library included (+ two drum kits for the drum sampler) |
 | **engine_plus** | | DRIVE / FILTER / RESO / CRUSH parameters for TE's own engines (fm, digital, string, cluster, phase, dna, voltage, iter) |
 
@@ -36,7 +39,7 @@ parameter through its full range, so each knob moves its sound one way, as the s
 |---|---|
 | **RESO** | resonator: four strings tuned to the notes you play |
 | **SHIMMER** | reverb whose tail rises an interval per pass |
-| **FX MIX** | seven effects in one slot: phaser, flanger, fold, fuzz, DJ filter, transient, texture |
+| **FX MIX** | fifteen effects in one slot: phaser, flanger, chorus, comb, ring mod, tremolo, fold, fuzz, bitcrush, DJ filter, ladder, auto-wah, vowel, transient, texture |
 
 **Performance features:**
 
@@ -76,6 +79,10 @@ writes them to `build/demo/`):
   </tr>
   <tr>
     <td><img src="images/sim/trio_screen.png" alt="TRIO synth engine screen" width="400"><br><b>TRIO</b>: preset SID LEAD, three oscillators into the filter</td>
+    <td><img src="images/sim/mallet_screen.png" alt="MALLET synth engine screen" width="400"><br><b>MALLET</b>: preset STEELPAN, three notes lit on the pan</td>
+  </tr>
+  <tr>
+    <td><img src="images/sim/party_screen.png" alt="PARTY synth engine screen" width="400"><br><b>PARTY</b>: P02 E.PIANO, A4 held and lit (built-in waves)</td>
     <td><img src="images/sim/lofi_screen.png" alt="LOFI synth engine screen" width="400"><br><b>LOFI</b>: preset TRI BASS, stepped triangle</td>
   </tr>
 </table>
@@ -154,7 +161,7 @@ And thanks to Teenage Engineering for building the OP-1.
 - The OP-1's firmware is proprietary, so this repo contains **none of it** — you patch your own
   copy. Images you build contain TE's firmware: they are for your own device, don't redistribute
   `.op1`/`.ldr` files.
-- MIT licensed ([`LICENSE`](LICENSE)), except the sound library in `features/m1/build/`
+- MIT licensed ([`LICENSE`](LICENSE)), except the PARTY AWM model (BSD-3-Clause parts after MAME, `features/party/NOTICE`) and the sound libraries in `features/m1/build/` and `features/party/build/`
   (M1 multisounds, not ours: [`NOTICE`](features/m1/build/NOTICE)). Not affiliated with or endorsed by Teenage Engineering.
 - Flashing always carries a small risk; restoring stock works by re-flashing `op1_246.op1`.
 

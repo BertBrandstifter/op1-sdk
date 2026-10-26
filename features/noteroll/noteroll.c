@@ -40,6 +40,10 @@
 #define FS_PLAYER_BUILT     (*(volatile int32_t *)0x01ddc5a4)
 #define FS_SELECTED         (*(volatile int32_t *)0x01ddc5c4)   /* player + 0x1c (both playmodes) */
 #define FS_STEP(a)          (*(volatile int32_t *)(0x01ddc5b4 + 4 * (a)))
+/* player + 0x6ac: per artist 128 "sounding" bytes the finger screen animates its fingers from
+ * (0x019ee9e8 reads them); TE's player sets one at its note-on (synth: the MIDI note, 0x019edd84)
+ * and clears it at its note-off (0x019ed5b4). NOTE ROLL's notes do the same. */
+#define FS_HELD(a, i)       (*(volatile uint8_t *)(0x01ddc5a8 + 0x6ac + 0x80 * (a) + (i)))
 
 /* ------------------------------------------------------------------ state */
 
@@ -62,8 +66,9 @@ static volatile uint8_t preview_req, consumed, dirty, save_now;
 static volatile uint16_t want_summary;          /* bit p: TE's copy of p to rewrite (main thread) */
 
 /* Seq thread */
-static struct { uint8_t note; uint32_t due; } offs[OFFS];
+static struct { uint8_t note, art; uint32_t due; } offs[OFFS];   /* art: the artists it shows for */
 static int noffs;
+static uint8_t cur_art;                         /* the artists holding the pattern being played (bits) */
 static uint32_t now, touch_at;
 #define TOUCH_HOLD  (2 * 44100)                 /* after a knob / key event the view shows the cursor */
 static volatile uint16_t ev_mask;               /* step events of this block (get_note, hand 0) */
@@ -75,7 +80,7 @@ volatile uint8_t nr_px_bank;                    /* the black keys' bank 0..2 (A 
 static volatile uint16_t px_consumed;           /* black keys whose release is ours */
 static volatile uint32_t px_seq[NR_PX_KEYS], px_count;  /* press order: the last REPEAT wins */
 #define LATER       32
-static struct { uint8_t key, vel; uint32_t due, hold; } later[LATER];  /* ARP's note-ons to come */
+static struct { uint8_t key, vel, art; uint32_t due, hold; } later[LATER];  /* ARP's note-ons to come */
 static int nlater;
 
 void nr_init(void)
@@ -160,15 +165,46 @@ static int played_note(int key)
     return k < 0 || k > 127 ? -1 : k;
 }
 
+/* the finger screen's fingers: on for the artists a note plays for, off when the last of their
+ * notes on that pitch ends */
+static void fingers(int played, int art, int on)
+{
+    int a, i = 0;
+
+    if (!FS_PLAYER_BUILT || (unsigned int)played > 127)
+        return;
+    for (a = 0; a < 2; a++) {
+        if (!(art >> a & 1))
+            continue;
+        if (!on)
+            for (i = 0; i < noffs; i++)
+                if (offs[i].note == played && (offs[i].art >> a & 1))
+                    break;
+        if (on || i == noffs)
+            FS_HELD(a, played) = (uint8_t)on;
+    }
+}
+
 static void add_off(int played, uint32_t due)
 {
     if (noffs < OFFS) {
         offs[noffs].note = (uint8_t)played;
+        offs[noffs].art = cur_art;
         offs[noffs].due = due;
         noffs++;
+        fingers(played, cur_art, 1);
     } else {
         note(0, played, 0);                     /* never lose a note-off */
     }
+}
+
+static void off_at(int i)                       /* note-off of offs[i], then its fingers */
+{
+    int played = offs[i].note, art = offs[i].art;
+
+    note(0, played, 0);
+    offs[i] = offs[--noffs];
+    fingers(played, art, 0);
 }
 
 /* a held copy of the same note is released first (TE does the same before a retrigger) */
@@ -177,12 +213,10 @@ static void release(int played)
     int i;
 
     for (i = 0; i < noffs; )
-        if (offs[i].note == played) {
-            note(0, played, 0);
-            offs[i] = offs[--noffs];
-        } else {
+        if (offs[i].note == played)
+            off_at(i);
+        else
             i++;
-        }
 }
 
 /* a stored note at due (this block or later: then queued) */
@@ -194,6 +228,7 @@ static void hit_key(int key, int vel, uint32_t due, uint32_t hold)
         if (nlater < LATER) {
             later[nlater].key = (uint8_t)key;
             later[nlater].vel = (uint8_t)vel;
+            later[nlater].art = cur_art;
             later[nlater].due = due;
             later[nlater].hold = hold;
             nlater++;
@@ -222,8 +257,10 @@ static void later_due(void)
             int key = later[i].key, vel = later[i].vel;
             uint32_t hold = later[i].hold;
 
+            cur_art = later[i].art;
             later[i] = later[--nlater];
             hit_key(key, vel, due, hold);
+            cur_art = 0;
         } else {
             i++;
         }
@@ -294,12 +331,10 @@ static void offs_due(uint32_t to)
     int i;
 
     for (i = 0; i < noffs; )
-        if ((int32_t)(to - offs[i].due) >= 0) {
-            note(0, offs[i].note, 0);
-            offs[i] = offs[--noffs];
-        } else {
+        if ((int32_t)(to - offs[i].due) >= 0)
+            off_at(i);
+        else
             i++;
-        }
 }
 
 /* ---- punch-in effects, Seq thread (three banks, see nr_punch.h; as DRUM ROLL's) */
@@ -530,10 +565,13 @@ void nr_tick(void)
                     take_import(p);
             }
             if (nr_fs_window(c, (ev >> p) & 1, st16, BLOCK, &from, &end) && end > from) {
-                if (owned(p) || (take >> p & 1))
+                if (owned(p) || (take >> p & 1)) {
+                    cur_art = (uint8_t)((FS_ARTIST(0) == p) | (FS_ARTIST(1) == p) << 1);
                     play_window(p, from, end);
-                else
+                    cur_art = 0;
+                } else {
                     rep_key[p] = -1;
+                }
             }
         }
         px_take = take;

@@ -1,17 +1,17 @@
 # Engine host — spec
 
-Status: **v1.0** (2026-10-13), sim-verified. Code: `features/enginehost/` (library feature; WHEEL and
+Status: **v1.2** (2026-10-22: tag 7 = MALLET), sim-verified; v1.1 = FX MIX names by TYPE slot, all fifteen FX MIX effects; v1.0 2026-10-13. Code: `features/enginehost/` (library feature; WHEEL and
 WARP depend on it).
 
 All of TE's synth engines are taken (engine_plus: fm digital string cluster phase dna voltage iter;
 LOFI: pulse), so new SDK engines share **drwave**. The host owns drwave's render (`0x0190fb40`)
 and note_on (`0x0190fb48`) vtable slots and hands each voice to the engine whose **tag** the
-sound carries: knob slots 5-8 all `(tag << 12) | v` with the same tag 1..6 (v = 12 bits of that
-engine's page 2). Tag 7 is never used (stock drwave slot-5 values 0x7d00 / 0x7fff); stock presets
-have slots 6-8 = 0, so they never match. Page 1 stays within drwave's slot ranges (engines use
+sound carries: knob slots 5-8 all `(tag << 12) | v` with the same tag 1..7 (v = 12 bits of that
+engine's page 2). Stock drwave slot-5 values 0x7d00 / 0x7fff carry tag 7, but stock presets have
+slots 6-8 = 0 (all 16 factory drwave presets checked), so they never match: tag 7 is MALLET's. Page 1 stays within drwave's slot ranges (engines use
 0..16383). Everything is in range: no range-check hook, presets load on stock firmware as drwave.
 
-Tags: **2 MONO 3**, **3 STATION 1**, **4 TRIO**, **5 WHEEL**, **6 WARP**, free: 1.
+Tags: **1 PARTY (PSS-11)**, **2 MONO 3**, **3 STATION 1**, **4 TRIO**, **5 WHEEL**, **6 WARP**, **7 MALLET**, free: none.
 
 - `eh_register(tag, render)` from the engine's `init`; render(vi, out, knobs, inc, flags) with
   `EH_FRESH` (first block of a new note) and `EH_BLOCK` (first voice of this audio block: shared

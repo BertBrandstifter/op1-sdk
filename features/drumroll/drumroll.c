@@ -58,6 +58,10 @@
 #define FS_PLAYER_BUILT     (*(volatile int32_t *)0x01ddc5a4)
 #define FS_SELECTED         (*(volatile int32_t *)0x01ddc5c4)   /* player 0x01ddc5a8 + 0x1c */
 #define FS_STEP(a)          (*(volatile int32_t *)(0x01ddc5b4 + 4 * (a)))   /* player + 0x0c: artist's step */
+/* player + 0x6ac: per artist 128 "sounding" bytes the finger screen animates its fingers from
+ * (0x019ee9e8 reads them); TE's player sets one at its note-on (drum: (note - 5) % 24 = the key,
+ * 0x019edf12) and clears it at its note-off (0x019ed5b4). DRUM ROLL's notes do the same. */
+#define FS_HELD(a, i)       (*(volatile uint8_t *)(0x01ddc5a8 + 0x6ac + 0x80 * (a) + (i)))
 #define KEY_PUSH            59                  /* blue 59 green 60 white 61 orange 62 */
 #define OFFS                64
 #define BLOCK               TE_AUDIO_FRAMES
@@ -97,8 +101,9 @@ static volatile uint8_t preview_req;
 static volatile uint8_t consumed;               /* knob pushes whose key-up we eat (bits 0..3) */
 
 /* Seq thread */
-static struct { uint8_t note; uint32_t due; } offs[OFFS];
+static struct { uint8_t note, art; uint32_t due; } offs[OFFS];   /* art: the artists it shows for */
 static int noffs;
+static uint8_t cur_art;                         /* the artists holding the pattern being played (bits) */
 static uint32_t now;                            /* samples since boot (note-off times) */
 static uint32_t touch_at;                       /* `now` at the last knob / key event (view: cursor) */
 #define TOUCH_HOLD  (2 * 44100)                 /* after it, the view follows the playhead */
@@ -275,15 +280,46 @@ static void note(int on, int key, int tone, int32_t gain, int32_t gate)
     pend.valid = 0;
 }
 
+/* the finger screen's fingers: on for the artists a hit plays for, off when the last of their
+ * notes on that key ends */
+static void fingers(int key, int art, int on)
+{
+    int a, i = 0;
+
+    if (!FS_PLAYER_BUILT || (unsigned int)key >= DR_KEYS)
+        return;
+    for (a = 0; a < 2; a++) {
+        if (!(art >> a & 1))
+            continue;
+        if (!on)
+            for (i = 0; i < noffs; i++)
+                if (offs[i].note == key && (offs[i].art >> a & 1))
+                    break;
+        if (on || i == noffs)
+            FS_HELD(a, key) = (uint8_t)on;
+    }
+}
+
 static void add_off(int key, uint32_t due)
 {
     if (noffs < OFFS) {
         offs[noffs].note = (uint8_t)key;
+        offs[noffs].art = cur_art;
         offs[noffs].due = due;
         noffs++;
+        fingers(key, cur_art, 1);
     } else {
         note(0, key, 0, 0, 0);                  /* never lose a note-off (TE's list holds 128) */
     }
+}
+
+static void off_at(int i)                       /* note-off of offs[i], then its fingers */
+{
+    int key = offs[i].note, art = offs[i].art;
+
+    note(0, key, 0, 0, 0);
+    offs[i] = offs[--noffs];
+    fingers(key, art, 0);
 }
 
 /* TE's drum note-on ignores a note that is still held (0x01a84ba0 searches its sounding list
@@ -293,12 +329,10 @@ static void release_key(int key)
     int i;
 
     for (i = 0; i < noffs; )
-        if (offs[i].note == key) {
-            note(0, key, 0, 0, 0);
-            offs[i] = offs[--noffs];
-        } else {
+        if (offs[i].note == key)
+            off_at(i);
+        else
             i++;
-        }
 }
 
 static void hit(const dr_lane *ln, const dr_step *s, uint32_t due, uint32_t hold, int full)
@@ -389,12 +423,10 @@ static void offs_due(uint32_t to)
     int i;
 
     for (i = 0; i < noffs; ) {
-        if ((int32_t)(to - offs[i].due) >= 0) {
-            note(0, offs[i].note, 0, 0, 0);
-            offs[i] = offs[--noffs];
-        } else {
+        if ((int32_t)(to - offs[i].due) >= 0)
+            off_at(i);
+        else
             i++;
-        }
     }
 }
 
@@ -408,7 +440,7 @@ static int16_t fade_q = 256;                    /* FADE: velocity x / 256 */
 
 /* ECHO and COIN hits to come (later blocks) */
 #define LATER 32
-static struct { const dr_pattern *p; uint8_t lane; dr_step s; uint32_t due, hold; } later[LATER];
+static struct { const dr_pattern *p; uint8_t lane, art; dr_step s; uint32_t due, hold; } later[LATER];
 static int nlater;
 
 static uint32_t rnd(void)
@@ -428,6 +460,7 @@ static void hit_at(const dr_pattern *pt, int lane, const dr_step *s, uint32_t du
         if (nlater < LATER) {
             later[nlater].p = pt;
             later[nlater].lane = (uint8_t)lane;
+            later[nlater].art = cur_art;
             later[nlater].s = *s;
             later[nlater].due = due;
             later[nlater].hold = hold;
@@ -444,7 +477,9 @@ static void later_due(void)
 
     for (i = 0; i < nlater; )
         if ((int32_t)(later[i].due - (now + BLOCK)) < 0) {
+            cur_art = later[i].art;
             hit(&later[i].p->lane[later[i].lane], &later[i].s, later[i].due, later[i].hold, 0);
+            cur_art = 0;
             later[i] = later[--nlater];
         } else {
             i++;
@@ -779,10 +814,13 @@ void dr_tick(void)
                     take_import(p);
             }
             if (dr_fs_window(c, (ev >> p) & 1, st16, BLOCK, &from, &end) && end > from) {
-                if (owned(p) || (take >> p & 1))
+                if (owned(p) || (take >> p & 1)) {
+                    cur_art = (uint8_t)((FS_ARTIST(0) == p) | (FS_ARTIST(1) == p) << 1);
                     play_window(p, from, end);
-                else
+                    cur_art = 0;
+                } else {
                     rep_key[p] = -1;
+                }
             }
         }
         px_take = take;

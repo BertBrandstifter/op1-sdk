@@ -1,0 +1,146 @@
+{
+  "schema": 1,
+  "name": "party",
+  "title": "PARTY synth engine (Yamaha PSS-11: the GEW7 AWM tone generator, recreated)",
+  "version": "0.2",
+  "status": "sim-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "pss_"
+  ],
+  "summary": "Pick PARTY in the engine list or the 'party' preset: the Yamaha PortaSound PSS-11's AWM tone generator (GEW7) recreated after MAME's gew.cpp / gew7.cpp (BSD-3, see NOTICE): its 8- and 12-bit samples played as stored, per-sample envelope (attack, decay 1, decay level, decay 2, key scaling, 96 dB exponential level) and LFO (vibrato, tremolo, reverse start), tested against MAME's per-chip-sample code. Two layers (A/B), mix, low-pass filter with envelope, resonance, key tracking, A decay and B fade-in, bank on shift + blue turn; a live PARTY keyboard screen (voice list, knob, buttons, keys lit as they sound) above the STATION 1-style parameter rows. No Yamaha data ships: without a ROM dump it plays 8 own built-in waves; gen_pss11.py --pss-rom turns the user's own PSS-11/21/31 or PSR-75 ROM (xl437a00.ic4) into a library of every sample-table sound. Sample data is a content file loaded into TE's sample memory, not the SDK region.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "pss.c",
+    "pss_core.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "init": "pss_init",
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "pss_note_key",
+      "mode": "observe"
+    },
+    {
+      "point": "on_key",
+      "fn": "pss_key",
+      "mode": "filter"
+    },
+    {
+      "point": "on_knob",
+      "fn": "pss_knob",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "pss_frame"
+    },
+    {
+      "point": "engine_name",
+      "fn": "pss_engine_name"
+    },
+    {
+      "point": "seq_tick",
+      "fn": "pss_tick"
+    },
+    {
+      "point": "main_tick",
+      "fn": "pss_main"
+    }
+  ],
+  "hooks": {},
+  "controls": [
+    "engine list: PARTY; preset browser: folder party (one preset, 'party'); sounds: shift + blue turn (8 built-in, or every ROM sample-table sound S000..)",
+    "PARTY sound: knob push cycles page 1 (WAVE A WAVE B MIX CUTOFF) / 2 (B PITCH DETUNE F.ENV F.DECAY) / 3 (RES KEY TRK A DECAY B FADE) / 4 (FX knobs)"
+  ],
+  "tests": [
+    "test_pss_core.c",
+    "sim/run_psstest.py",
+    "sim/run_awmtest.py",
+    "sim/run_pssload.py"
+  ],
+  "depends": [
+    "enginehost"
+  ],
+  "conflicts": [],
+  "claims": [
+    {
+      "input": "blue_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "green_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "white_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "orange_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "blue_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "green_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "white_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "orange_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    }
+  ],
+  "content_sql": [
+    {
+      "file": "content/op1_factory.db",
+      "sql": [
+        "INSERT INTO synth_types (id, type, default_params) SELECT MAX(id) + 1, 'party', '[81,  81,  0,  16383,  4096,  4096,  4096,  4096]' FROM synth_types",
+        "INSERT INTO synth_presets (patch, folder) VALUES ('{\"adsr\":[64,8128,24575,4000,4000,64,4000,4000],\"fx_active\":false,\"fx_params\":[8000,14368,9438,20044,0,0,0,0],\"fx_type\":\"delay\",\"knobs\":[81,243,0,16383,4096,4096,4096,4096],\"lfo_active\":false,\"lfo_params\":[24172,3068,0,16000,0,0,0,0],\"lfo_type\":\"tremolo\",\"name\":\"party\",\"octave\":0,\"synth_version\":1,\"type\":\"drwave\"}', 'party')"
+      ]
+    }
+  ],
+  "content_files": [
+    {
+      "file": "content/pss_rom.bin",
+      "from": "build/pss_rom.bin",
+      "optional": true
+    }
+  ],
+  "evidence": []
+}

@@ -28,7 +28,10 @@ L1I = (0xFFA00000, 0xC000)
 
 
 def main():
-    proj, cfg = composed(RECIPE["features"], RECIPE["name"])
+    feats = list(RECIPE["features"])            # LOFI in the recipe as usual; if a recipe drops it, bench it on
+    if "lofi" not in feats:                     # the op1plus set with LOFI added (before engine_plus)
+        feats.insert(feats.index("engine_plus") if "engine_plus" in feats else len(feats), "lofi")
+    proj, cfg = composed(feats, RECIPE["name"] + "_lofi")
     code, syms, elf = compile_project(proj, cfg)
     print(f"project: {len(code)} bytes ({elf})")
     driver, d = c_bin(

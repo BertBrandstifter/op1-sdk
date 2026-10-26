@@ -1,6 +1,8 @@
 # NOTE ROLL — the synth finger sequencer's step editor — spec
 
-Status: **v0.9** (2026-10-17): punch-ins on both held patterns, repeats loop the last step with a note. **v0.8** (2026-10-17): punch-in banks A / B / C (green press), 16 new arcade / time effects, shift + black always TE's step record. **v0.7** (2026-10-17): undo / redo (shift + BACK / FORWARD), also of TE's own finger screen edits; STEP REC octave on shift + green turn. **v0.6** (2026-10-17): the roll's rows at least 4 px (a 1 px gap always), the cursor frame one size on empty and full cells. **v0.5** (2026-10-17): 14 punch-in effects, reordered (FILL FAST, GLITCH FAST left out).
+Status: **v0.10** (2026-10-22): TE's finger screen animates the fingers for NOTE ROLL's patterns too
+(as DRUM ROLL v2.2: the player's per-artist sounding bytes `0x01ddc5a8 + 0x6ac + artist x 0x80 + note`,
+set at NOTE ROLL's note-on, cleared at its note-off). **v0.9** (2026-10-17): punch-ins on both held patterns, repeats loop the last step with a note. **v0.8** (2026-10-17): punch-in banks A / B / C (green press), 16 new arcade / time effects, shift + black always TE's step record. **v0.7** (2026-10-17): undo / redo (shift + BACK / FORWARD), also of TE's own finger screen edits; STEP REC octave on shift + green turn. **v0.6** (2026-10-17): the roll's rows at least 4 px (a 1 px gap always), the cursor frame one size on empty and full cells. **v0.5** (2026-10-17): 14 punch-in effects, reordered (FILL FAST, GLITCH FAST left out).
 **v0.4** (2026-10-17): the pitch cursor (shift + blue turn: any row, blue press: a note on /
 off) and STEP REC (shift + white press: play the keyboard into the cursor step, the arrows move). **v0.3** (2026-10-17): punch-in effects on the black keys of TE's synth finger screen (user:
 "also add the punch in effect to the finger in synth mode"; then the PO-20 arcade's set, shift +

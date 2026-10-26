@@ -365,6 +365,7 @@ static const char *const page_names[PAGES] = { "ORGAN", "DRAWBARS", "FX" };
 #define C_DIM       GFX_RGB(0x5a, 0x58, 0x66)
 #define C_LINE      GFX_RGB(0x48, 0x46, 0x50)
 #define C_TRACK     GFX_RGB(0x35, 0x32, 0x38)
+#define C_YELLOW    GFX_RGB(0xe2, 0xc2, 0x5a)   /* the case */
 
 #define KEY_LO      48                          /* keyboard C3 .. C5, 15 white keys */
 #define KEYS        25
@@ -533,8 +534,9 @@ void wh_frame(uint16_t *buf)
 
     /* the cabinet: its grille = the nine drawbars (BASS 16' 5 1/3', BODY 8' 4', TOP 2 2/3' .. 1'),
      * each pulled out by its level */
-    outline(42, 12, 236, 23, 2, C_WHITE);
-    gfx_rect(47, 15, 226, 1, C_LINE);
+    outline(42, 12, 236, 23, 2, C_YELLOW);      /* a 2-pixel yellow frame */
+    outline(43, 13, 234, 21, 1, C_YELLOW);
+    gfx_rect(47, 16, 226, 1, C_LINE);
     for (b = 0; b < WH_BARS; b++) {
         int g = b < 2 ? 0 : b < 4 ? 1 : 2;
 
@@ -546,7 +548,6 @@ void wh_frame(uint16_t *buf)
     }
 
     /* the console: drive pill, the registration's digits + the page, buttons, keyboard */
-    outline(30, 35, 261, 52, 2, C_WHITE);
     outline(35, 38, 66, 8, 0, C_GREY);
     outline(52, 40, 32, 4, 2, C_WHITE);
     gfx_rect(54, 41, p[WH_DRIVE] * 28 / 32767, 2, pg == 0 ? C_WHITE : C_GREY);
@@ -573,6 +574,8 @@ void wh_frame(uint16_t *buf)
         gfx_text(x - 5, 78, rot_labels[i], rot == i ? c : C_GREY, 1);
     }
     keyboard(50, 86);                           /* on the case's bottom edge */
+    outline(30, 35, 261, 52, 2, C_YELLOW);      /* the console's 2-pixel yellow frame, over the keys' edge */
+    outline(31, 36, 259, 50, 1, C_YELLOW);
     title(slot);
 
     /* the page's four knobs: name and bar (as STATION 1) */

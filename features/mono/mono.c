@@ -728,15 +728,17 @@ void mo_frame(uint16_t *buf)
     gfx_begin(buf);
     gfx_rect(0, 0, gfx_w, 140, GFX_BLACK);
 
-    /* the case: red top bar and sides, wider at the keyboard */
+    /* the case: red top bar and sides, wider at the keyboard, 2 pixels throughout */
     gfx_rect(34, 4, 254, 2, C_RED);
-    gfx_rect(37, 6, 1, 52, C_RED);
-    gfx_rect(284, 6, 1, 52, C_RED);
+    gfx_rect(37, 6, 2, 52, C_RED);
+    gfx_rect(283, 6, 2, 52, C_RED);
     line(37, 58, 34, 70, C_RED);
+    line(38, 58, 35, 70, C_RED);
     line(284, 58, 287, 70, C_RED);
-    gfx_rect(34, 70, 1, 16, C_RED);
-    gfx_rect(287, 70, 1, 16, C_RED);
-    gfx_rect(34, 85, 254, 1, C_RED);
+    line(283, 58, 286, 70, C_RED);
+    gfx_rect(34, 70, 2, 16, C_RED);
+    gfx_rect(286, 70, 2, 16, C_RED);
+    gfx_rect(34, 84, 254, 2, C_RED);
 
     /* the control box: CONTROL OSCILLATORS MIXER MODIFIERS OUT */
     outline(41, 8, 240, 33, 2, C_WHITE);
@@ -787,7 +789,7 @@ void mo_frame(uint16_t *buf)
     }
 
     /* under the box: the page and osc 1's wave; the wheel box (glide, decay switches); keyboard */
-    gfx_rect(38, 44, 246, 1, C_LINE);
+    gfx_rect(39, 44, 244, 1, C_LINE);
     wave_icon(222, 47, u[P_WAVE1]);
     x = gfx_text(256, 46, "P", C_RED, 2);
     gfx_dec(x, 46, pg + 1, C_RED, 2);

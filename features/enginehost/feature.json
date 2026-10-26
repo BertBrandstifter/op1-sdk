@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "enginehost",
   "title": "Engine host (SDK synth engines on drwave)",
-  "version": "1.0",
+  "version": "1.2",
   "status": "device-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"

@@ -35,6 +35,18 @@ extern char FB[];
 #define FS_NOTE(p, s, h) (*(volatile int32_t *)(0x01dd98cc + (p) * 0x100 + (s) * 8 + (h) * 4))
 #define FS_LEN(p)       (*(volatile int32_t *)(0x01dda6cc + 4 * (p)))
 #define FS_PLAYER_BUILT (*(volatile int32_t *)0x01ddc5a4)
+#define FS_HELD(a, i)   (*(volatile uint8_t *)(0x01ddc5a8 + 0x6ac + 0x80 * (a) + (i)))   /* the fingers */
+static uint8_t seen_held[2][128];               /* a finger flag was up during tick() */
+
+static int held_now(void)                       /* finger flags up now */
+{
+    int a, i, n = 0;
+
+    for (a = 0; a < 2; a++)
+        for (i = 0; i < 128; i++)
+            n += FS_HELD(a, i) != 0;
+    return n;
+}
 #define FS_SELECTED     (*(volatile int32_t *)0x01ddc5c4)
 #define FS_STEP(a)      (*(volatile int32_t *)(0x01ddc5b4 + 4 * (a)))
 
@@ -262,6 +274,13 @@ static void tick(int n)
     while (n--) {
         te_player_block();
         hook_tick();
+        {
+            int a, i;
+
+            for (a = 0; a < 2; a++)
+                for (i = 0; i < 128; i++)
+                    seen_held[a][i] |= FS_HELD(a, i);
+        }
         block++;
     }
 }
@@ -456,9 +475,11 @@ int main(void)
     CHECK(4, i >= 0 && lg[i].block >= (uint32_t)b0 + STEPB(1) && lg[i].block <= (uint32_t)b0 + STEPB(1) + 1);
     CHECK(4, count_on(0, 72, 1) + count_on(0, 76, 1) + count_on(0, 79, 1) + count_on(0, 81, 1) == 0);
     CHECK(4, nr_play[2].on && violations == 0 && count_on(0, 81, 0) == 1);  /* A4 on step 9 */
+    /* the finger screen animates NOTE ROLL's notes as TE's: artist 0's fingers for 72 76 79 81 */
+    CHECK(4, seen_held[0][72] && seen_held[0][76] && seen_held[0][79] && seen_held[0][81] && !seen_held[1][72]);
     FS_ARTIST(0) = -1;
     tick(STEPB(4));
-    CHECK(4, !nr_play[2].on && active == 0);
+    CHECK(4, !nr_play[2].on && active == 0 && held_now() == 0);
     TE_SYNTH_OCTAVE[2] = 0;
 
     /* 5: lengths: the step-9 note 2 steps long (page 2 SHAPE, green), VEL 50 on it: its note-off

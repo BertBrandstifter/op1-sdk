@@ -4,10 +4,10 @@
     run_wheeltest.py        (composes recipes/op1plus.json first; no firmware needed)
 
 Checks: plain drwave sound = TE's drwave render untouched; WHEEL sound renders from TE's per-sample
-pitch buffer (pitch checked), note_on restarts the voice; knob push = page 1/2/3 (engine_plus and
-LOFI do not see it), knob turns edit slots 1-4 / 5-8 inside drwave's ranges and save; shift + knob and
+pitch buffer (pitch checked), note_on restarts the voice; knob push = page 1/2/3 (engine_plus does
+not see it), knob turns edit slots 1-4 / 5-8 inside drwave's ranges and save; shift + knob and
 other screens stay TE's; page 3 edits the
-sound's FX knobs inside TE's FX ranges and saves through TE's FX save; engine-list rename (shared point, chained with LOFI's); screens (bank entry 2 with a
+sound's FX knobs inside TE's FX ranges and saves through TE's FX save; engine-list rename (shared point, chained with MALLET's); screens (bank entry 2 with a
 key sounding, page 2) to build/demo/. Prints the cycles
 per 128-sample voice block.
 HLT = exit 0 = pass, ABORT = exit 1 = fail (R7 = failed check bits, see driver.c)."""
@@ -38,7 +38,7 @@ def main():
          "_compose_init": syms["_compose_init"],
          "_engine_name": syms["_compose_engine_name"], "_wh_page": syms["_wh_page"], "_wh_bank": syms["_wh_bank"],
          "_wh_title_on": syms["_wh_title_on"], "_wh_tick": syms["_wh_tick"],
-         "_lf_page": syms["_lf_page"], "_ep_page": syms["_ep_page"],
+         "_ep_page": syms["_ep_page"],
          "_hook_key": syms["__sdk_hook_019b6c74"], "_hook_knob": syms["__sdk_hook_019b6c0c"],
          "_hook_frame": syms["__sdk_hook_019ab8b2"], "_FB": 0x03000000},
     )

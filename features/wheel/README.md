@@ -1,6 +1,7 @@
 # WHEEL synth engine — spec
 
-Status: **v0.9** (2026-10-19): page knobs as STATION 1 (name + bar), the sound's name over
+Status: **v0.10** (2026-10-22): the cabinet and the console in a 2-pixel yellow frame (the user's
+updated "overview" art). **v0.9** (2026-10-19): page knobs as STATION 1 (name + bar), the sound's name over
 the organ for 1 s, keys lit as STATION 1 (a held key its own note). v0.8 (2026-10-18): new screen after "wheel · overview" (as MONO 3's refresh; see
 **Screen**). v0.7 (2026-10-13): cleaner output. The user heard crackle when notes overlapped; measured:
 every drive preset hard-clipped (up to 40 % of the samples) and played 2-3x louder than the clean

@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "drumroll",
   "title": "DRUM ROLL step editor for the finger sequencer",
-  "version": "2.1",
+  "version": "2.2",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"

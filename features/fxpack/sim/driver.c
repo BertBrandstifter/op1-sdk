@@ -12,6 +12,8 @@ extern void compose_fx_current_name(void *node, void *out);
 extern void compose_master_fx_current_name(void *out);
 extern void hook_key(int key, int down);
 extern void hook_knob(int knob, int16_t *diff);
+extern void hook_frame(uint16_t *buf);
+extern char FB[];
 extern volatile uint8_t fp_page;
 
 #define SYNTH_FX    ((volatile int16_t *)0xff801444)
@@ -23,7 +25,7 @@ extern volatile uint8_t fp_page;
 static int phone_monos, phone_stereos, saves, master_saves, keys_seen, knobs_seen;
 static int16_t buf[64], l[64], r[64];
 static uint32_t phone[64];                      /* fake phone object (never looked into) */
-volatile uint32_t cycles, cycles_st, each[7];   /* read by run_fptest.py */
+volatile uint32_t cycles, cycles_st, each[15];   /* read by run_fptest.py */
 volatile int fails;
 
 void phone_mono(void *self, int16_t *b, int16_t *p) { (void)self; (void)b; (void)p; phone_monos++; }
@@ -61,11 +63,14 @@ static int differs(const int16_t *a, const int16_t *b)
     return n;
 }
 
+/* TYPE values (13 bits) of the fifteen effects, fxpack_core.h order */
+static const int16_t type13[15] = { 585, 1755, 2304, 1152, 3456, 3712, 2926, 4096, 4864, 5267, 5760, 6016, 7040, 6437, 7608 };
+
 /* an FXPACK sound of effect t: page 1 mid-range in phone's ranges, full MIX/LEVEL, page 2 mid */
 static void mark(volatile int16_t *f, int t)
 {
     f[0] = 14000; f[1] = 14000; f[2] = 12000; f[3] = 32767;
-    f[4] = (int16_t)(0x6000 | ((t * 4682 + 2341) >> 2));
+    f[4] = (int16_t)(0x6000 | type13[t]);
     f[5] = 0x6000 | 6000; f[6] = 0x6000 | 4000; f[7] = 0x6000 | 4000;
 }
 
@@ -127,7 +132,7 @@ int main(void)
     CHECK(0, phone_monos == 1 && buf[10] == k);
 
     /* 1: every effect runs instead of phone and changes the block (TEXTURE adds its bed) */
-    for (t = 0, ok = 1; t < 7; t++) {
+    for (t = 0, ok = 1; t < 15; t++) {
         mark(SYNTH_FX + 8, t);
         copy(te, SYNTH_FX + 8);
         for (k = 0; k < 40; k++) {
@@ -195,7 +200,8 @@ int main(void)
     }
 
     /* 6: synth FX screen of an FXPACK sound, page 1: blue = TYPE one effect per click, loading
-     * that effect's defaults (marker kept), saved once per change; clamps at PHASER */
+     * that effect's defaults (marker kept), saved once per change; clamps at PHASER; FLANGER ->
+     * CHORUS (new slot) */
     *TE_EDIT_MODE = 0;
     *TE_SYNTH_SUBSCREEN = 2;
     FX_TYPE[1] = 3;
@@ -206,14 +212,14 @@ int main(void)
         hook_knob(0, &d);                       /* PHASER -> FLANGER: its defaults */
         k = (SYNTH_FX[8 + 4] & 0x1fff) << 2;
         ok = SYNTH_FX[8 + 0] == 6286 && SYNTH_FX[8 + 2] == 14131 && SYNTH_FX[8 + 7] == 28671;
-        hook_knob(0, &d);                       /* -> FOLD */
+        hook_knob(0, &d);                       /* -> CHORUS */
+        ok &= SYNTH_FX[8 + 4] == 26880 && SYNTH_FX[8 + 0] == 9431 && SYNTH_FX[8 + 7] == 32767;
         d = -1;
         for (i = 0; i < 10; i++)
             hook_knob(0, &d);                   /* back to PHASER, then clamps (no saves) */
     }
-    CHECK(6, ok && fp_page == 0 && keys_seen == 0 && saves == 4 && knobs_seen == 0 && k * 7 >> 15 == 1
-             && (SYNTH_FX[8 + 4] & 0xe000) == 0x6000 && (((SYNTH_FX[8 + 4] & 0x1fff) << 2) * 7 >> 15) == 0
-             && SYNTH_FX[8 + 0] == 7300);
+    CHECK(6, ok && fp_page == 0 && keys_seen == 0 && saves == 4 && knobs_seen == 0 && k == 7020
+             && SYNTH_FX[8 + 4] == 25161 && SYNTH_FX[8 + 0] == 7300);
     /* 7: push -> page 2: green = page-2 value 1; blue = MIX (phone's knob 4) in phone's range */
     push(59);
     {
@@ -246,6 +252,34 @@ int main(void)
         ok &= SYNTH_FX[8 + 2] == 1536;
     }
     CHECK(8, ok && fp_page == 0 && knobs_seen == 0);
+    /* 14: stepped values move one step per detent: page 2 white = PHASER STAGES (6 -> 8, clamps,
+     * back to 4); FUZZ page 1 orange = CHAR in phone's range (FUZZ -> CHEBY) */
+    {
+        int16_t d = 1;
+
+        push(59);                               /* page 2 */
+        hook_knob(2, &d);
+        ok = SYNTH_FX[8 + 6] == 31402;
+        k = saves;
+        hook_knob(2, &d);                       /* at 8: no change, no save */
+        ok &= SYNTH_FX[8 + 6] == 31402 && saves == k;
+        d = -1;
+        for (i = 0; i < 5; i++)
+            hook_knob(2, &d);
+        ok &= SYNTH_FX[8 + 6] == 25941 && saves == k + 2;
+        push(59);                               /* page 1 */
+        d = 1;
+        for (i = 0; i < 7; i++)
+            hook_knob(0, &d);                   /* TYPE -> FLANGER CHORUS COMB RING TREMOLO FOLD FUZZ */
+        ok &= SYNTH_FX[8 + 4] == 28672 && SYNTH_FX[8 + 0] == 6286 && SYNTH_FX[8 + 2] == 12288;
+        hook_knob(3, &d);                       /* CHAR FUZZ -> CHEBY */
+        ok &= SYNTH_FX[8 + 2] == 15360;
+        d = -1;
+        for (i = 0; i < 7; i++)
+            hook_knob(0, &d);                   /* back to PHASER */
+        ok &= SYNTH_FX[8 + 4] == 25161;
+    }
+    CHECK(14, ok && fp_page == 0 && knobs_seen == 0);
 
     /* 9: engine screen and a spring sound's FX screen are not FXPACK's */
     *TE_SYNTH_SUBSCREEN = 0;
@@ -286,8 +320,8 @@ int main(void)
         push(61);                               /* back to page 1 */
         ok &= fp_page == 0;
         d = 1;
-        hook_knob(0, &d);                       /* page 1 blue: TYPE -> FOLD with its defaults */
-        ok &= ((((MASTER_FX[4] & 0x1fff) << 2) * 7) >> 15) == 2 && MASTER_FX[0] == 8314 && master_saves == 2;
+        hook_knob(0, &d);                       /* page 1 blue: TYPE -> CHORUS with its defaults */
+        ok &= MASTER_FX[4] == 26880 && MASTER_FX[0] == 9431 && master_saves == 2;
         CHECK(13, ok);
         *TE_EDIT_MODE = 0;
         *TE_SYNTH_SUBSCREEN = 2;
@@ -335,9 +369,9 @@ int main(void)
         CHECK(12, ok);
     }
 
-    /* 11: cost: worst of the seven effects (page 2 full: 8 phaser stages, 24 dB, ...), mono and
+    /* 11: cost: worst of the fifteen effects (page 2 full: 8 phaser stages, 24 dB, ...), mono and
      * one stereo block */
-    for (t = 0; t < 7; t++) {
+    for (t = 0; t < 15; t++) {
         mark(SYNTH_FX + 8, t);
         for (i = 5; i < 8; i++)
             SYNTH_FX[8 + i] = 0x6000 | 8191;
@@ -366,5 +400,35 @@ int main(void)
         cycles_st = c > cycles_st ? c : cycles_st;
     }
     CHECK(11, cycles < 25000 && cycles_st < 50000);     /* < ~17 M cycles/s mono (RESO: 22k) */
+
+    /* screens (build/demo/fxpack_screen*.png): synth FX of a CHORUS sound, page 1 (TYPE and
+     * VOICES = text + bar), then AUTO-WAH page 2 (MODE, DIR) */
+    {
+        int16_t d = 1;
+
+        *TE_EDIT_MODE = 0;
+        *TE_SYNTH_SUBSCREEN = 2;
+        FX_TYPE[1] = 3;
+        FX_ON[1] = 1;
+        fp_page = 0;
+        mark(SYNTH_FX + 8, 0);
+        hook_knob(0, &d);
+        hook_knob(0, &d);                       /* PHASER -> FLANGER -> CHORUS, its defaults */
+        for (k = 0; k < 40; k++) {
+            copy(te, SYNTH_FX + 8);
+            noise(buf);
+            fp_te_mono(phone, buf, te);
+        }
+        hook_frame((uint16_t *)FB);
+        for (i = 0; i < 9; i++)
+            hook_knob(0, &d);                   /* CHORUS -> .. -> AUTO-WAH */
+        push(59);                               /* page 2: MIX SPEED MODE DIR */
+        for (k = 0; k < 40; k++) {
+            copy(te, SYNTH_FX + 8);
+            noise(buf);
+            fp_te_mono(phone, buf, te);
+        }
+        hook_frame((uint16_t *)(FB + 320 * 512));
+    }
     return fails;
 }

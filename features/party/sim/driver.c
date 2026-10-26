@@ -1,0 +1,378 @@
+/* PSS bench (build/apps/op1plus, SDK_BENCH: the built-in waves): engine host + PSS glue against stub
+ * TE functions and TE's per-sample pitch buffer. Returns failed-check bits (0 = pass). */
+#include <op1/te246.h>
+
+extern void wh_te_render(void *self, int16_t *out, int16_t *knobs);    /* the engine host's */
+extern void wh_te_note_on(void *self, int a1, int a2);
+extern void compose_init(void);
+extern void engine_name(te_string *out, void *db, const char *sql);    /* composer's chain */
+extern void hook_key(int key, int down);
+extern void hook_knob(int knob, int16_t *diff);
+extern void hook_frame(uint16_t *buf);
+extern char FB[];
+extern volatile uint8_t pss_page;
+extern volatile int16_t pss_bank;
+extern volatile uint8_t pss_title_on;
+extern void pss_tick(void);
+
+#define INC         ((volatile uint32_t *)0xff801950)
+#define VOICE(i)    ((void *)(0xffb00000u + (i) * 0x24))
+#define P2(t, v)    ((int16_t)(((t) << 12) | (v)))
+
+static int drwave_renders, drwave_notes, saves, fxsaves, keys_seen, knobs_seen;
+static int16_t out[128], first[128];
+volatile uint32_t cycles_plain, cycles_two, cycles_heavy;     /* read by run_psstest.py */
+volatile int fails;
+
+void drwave_render(void *self, int16_t *o, int16_t *k)
+{
+    int i;
+    (void)self; (void)k;
+    drwave_renders++;
+    for (i = 0; i < 128; i++)
+        o[i] = 1234;
+}
+void drwave_note_on(void *self, int a1, int a2) { (void)self; (void)a1; (void)a2; drwave_notes++; }
+void log_save(void *patch, int16_t *k) { (void)patch; (void)k; saves++; }
+void log_fxsave(void *patch, int16_t *f) { (void)patch; (void)f; fxsaves++; }
+void log_key(int key, int down) { (void)key; (void)down; keys_seen++; }
+void log_knob(int knob, int16_t *diff) { (void)knob; (void)diff; knobs_seen++; }
+
+static uint32_t cycles(void)
+{
+    uint32_t c;
+    __asm__ volatile("%0 = CYCLES;" : "=d"(c));
+    return c;
+}
+
+static void pitch(uint32_t inc)
+{
+    int i;
+    for (i = 0; i < 128; i++)
+        INC[i] = inc;
+}
+
+static void push(int key, int shift)
+{
+    *TE_SHIFT_HELD = (uint8_t)shift;
+    hook_key(key, 1);
+    hook_key(key, 0);
+    *TE_SHIFT_HELD = 0;
+}
+
+static void turn(int knob, int16_t d) { hook_knob(knob, &d); }
+
+static void name(te_string *s, const char *n)
+{
+    int i;
+
+    for (i = 0; n[i]; i++)
+        s->bx.sso[i] = n[i];
+    s->bx.sso[i] = 0;
+    s->size = (uint32_t)i;
+    s->cap = 15;
+}
+
+#define CHECK(bit, c) do { if (!(c)) fails |= 1 << (bit); } while (0)
+#define K(i)        TE_SYNTH_KNOBS[2 * 8 + (i)]  /* sound 3 */
+#define F(hi, lo)   P2(1, (hi) << 6 | (lo))
+#define Z1(z, n)    ((int16_t)(((2 * (z) + 1) * 32768 / (2 * (n))) >> 1))
+
+int main(void)
+{
+    static const int16_t stock[8] = { 20924, 4313, 8063, 0, 32767, 0, 0, 0 };
+    /* SAW (built-in wave 0), B off, filter open, B PITCH unison; page 3 all 0 */
+    static const int16_t saw[8] = { Z1(0, 8), Z1(0, 9), 0, 16383, F(24, 0), F(0, 0), F(0, 0), F(0, 0) };
+    int16_t knobs[8];
+    int i, n, low, ok;
+    uint32_t t0;
+
+    __asm__ volatile("R0 = SYSCFG; BITSET (R0, 1); SYSCFG = R0; CSYNC;" ::: "R0");  /* CCEN */
+    compose_init();
+    *TE_EDIT_MODE = 0;
+    *TE_SYNTH_SUBSCREEN = 0;
+    *TE_SYNTH_SLOT = 2;
+    TE_SYNTH_TYPE[2] = TE_INSTR_DRWAVE;
+
+    /* 0: plain drwave stays TE's */
+    for (i = 0; i < 8; i++)
+        knobs[i] = stock[i];
+    wh_te_render(VOICE(0), out, knobs);
+    CHECK(0, drwave_renders == 1 && out[0] == 1234);
+
+    /* 1: tag 1 = PSS: SAW at 441 Hz from TE's pitch buffer (rising zero crossings); restart */
+    for (i = 0; i < 8; i++)
+        K(i) = knobs[i] = saw[i];
+    pitch((uint32_t)(441.0 / 88200 * 4294967296.0));
+    wh_te_note_on(VOICE(1), 0, 0);
+    drwave_renders = 0;
+    for (n = 0, low = 1, i = 0; i < 689; i++) {
+        int j;
+        wh_te_render(VOICE(1), out, knobs);
+        if (i == 0)
+            for (j = 0; j < 128; j++)
+                first[j] = out[j];
+        for (j = 0; j < 128; j++) {
+            if (low && out[j] > 4000) { n++; low = 0; }
+            else if (out[j] < -4000) low = 1;
+        }
+    }
+    CHECK(1, drwave_renders == 0 && n >= 439 && n <= 443);
+    wh_te_note_on(VOICE(1), 0, 0);
+    wh_te_render(VOICE(1), out, knobs);
+    for (i = 0, ok = 1; i < 128; i++)
+        ok &= out[i] == first[i];
+    CHECK(1, ok);
+
+    /* 2: knob push cycles 4 pages */
+    i = keys_seen;
+    push(59, 0);
+    CHECK(2, pss_page == 1 && keys_seen == i);
+    push(59, 0);
+    push(59, 0);
+    CHECK(2, pss_page == 3);
+    push(59, 0);
+    CHECK(2, pss_page == 0);
+
+    /* 3: page 1 WAVE A / B one multisound per detent (B: off .. 8), CUTOFF clamps at 16383;
+     * page 2 B PITCH one semitone per detent, max +24 (48), the low field (page 3) untouched,
+     * tag kept; page 3 RES steps */
+    turn(0, 1024);
+    CHECK(3, K(0) == Z1(1, 8));
+    for (n = 0; n < 20; n++)
+        turn(0, 1024);
+    CHECK(3, K(0) == Z1(7, 8));
+    turn(0, -1024);
+    turn(1, 1024);
+    CHECK(3, K(0) == Z1(6, 8) && K(1) == Z1(1, 9));
+    turn(1, -1024);
+    CHECK(3, K(1) == Z1(0, 9));
+    for (n = 0; n < 60; n++)
+        turn(3, 32767);
+    CHECK(3, K(3) == 16383 && knobs_seen == 0);
+    push(59, 0);
+    turn(0, 1024);
+    CHECK(3, K(4) == F(25, 0));
+    for (n = 0; n < 40; n++)
+        turn(0, 1024);
+    CHECK(3, K(4) == F(48, 0));
+    push(59, 0);
+    turn(0, 1024);
+    CHECK(3, K(4) == F(48, 1) && (K(4) >> 12) == 1);
+    turn(3, 1024);                              /* B FADE */
+    CHECK(3, K(7) == F(0, 1));
+    push(59, 0);
+    push(59, 0);
+
+    /* 4: shift + blue = bank, 8 entries (built-in waves) in drwave's ranges with tag 1; after the
+     * last comes P-- (the sound as it was before browsing: its knobs back), then P01 again */
+    {
+        static const int16_t hi[8] = { 24575, 16383, 16383, 32767, 32767, 32767, 32767, 32767 };
+        int16_t before[8];
+        int e, k;
+
+        for (k = 0; k < 8; k++)
+            before[k] = K(k);
+        *TE_SHIFT_HELD = 1;
+        turn(0, 1024);
+        ok = pss_bank == 0;
+        for (e = 0; e < 8; e++) {
+            for (k = 0; k < 8; k++)
+                ok &= K(k) >= 0 && K(k) <= hi[k];
+            for (k = 4; k < 8; k++)
+                ok &= (K(k) >> 12) == 1;
+            turn(0, 1024);
+        }
+        ok &= pss_bank == -1;                    /* P-- */
+        for (k = 0; k < 8; k++)
+            ok &= K(k) == before[k];
+        turn(0, -1024);
+        ok &= pss_bank == 7;                     /* back: the last entry */
+        turn(0, 1024);
+        ok &= pss_bank == -1;
+        *TE_SHIFT_HELD = 0;
+        CHECK(4, ok && knobs_seen == 0);
+    }
+
+    /* 5: page 4 = FX knobs */
+    {
+        volatile int16_t *rt = (volatile int16_t *)0x01de5c50 + TE_FX_SPRING * 24;
+        volatile int16_t *fx = (volatile int16_t *)0xff801444 + 2 * 8;
+
+        rt[0] = 1344; rt[1] = 16448;
+        fx[0] = 8000;
+        ((volatile int32_t *)0xff801734)[2] = TE_FX_SPRING;
+        ((volatile uint8_t *)0x01aaac20)[2] = 1;
+        pss_page = 3;
+        for (n = 0; n < 200; n++)
+            turn(0, 32767);
+        CHECK(5, fx[0] == 16448 && fxsaves == 200);
+        pss_page = 0;
+    }
+
+    /* 6: engine list: "party" -> "drwave", "pss" / "pss-2" untouched */
+    {
+        static te_string a, c, e;
+
+        name(&a, "party"); name(&c, "pss"); name(&e, "pss-2");
+        engine_name(&a, 0, 0);
+        engine_name(&c, 0, 0);
+        engine_name(&e, 0, 0);
+        CHECK(6, a.size == 6 && a.bx.sso[0] == 'd' && a.bx.sso[6] == 0 && c.size == 3
+                 && c.bx.sso[0] == 'p' && e.size == 5 && e.bx.sso[0] == 'p');
+    }
+
+    /* 7: cost per voice block: one wave, filter open; two waves + filter; + resonance, filter env,
+     * key track, A decay, B fade */
+    for (i = 0; i < 8; i++)
+        knobs[i] = saw[i];
+    wh_te_note_on(VOICE(1), 0, 0);
+    wh_te_render(VOICE(1), out, knobs);
+    t0 = cycles();
+    wh_te_render(VOICE(1), out, knobs);
+    cycles_plain = cycles() - t0;
+    knobs[1] = Z1(5, 9); knobs[2] = 8000; knobs[3] = 9000; knobs[4] = F(31, 0); knobs[5] = F(20, 0);
+    wh_te_note_on(VOICE(1), 0, 0);
+    wh_te_render(VOICE(1), out, knobs);
+    t0 = cycles();
+    wh_te_render(VOICE(1), out, knobs);
+    cycles_two = cycles() - t0;
+    knobs[4] = F(31, 40); knobs[5] = F(20, 40); knobs[6] = F(50, 30); knobs[7] = F(30, 30);
+    wh_te_note_on(VOICE(1), 0, 0);
+    t0 = cycles();
+    wh_te_render(VOICE(1), out, knobs);
+    cycles_heavy = cycles() - t0;
+    CHECK(7, cycles_heavy < 30000);
+
+    /* 8: the engine screen draws (bank entry 2, page 1) */
+    *TE_SHIFT_HELD = 1;
+    turn(0, 1024);
+    turn(0, 1024);
+    *TE_SHIFT_HELD = 0;
+    pss_page = 0;
+    hook_frame((uint16_t *)FB);
+    CHECK(8, pss_bank == 1);
+
+    /* 9: second screen (run_psstest.py: pss_screen_fx): a layered bank sound (SINE PAD: B a fifth up,
+     * B fade) on page 4, into a second buffer */
+    *TE_SHIFT_HELD = 1;
+    for (n = 0; n < 3; n++)
+        turn(0, 1024);
+    *TE_SHIFT_HELD = 0;
+    pss_page = 3;
+    hook_frame((uint16_t *)(FB + 0x40000));
+    pss_page = 0;
+    CHECK(9, pss_bank == 4);
+
+    /* 10: keyboard picture (F3 .. C6): a held key (id 41: note 4 = A, TE octave +1 -> A4) lights A4
+     * even long after the start, though its voice starts 2 semitones low (glide, G4 stays dark), and
+     * goes dark on release while TE still renders the voice */
+    {
+        volatile uint16_t *fb = (volatile uint16_t *)FB;
+        const uint16_t green = (uint16_t)(((0x3d >> 3) << 11) | ((0xdc >> 2) << 5) | (0x97 >> 3));
+        int lit_held, lit_g4, lit_after;
+
+        hook_key(41, 1);
+        pitch((uint32_t)(392.0 / 88200 * 4294967296.0));
+        wh_te_note_on(VOICE(2), 0, 0);
+        for (n = 0; n < 300; n++)               /* > FLASH blocks */
+            wh_te_render(VOICE(2), out, knobs);
+        hook_frame((uint16_t *)FB);
+        lit_held = fb[(319 - 135) * 256 + 76] == green;   /* A4: white key 9, lower part */
+        lit_g4 = fb[(319 - 125) * 256 + 76] == green;     /* G4: white key 8 */
+        hook_key(41, 0);
+        for (n = 0; n < 10; n++)
+            wh_te_render(VOICE(2), out, knobs);
+        hook_frame((uint16_t *)FB);
+        lit_after = fb[(319 - 135) * 256 + 76] == green;
+        CHECK(10, lit_held && !lit_g4 && !lit_after);
+    }
+
+    /* 11: P-- (bank 4 back to P--): the title's second line says SHIFT+BLUE: SOUNDS until the sound
+     * is changed, then wave B (here after WAVE B one step); wave A stays on top; browsing to a bank
+     * sound and back to P-- shows the hint again. Screen run_psstest.py: pss_screen_own (the changed
+     * P--) */
+    {
+        volatile uint16_t *fb = (volatile uint16_t *)(FB + 0x80000);
+        static uint16_t hint[8 * 136], top[14 * 136];
+        int x, y, same_top = 1, other = 0, back = 1;
+
+        *TE_SHIFT_HELD = 1;
+        for (n = 0; n < 5; n++)
+            turn(0, -1024);
+        *TE_SHIFT_HELD = 0;
+        CHECK(11, pss_bank == -1);
+        hook_frame((uint16_t *)fb);
+        for (y = 0; y < 8; y++)
+            for (x = 0; x < 136; x++)
+                hint[y * 136 + x] = fb[(319 - (79 + x)) * 256 + 24 + y];
+        for (y = 0; y < 14; y++)
+            for (x = 0; x < 136; x++)
+                top[y * 136 + x] = fb[(319 - (79 + x)) * 256 + 10 + y];
+        turn(1, 1024);                          /* WAVE B */
+        hook_frame((uint16_t *)fb);
+        for (y = 0; y < 8; y++)
+            for (x = 0; x < 136; x++)
+                other |= fb[(319 - (79 + x)) * 256 + 24 + y] != hint[y * 136 + x];
+        for (y = 0; y < 14; y++)
+            for (x = 0; x < 136; x++)
+                same_top &= fb[(319 - (79 + x)) * 256 + 10 + y] == top[y * 136 + x];
+        CHECK(11, other && same_top);
+        *TE_SHIFT_HELD = 1;
+        turn(0, 1024);                          /* P01 */
+        turn(0, -1024);                         /* P-- */
+        *TE_SHIFT_HELD = 0;
+        hook_frame((uint16_t *)(FB + 0x40000));     /* scratch draw: the hint is back */
+        for (y = 0; y < 8; y++)
+            for (x = 0; x < 136; x++)
+                back &= ((volatile uint16_t *)(FB + 0x40000))[(319 - (79 + x)) * 256 + 24 + y] == hint[y * 136 + x];
+        CHECK(11, pss_bank == -1 && back);
+    }
+
+    /* 12: the sound's name over the voice list: shown when a sound is picked, for 1 s (Seq ticks of
+     * 64 samples), then gone; the voice list shows the sound as a blue bar */
+    {
+        volatile uint16_t *fb = (volatile uint16_t *)FB;
+        const uint16_t blue = (uint16_t)(((0x6e >> 3) << 11) | ((0x8b >> 2) << 5) | (0xff >> 3));
+        int on_pick, on_late, off, bar;
+
+        *TE_SHIFT_HELD = 1;
+        turn(0, 1024);                          /* P01 */
+        *TE_SHIFT_HELD = 0;
+        hook_frame((uint16_t *)FB);
+        on_pick = pss_title_on;
+        for (n = 0; n < 680; n++)               /* 0.99 s */
+            pss_tick();
+        hook_frame((uint16_t *)FB);
+        on_late = pss_title_on;
+        for (n = 0; n < 10; n++)                /* 1.004 s */
+            pss_tick();
+        hook_frame((uint16_t *)FB);
+        off = !pss_title_on;
+        bar = fb[(319 - 50) * 256 + 17] == blue;    /* P01: column 1, row 1 */
+        CHECK(12, pss_bank == 0 && on_pick && on_late && off && bar);
+    }
+
+    /* the saved screens: pss_screen = bank entry 2, page 1, A4 held (title gone); pss_screen_fx =
+     * SINE PAD (entry 5) on page 4 */
+    *TE_SHIFT_HELD = 1;
+    turn(0, 1024);                              /* P02 */
+    *TE_SHIFT_HELD = 0;
+    for (n = 0; n < 700; n++)
+        pss_tick();
+    hook_key(41, 1);
+    pitch((uint32_t)(440.0 / 88200 * 4294967296.0));
+    wh_te_note_on(VOICE(2), 0, 0);
+    wh_te_render(VOICE(2), out, knobs);
+    pss_page = 0;
+    hook_frame((uint16_t *)FB);
+    hook_key(41, 0);
+    *TE_SHIFT_HELD = 1;
+    for (n = 0; n < 3; n++)
+        turn(0, 1024);
+    *TE_SHIFT_HELD = 0;
+    pss_page = 3;
+    hook_frame((uint16_t *)(FB + 0x40000));
+    pss_page = 0;
+    return fails;
+}

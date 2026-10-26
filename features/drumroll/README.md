@@ -1,6 +1,11 @@
 # DRUM ROLL — the finger sequencer's step editor — spec
 
-Status: **v2.1** (2026-10-17): punch-ins act on both held patterns (TE's taken over while held), repeats loop the last step with a hit. **v2.0** (2026-10-17): punch-in banks A / B / C (green press on the finger screen), 18 new arcade / time effects, shift + black always TE's step record. **v1.9** (2026-10-17): undo / redo (shift + BACK / FORWARD), also of TE's own finger screen edits. **v1.8** (2026-10-17): 12 punch-in effects, reordered (FILL FAST, GLITCH FAST, LP FAST, HP
+Status: **v2.2** (2026-10-22): TE's finger screen animates the fingers for DRUM ROLL's patterns too
+(user: "when i edit a pattern in our drum roll editor, the finger animations do not play anymore"):
+the screen (`0x019ee9e8`) draws the fingers from the player's per-artist sounding bytes
+(`0x01ddc5a8 + 0x6ac + artist x 0x80 + (note - 5) % 24`), which TE's player sets at its note-on and
+clears at its note-off; DRUM ROLL's own notes (which TE no longer plays) now set and clear them the
+same way, per artist holding the pattern. **v2.1** (2026-10-17): punch-ins act on both held patterns (TE's taken over while held), repeats loop the last step with a hit. **v2.0** (2026-10-17): punch-in banks A / B / C (green press on the finger screen), 18 new arcade / time effects, shift + black always TE's step record. **v1.9** (2026-10-17): undo / redo (shift + BACK / FORWARD), also of TE's own finger screen edits. **v1.8** (2026-10-17): 12 punch-in effects, reordered (FILL FAST, GLITCH FAST, LP FAST, HP
 FILTER left out). **v1.7** (2026-10-17): STEP REC (shift + white press: play the keyboard into the cursor step,
 the arrows move). **v1.6** (2026-10-17): the punch-in effects are the PO-20 arcade's 16 (10 on the black keys,
 6 on shift + black), shown in a window while held. **v1.5** (2026-10-17): zoom 3.5 bars (user: "this way 1/32 patterns fit"; op1.db index 4), the

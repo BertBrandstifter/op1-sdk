@@ -11,7 +11,7 @@ extern void hook_key(int key, int down);
 extern void hook_knob(int knob, int16_t *diff);
 extern void hook_frame(uint16_t *buf);
 extern char FB[];
-extern volatile uint8_t wh_page, lf_page, ep_page[4];
+extern volatile uint8_t wh_page, ep_page[4];
 extern volatile int8_t wh_bank;
 extern volatile uint8_t wh_title_on;
 extern void wh_tick(void);
@@ -142,7 +142,7 @@ int main(void)
     /* 4: knob push on a WHEEL sound flips the page; engine_plus and TE do not see it */
     i = keys_seen;
     push(59, 0);
-    CHECK(4, wh_page == 1 && ep_page[0] == 0 && lf_page == 0 && keys_seen == i);
+    CHECK(4, wh_page == 1 && ep_page[0] == 0 && keys_seen == i);
 
     /* 5: page 2, blue knob (BASS, 17 values -8..+8): one value per detent, slot 5 at the value's
      * zone centre, marker kept, saved, TE's knob handler skipped; clamps at -8 / +8 */
@@ -248,19 +248,19 @@ int main(void)
     cycles_heavy = cycles() - t0;
     CHECK(11, cycles_full < 30000 && cycles_heavy < 40000);
 
-    /* 12: engine list: "wheel" becomes "drwave" (WHEEL), "lofi" still becomes "pulse" (LOFI,
+    /* 12: engine list: "wheel" becomes "drwave" (WHEEL), "mallet" still becomes "drwave" (MALLET,
      * same shared point), others untouched */
     {
         static te_string a, b, c, d;
 
-        name(&a, "wheel"); name(&b, "lofi"); name(&c, "drwave"); name(&d, "wheels");
+        name(&a, "wheel"); name(&b, "mallet"); name(&c, "drwave"); name(&d, "wheels");
         wh_page = 1;
         engine_name(&a, 0, 0);
         engine_name(&b, 0, 0);
         engine_name(&c, 0, 0);
         engine_name(&d, 0, 0);
         CHECK(12, a.size == 6 && a.bx.sso[0] == 'd' && a.bx.sso[5] == 'e' && a.bx.sso[6] == 0
-                  && wh_page == 0 && b.size == 5 && b.bx.sso[0] == 'p' && c.size == 6
+                  && wh_page == 0 && b.size == 6 && b.bx.sso[0] == 'd' && c.size == 6
                   && c.bx.sso[0] == 'd' && d.size == 6 && d.bx.sso[0] == 'w');
     }
 

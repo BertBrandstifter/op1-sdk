@@ -34,7 +34,7 @@ def main():
         {"STACK": STACK, "_eh_render_" if False else "_wh_te_render": syms["_eh_te_render"], "_wh_te_note_on": syms["_eh_te_note_on"],
          "_compose_init": syms["_compose_init"],
          "_engine_name": syms["_compose_engine_name"], "_tr_page": syms["_tr_page"], "_tr_bank": syms["_tr_bank"],
-         "_lf_page": syms["_lf_page"], "_ep_page": syms["_ep_page"],
+         "_ep_page": syms["_ep_page"],
          "_hook_key": syms["__sdk_hook_019b6c74"], "_hook_frame": syms["__sdk_hook_019ab8b2"], "_FB": 0x03000000, "_hook_knob": syms["__sdk_hook_019b6c0c"]},
     )
     segs = [(0x01E00000, code), (DRIVER_AT, driver), (0x03000000, bytes(320 * 512))]

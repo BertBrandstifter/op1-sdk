@@ -5,23 +5,23 @@
 
 Checks: plain phone = TE's process untouched; an FXPACK effect runs instead of phone (synth FX,
 drum play mode, stock while TE switches); master FX per channel; the shared FX-name points
-rename all seven names to "phone" (and still shimmer/reso); page 2: blue = TYPE (one effect per
+rename "fx mix" to "phone" (and still shimmer/reso); page 2: blue = TYPE (one effect per
 click, marker kept), the others save in range; engine screen and other FX not claimed. Prints the
-worst cycles per 64-sample block over the seven effects.
+worst cycles per 64-sample block over the fifteen effects.
 HLT = exit 0 = pass, ABORT = exit 1 = fail (failed check bits printed)."""
 
-import json, os, subprocess, sys
+import json, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SDK = os.environ.get("OP1_SDK") or os.path.normpath(os.path.join(HERE, "..", "..", ".."))
 OUT = os.path.join(SDK, "build", "bench", "fptest")     # build output, never in the package
 os.makedirs(OUT, exist_ok=True)
 sys.path.insert(0, os.path.join(SDK, "sim"))
-from simtest import asm_bin, c_bin, run_model, BIN, composed  # noqa: E402
+from simtest import asm_bin, c_bin, run_model, run_gdb, composed  # noqa: E402
 from build import compile_project  # noqa: E402
 
 RECIPE = json.load(open(os.path.join(SDK, "recipes", "op1plus.json")))
-DRIVER_AT, STACK = 0x01F00000, 0x01F7FFFC
+DRIVER_AT, STACK, FB = 0x01F00000, 0x01F7FFFC, 0x03000000
 STUBS = {0x01A1BB74: 0, 0x01A1C25C: 1, 0x019FF664: 2, 0x019B6C74: 3, 0x019B6C0C: 4, 0x0193EF3C: 5}
 
 
@@ -35,9 +35,10 @@ def main():
         [os.path.join(HERE, "crt.S"), os.path.join(HERE, "driver.c")],
         DRIVER_AT, os.path.join(OUT, "driver"),
         {"STACK": STACK, **{"_" + n: syms["_" + n] for n in need},
-         "_hook_key": syms["__sdk_hook_019b6c74"], "_hook_knob": syms["__sdk_hook_019b6c0c"]},
+         "_hook_key": syms["__sdk_hook_019b6c74"], "_hook_knob": syms["__sdk_hook_019b6c0c"],
+         "_hook_frame": syms["__sdk_hook_019ab8b2"], "_FB": FB},
     )
-    segs = [(0x01E00000, code), (DRIVER_AT, driver)]
+    segs = [(0x01E00000, code), (DRIVER_AT, driver), (FB, bytes(2 * 320 * 512))]
     for addr, which in STUBS.items():
         stub, _ = asm_bin(
             os.path.join(HERE, "te_stubs.S"), addr, os.path.join(OUT, f"stub{which}"),
@@ -48,15 +49,12 @@ def main():
         segs.append((addr, stub))
     elf_run = os.path.join(OUT, "fptest_run.elf")
     r = run_model(elf_run, segs, d["_start"], timeout=600)
-    out = subprocess.run(
-        [BIN + "gdb", "-batch", "-ex", "target sim --model bf524 --memory-region 0xff800000,0x8000 "
-         "--memory-region 0xff900000,0x8000", "-ex", "load", "-ex", "run",
-         "-ex", f"p *(unsigned*){d['_cycles']:#x}", "-ex", f"p/x *(unsigned*){d['_fails']:#x}",
-         "-ex", f"p *(unsigned*){d['_cycles_st']:#x}", "-ex", f"p *(unsigned[7]*){d['_each']:#x}", elf_run],
-        capture_output=True, text=True, timeout=600).stdout.split("\n")
-    vals = [l.split("=")[-1].strip() for l in out if l.startswith("$")]
+    vals = run_gdb(elf_run, [f"*(unsigned*){d['_cycles']:#x}", f"/x *(unsigned*){d['_fails']:#x}",
+                             f"*(unsigned*){d['_cycles_st']:#x}", f"*(unsigned[15]*){d['_each']:#x}"],
+                   [("fxpack_screen", FB), ("fxpack_screen_wah", FB + 320 * 512)], timeout=600)
     if len(vals) == 4:
-        print("per effect (PHASER FLANGER FOLD FUZZ DJ TRANSIENT TEXTURE):", vals[3])
+        print("per effect (PHASER FLANGER CHORUS COMB RING TREMOLO FOLD FUZZ BITCRUSH DJ LADDER WAH VOWEL "
+              "TRANSIENT TEXTURE):", vals[3])
         vals = vals[:3]
     if len(vals) == 3:
         print(f"cycles per FX block (64 samples): worst effect mono {vals[0]}, master stereo {vals[2]}")

@@ -1,21 +1,23 @@
 /* Engine host (spec: README.md): several SDK synth engines on TE's drwave engine.
  *
  * A drwave sound belongs to an SDK engine when knob slots 5-8 all hold (tag << 12) | v, the same
- * tag 1..6 in all four (v = 12 bits, that engine's page 2). Every such value is inside drwave's
+ * tag 1..7 in all four (v = 12 bits, that engine's page 2). Every such value is inside drwave's
  * ranges (5-8: 0..32767), so presets pass TE's boot-time patch validator and load on stock
- * firmware as drwave. Stock drwave presets never match (slot 5 = 32000 / 32767, 6-8 = 0).
+ * firmware as drwave. Stock drwave presets never match (slot 5 = 32000 / 32767, 6-8 = 0: tag 7 in
+ * slot 5 alone is not enough, all four must carry it).
  * Page 1 lives in slots 1-4 within drwave's ranges: slot 1 0..24575, 2 0..16383, 3 0..16383,
  * 4 0..32767 (engines use 0..EH_PAGE1_MAX in all four).
  *
  * Engines register from their "init" (idempotent table writes; init runs once before the first
- * hook, on whichever thread gets there first). Tags: 2 MONO 3 (mono), 3 STATION 1 (m1), 4 TRIO, 5 WHEEL, 6 WARP. 7 is never used (stock
- * slot-5 values 0x7d00 / 0x7fff carry tag 7). */
+ * hook, on whichever thread gets there first). Tags: 1 PARTY (PSS-11) (pss11), 2 MONO 3 (mono),
+ * 3 STATION 1 (m1), 4 TRIO, 5 WHEEL, 6 WARP, 7 MALLET (stock slot-5 values 0x7d00 / 0x7fff carry
+ * tag 7, but their slots 6-8 are 0: checked on all 16 factory drwave presets). No tag is free. */
 #ifndef EH_HOST_H
 #define EH_HOST_H
 
 #include <stdint.h>
 
-#define EH_TAGS         7               /* tags 1..6 */
+#define EH_TAGS         8               /* tags 1..7 */
 #define EH_PAGE1_MAX    16383           /* page 1 in slots 1-4 */
 #define EH_P2_MAX       0x0fff          /* page 2 in slots 5-8, below the tag */
 #define EH_FRESH        0x01            /* render flag: first block of a new note on this voice */
@@ -29,7 +31,7 @@ typedef void (*eh_render_fn)(int vi, int16_t *out, const int16_t *knobs, const u
 
 void eh_register(int tag, eh_render_fn render);
 
-/* tag of a sound's knob block (1..6), 0 = not an SDK engine (plain drwave) */
+/* tag of a sound's knob block (1..7), 0 = not an SDK engine (plain drwave) */
 int eh_tag(const volatile int16_t *k);
 
 /* page-2 value v of slot 5-8 with a tag */

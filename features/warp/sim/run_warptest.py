@@ -6,7 +6,7 @@
 Checks: plain drwave untouched; the host routes tag 6 to WARP and tag 5 to WHEEL; WARP pitch from TE's
 per-sample buffer (plain sine, 441 Hz) and note restart; knob push = page 1/2/3; knob edits keep tag 6
 and stay in drwave's ranges; shift + blue = bank (all 16 entries in range, tag 6); page 3 = FX knobs;
-"warp" -> "drwave" in the engine list (chained with LOFI and WHEEL). Prints cycles per voice block.
+"warp" -> "drwave" in the engine list (chained with WHEEL and MALLET). Prints cycles per voice block.
 HLT = exit 0 = pass, ABORT = exit 1 = fail (R7 = failed check bits, see driver.c)."""
 
 import json, os, sys
@@ -34,7 +34,7 @@ def main():
         {"STACK": STACK, "_eh_render_" if False else "_wh_te_render": syms["_eh_te_render"], "_wh_te_note_on": syms["_eh_te_note_on"],
          "_compose_init": syms["_compose_init"],
          "_engine_name": syms["_compose_engine_name"], "_wp_page": syms["_wp_page"], "_wp_bank": syms["_wp_bank"],
-         "_lf_page": syms["_lf_page"], "_ep_page": syms["_ep_page"],
+         "_ep_page": syms["_ep_page"],
          "_hook_key": syms["__sdk_hook_019b6c74"], "_hook_frame": syms["__sdk_hook_019ab8b2"], "_FB": 0x03000000, "_hook_knob": syms["__sdk_hook_019b6c0c"]},
     )
     segs = [(0x01E00000, code), (DRIVER_AT, driver), (0x03000000, bytes(320 * 512))]

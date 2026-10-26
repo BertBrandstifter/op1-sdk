@@ -566,8 +566,9 @@ void m1_frame(uint16_t *buf)
 
     /* the station (253 x 81, centred): upper half fader, LEDs, LCD, page + MIX; lower half knob and
      * keyboard */
-    outline(34, 4, 253, 81, 3, C_WHITE);
-    gfx_rect(35, 42, 251, 1, C_LINE);
+    outline(34, 4, 253, 81, 3, C_BLUE);         /* the case: a 2-pixel blue frame */
+    outline(35, 5, 251, 79, 2, C_BLUE);
+    gfx_rect(36, 42, 249, 1, C_LINE);
     gfx_rect(46, 9, 1, 28, C_WHITE);            /* fader = CUTOFF */
     gfx_rect(43, 33 - p[M1_CUTOFF] * 24 / 32767, 7, 3, C_WHITE);
     led(60, 11, 1, C_RED);                      /* A, B, F.ENV, RES on */

@@ -1,11 +1,12 @@
-/* FXPACK (spec: README.md): seven small effects (PHASER FLANGER FOLD FUZZ DJ FILTER TRANSIENT
- * TEXTURE) hosted on TE's phone effect, one row "fx mix" in TE's FX list; page 1's blue knob
+/* FXPACK (spec: README.md): fifteen small effects (PHASER FLANGER CHORUS COMB RING MOD TREMOLO FOLD
+ * FUZZ BITCRUSH DJ FILTER LADDER AUTO-WAH VOWEL TRANSIENT TEXTURE) hosted on TE's phone effect, one row "fx mix" in TE's FX list; page 1's blue knob
  * picks the effect.
  *
  * An FX is FXPACK when its stored fx_params 5-8 all have the form 0x6000 | v (24576..32767): param
- * 5's v selects the effect (TYPE), params 6-8 are its page-2 values. Phone allows 0..32767 there
- * and ignores them, so FXPACK sounds pass TE's patch validator (boot included) and load on stock
- * firmware as plain phone. Page 1 = phone's four knobs in phone's ranges, rescaled to 0..32767.
+ * 5's v selects the effect (TYPE, one of 32 slots: fp_type_of), params 6-8 are its page-2 values.
+ * Phone allows 0..32767 there and ignores them, so FXPACK sounds pass TE's patch validator (boot
+ * included) and load on stock firmware as plain phone. Page 1 = phone's four knobs in phone's
+ * ranges, rescaled to 0..32767.
  *
  * fp_te_mono / fp_te_stereo  phone process slots: FXPACK when the stored params carry the marker
  *                (synth or drum FX: mono, master FX: one state per channel), otherwise TE's phone
@@ -50,9 +51,17 @@ static const uint8_t slot_of[2][4] = { { 4, 0, 1, 2 }, { 3, 5, 6, 7 } };
 static const int16_t defaults[FP_TYPES][8] = {
     { 7300, 13107, 7680, 32767, 25161, 28671, 27852, 28671 },      /* PHASER */
     { 6286, 11673, 14131, 32767, 26331, 25804, 27033, 28671 },     /* FLANGER */
-    { 8314, 10240, 12288, 32767, 27502, 27033, 28671, 24576 },     /* FOLD */
-    { 12369, 11673, 12288, 32767, 28672, 27852, 28671, 24576 },    /* FUZZ */
+    { 9431, 10240, 9216, 16384, 26880, 27015, 30576, 32767 },      /* CHORUS */
+    { 8972, 14541, 6144, 16384, 25728, 24576, 27033, 26624 },      /* COMB */
+    { 13076, 3072, 7680, 16384, 28032, 24576, 32767, 24576 },      /* RING MOD */
+    { 15880, 13107, 1536, 32767, 28288, 24576, 24576, 24576 },     /* TREMOLO */
+    { 4258, 10240, 12288, 32767, 27502, 27033, 27264, 24576 },     /* FOLD (DRIVE 2.4x, LEVEL ~ CHORUS) */
+    { 6286, 11673, 12288, 32767, 28672, 25600, 28671, 24576 },     /* FUZZ (DRIVE 5.5x, LEVEL ~ CHORUS) */
+    { 9666, 12997, 1536, 32767, 29440, 31744, 24576, 24576 },      /* BITCRUSH */
     { 10342, 8806, 1536, 32767, 29843, 24576, 27033, 24576 },      /* DJ FILTER */
+    { 11356, 8806, 4608, 32767, 30336, 24576, 27852, 24576 },      /* LADDER */
+    { 12369, 11674, 5376, 32767, 30592, 29491, 28672, 26624 },     /* AUTO-WAH */
+    { 204, 10240, 9216, 32767, 31616, 27033, 27852, 26624 },       /* VOWEL */
     { 15411, 10240, 9216, 32767, 31013, 28671, 27033, 24576 },     /* TRANSIENT */
     { 204, 10240, 10752, 9830, 32184, 27033, 27852, 27033 },       /* TEXTURE */
 };
@@ -276,7 +285,7 @@ int fp_key(int key, int down)
 
 int fp_knob(int knob, int16_t *diff)
 {
-    int slot, v, t, p;
+    int slot, v, t, p, type, dir = *diff > 0 ? 1 : *diff < 0 ? -1 : 0;
     volatile int16_t *f;
 
     if ((unsigned int)knob > 3 || !(f = synth_fx_pack(&slot)))
@@ -284,6 +293,17 @@ int fp_knob(int knob, int16_t *diff)
     if (*TE_SHIFT_HELD)
         return 1;
     p = slot_of[fp_page & 1][knob];
+    type = fp_type_of((int16_t)((f[4] & 0x1fff) << 2));
+    if (p != 4 && fp_steps(type, p)) {          /* stepped value: one step per detent */
+        v = p < 4 ? norm(p, f[p]) : (f[p] & 0x1fff) << 2;
+        t = fp_step(type, p, (int16_t)v) + dir;
+        if (dir && t >= 0 && t < fp_steps(type, p)) {
+            v = fp_step_value(type, p, t);
+            f[p] = p < 4 ? denorm(p, v) : (int16_t)(MARK | (v >> 2));
+            fp_save(f, slot);
+        }
+        return 1;
+    }
     if (p < 4) {                                /* phone's knob: edited in its own range */
         t = (*diff * STEP_SCALE) >> 15;
         if (t) {
@@ -295,7 +315,7 @@ int fp_knob(int knob, int16_t *diff)
     }
     v = (f[p] & 0x1fff) << 2;
     if (p == 4) {                               /* TYPE: one effect per click, with its defaults */
-        t = fp_type_of((int16_t)v) + (*diff > 0 ? 1 : *diff < 0 ? -1 : 0);
+        t = fp_type_of((int16_t)v) + dir;
         t = t < 0 ? 0 : t >= FP_TYPES ? FP_TYPES - 1 : t;
         if (t != fp_type_of((int16_t)v)) {
             for (v = 0; v < 8; v++)
@@ -373,15 +393,20 @@ void fp_frame(uint16_t *buf)
     }
 
     for (i = 0; i < 4; i++) {
-        int p = slot_of[pg & 1][i], o = slot_of[(pg & 1) ^ 1][i];
+        int p = slot_of[pg & 1][i], o = slot_of[(pg & 1) ^ 1][i], n = fp_steps(type, p);
         const char *c = fp_choice(type, p, v[p]), *co = fp_choice(type, o, v[o]);
 
         x = 4 + i * 80;
         gfx_text(x, 118, fp_param_name(type, p), col[i], 2);
-        if (c) {
-            gfx_text(x, 132, c, GFX_WHITE, 1);
+        gfx_rect(x, 132, 72, 6, track);
+        if (c) {                                /* stepped: its text right of the name, bar = step / (n - 1) */
+            int len = 0;
+
+            while (c[len])
+                len++;
+            gfx_text(x + 73 - 4 * len, 123, c, GFX_WHITE, 1);
+            gfx_rect(x, 132, n > 1 ? fp_step(type, p, v[p]) * 72 / (n - 1) : 0, 6, col[i]);
         } else {
-            gfx_rect(x, 132, 72, 6, track);
             gfx_rect(x, 132, v[p] * 72 / 32767, 6, col[i]);
         }
         gfx_text(x, 144, fp_param_name(type, o), dim, 1);

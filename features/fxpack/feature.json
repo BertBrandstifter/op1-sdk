@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "name": "fxpack",
-  "title": "FXPACK: phaser, flanger, fold, fuzz, DJ filter, transient shaper, texture",
-  "version": "0.4",
+  "title": "FXPACK: 15 effects in one FX slot (modulation, distortion, filters, transient, texture)",
+  "version": "0.7",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
@@ -11,7 +11,7 @@
   "prefix": [
     "fp_"
   ],
-  "summary": "One FX-list row FX MIX with seven small effects (pick with the blue knob on page 1): PHASER (4-8 allpass stages), FLANGER (+/- feedback), FOLD (triangle/sine wavefolder), FUZZ (5 curves + gate), DJ FILTER (one knob LP/off/HP, 12/24 dB, wobble), TRANSIENT (attack/sustain shaper) and TEXTURE (vinyl, tape, rain, wind, radio, room bed with breath and duck). Page 1: TYPE + the effect's first three knobs; page 2 (knob push): MIX + three more. Synth, drum and master FX (master: per channel, LFO spread). Hosted on phone with an in-range marker in fx_params 5-8: presets pass TE's checks and load on stock firmware as phone.",
+  "summary": "One FX-list row FX MIX with fifteen small effects (pick with the blue knob on page 1): PHASER (4-8 allpass stages), FLANGER (+/- feedback), CHORUS (1-3 voices, stereo spread), COMB (tuned, +/- feedback), RING MOD (sine to square carrier), TREMOLO (auto-pan on the master), FOLD (triangle/sine wavefolder), FUZZ (5 curves + gate), BITCRUSH (bits, sample rate, jitter), DJ FILTER (one knob LP/off/HP, 12/24 dB, wobble), LADDER (4-pole with drive, envelope and LFO), AUTO-WAH (envelope filter LP/BP/HP, up/down), VOWEL (A E I O U formants, LFO), TRANSIENT (attack/sustain shaper) and TEXTURE (vinyl, tape, rain, wind, radio, room bed with breath and duck). Page 1: TYPE + the effect's first three knobs; page 2 (knob push): MIX + three more. Synth, drum and master FX (master: per channel, LFO spread). Hosted on phone with an in-range marker in fx_params 5-8: presets pass TE's checks and load on stock firmware as phone.",
   "license": "MIT",
   "authors": [
     "unknown"
@@ -88,7 +88,7 @@
     }
   ],
   "controls": [
-    "FX list: FX MIX (one row); page 1 blue picks PHASER FLANGER FOLD FUZZ DJ FILTER TRANSIENT TEXTURE",
+    "FX list: FX MIX (one row); page 1 blue picks PHASER FLANGER CHORUS COMB RING MOD TREMOLO FOLD FUZZ BITCRUSH DJ FILTER LADDER AUTO-WAH VOWEL TRANSIENT TEXTURE",
     "synth FX screen, FXPACK: knob push flips page 1 (blue: TYPE, one effect per click; green/white/orange: the effect's first three values) / page 2 (blue: MIX; green/white/orange: the page-2 values)",
     "mixer FX page (master FX = FX MIX, on): same pages, knob push = page 2"
   ],
@@ -98,7 +98,7 @@
   ],
   "depends": [],
   "conflicts": [],
-  "status_note": "v0.4: TYPE first on page 1, MIX moved to page 2 (all knobs edited by FXPACK); v0.3: own page + page 2 (incl. TYPE) on the mixer's master FX page too; v0.2: one FX-list row 'fx mix', TYPE loads per-effect defaults, browsers keep the row; v0.1: seven rows on phone",
+  "status_note": "v0.7: FOLD and FUZZ default LEVEL lowered to CHORUS loudness (FOLD 0.33x, FUZZ 0.125x); every effect but FUZZ 1.4x louder (output gain faded in over the first quarter of MIX, soft knee above half scale; TEXTURE: its bed); v0.6: COMB, RING MOD, TREMOLO, LADDER, AUTO-WAH, VOWEL added; TYPE = 32 fixed slots (every stored TYPE value keeps its effect); v0.5: CHORUS and BITCRUSH added; TYPE = 16 fixed slots (v0.4 sounds keep their effect); FOLD and FUZZ DRIVE halved (max 8x and 16x, was 16x and 32x), their default DRIVE halved again (2.4x, 5.5x); stepped values (TYPE, VOICES, STAGES, CHAR, SLOPE, KIND) one step per detent, shown as text + bar (step / (n - 1)); v0.4: TYPE first on page 1, MIX moved to page 2 (all knobs edited by FXPACK); v0.3: own page + page 2 (incl. TYPE) on the mixer's master FX page too; v0.2: one FX-list row 'fx mix', TYPE loads per-effect defaults, browsers keep the row; v0.1: seven rows on phone",
   "claims": [
     {
       "input": "blue_push",

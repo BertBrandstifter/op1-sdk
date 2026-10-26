@@ -72,10 +72,14 @@ Synth engines (each: one engine-list row + one preset in its own folder; the sou
 bank on **shift + blue turn**; knob push = pages; last page = the sound's FX knobs):
 
 - `lofi` 0.7 — LOFI on pulse: chiptune waves + 16 bytebeat formulas, bank of 14 (v0.1 device-verified;
-  0.7: preset `lofi` back in the preset browser, shift + white push gesture removed)
-- `enginehost` 1.0 — library: SDK engines share drwave via a tag in knob slots 5-8 (2 MONO 3, 3 STATION 1,
-  4 TRIO, 5 WHEEL, 6 WARP; 1 free) + the shared FX page (device-verified)
-- `wheel` 0.7 — WHEEL tonewheel organ (tag 5): 16 registrations, percussion, click, drive, rotary,
+  0.7: preset `lofi` back in the preset browser, shift + white push gesture removed). To be reworked;
+  it stays in the images: its range check is what lets stored LOFI sounds pass the boot validator
+  (an image without it halted the boot on 2026-10-22)
+- `mallet` 0.1 — MALLET (tag 7): modal synthesis of struck instruments (marimba, vibes with motor,
+  xylophone, glockenspiel, steelpan, handpan, kalimba, tubular bells), bank of 16
+- `enginehost` 1.2 — library: SDK engines share drwave via a tag in knob slots 5-8 (1 PARTY (PSS-11), 2 MONO 3,
+  3 STATION 1, 4 TRIO, 5 WHEEL, 6 WARP, 7 MALLET) + the shared FX page (device-verified)
+- `wheel` 0.10 — WHEEL tonewheel organ (tag 5): 16 registrations, percussion, click, drive, rotary,
   bank of 24 (0.4 device-verified; 0.7 clean output: no clipping, drive level-compensated)
 - `warp` 0.1 — WARP (tag 6): 8 waves x 16 phase / output warps, sweep, motion, unison, bank of 16
   (device-verified)
@@ -85,6 +89,9 @@ bank on **shift + blue turn**; knob push = pages; last page = the sound's FX kno
   (range, wave, level each; osc 2 / 3 frequency), white / pink noise, 4-pole ladder (self-oscillation, bass loss,
   keyboard control), filter + loudness contours (decay switch), constant-time glide; page 1 LFO-able; 7 pages;
   bank of 16 + P-- (sim-verified)
+- `party` 0.2 — PSS-11 (tag 1): the PSS-11's GEW7 AWM tone generator recreated after MAME (8/12-bit samples, chip envelope +
+  LFO, BSD-3 parts: NOTICE), live PARTY keyboard screen (keys lit as they sound), two layers, filter, bank; built-in 8 waves,
+  every ROM sample-table sound from your own dump with `gen_pss11.py --pss-rom` (sim-verified, no Yamaha data included)
 - `m1` 0.8 — STATION 1 (tag 3): two of 100 sampled multisounds layered (B pitch / detune, A decay, B fade-in) into
   a low-pass with envelope, resonance, key tracking; page 1 LFO-able; bank of 28. MIX is a crossfade, the output has headroom for
   chords and a soft knee. Samples: a sound library (1.4 MB, committed in
@@ -99,14 +106,14 @@ Effects (each hosted on a TE FX with an in-range marker; own row in the FX list,
 
 - `reso` 0.3 — RESO on CWO: strings tuned to the played notes (sim-verified)
 - `shimmer` 0.2 — SHIMMER on spring: reverb whose tail rises an interval per pass (sim-verified)
-- `fxpack` 0.4 — "fx mix" on phone: phaser, flanger, fold, fuzz, DJ filter, transient, texture
+- `fxpack` 0.7 — "fx mix" on phone: phaser, flanger, chorus, comb, ring mod, tremolo, fold, fuzz, bitcrush, DJ filter, ladder, auto-wah, vowel, transient, texture
   (sim-verified)
 
 Performance:
 
 - `chordplus` 0.5 — CHORD+ chord keyboard: shift + insert (insert while the panel shows: pin it); white keys = scale chords, held black
   keys = modifiers (lower octave: min/maj, 7th, sus4, 9th, inversion; upper: power, sus2, OPEN / WIDE voicing, 2nd / 3rd inversion); panel KEY / SCALE / VOICING / STRUM (device-verified)
-- `drumroll` 2.1 — DRUM ROLL, the finger sequencer's step editor (drum playmode, sequencer key with the
+- `drumroll` 2.2 — DRUM ROLL, the finger sequencer's step editor (drum playmode, sequencer key with the
   finger sequencer picked, shift + blue press opens and closes (note "SHIFT+BLUE: EDITOR"); handled like the synth engines: turn = value, press =
   next page, 6 pages STEP NOTE TIME LANE SOUND PAT): shows / edits the selected finger pattern (1-14)
   as 8 lanes = 8 drum samples, own length + rate each (polymetric), drawn to scale; per step VEL TONE
@@ -115,7 +122,7 @@ Performance:
   of that on TE's step events (finger keys start / stop it, TE's compressed view shows a summary, TE's
   step record still works); black keys on the drum finger screen = punch-in effects in three banks (green press on the finger screen: A PO-20 set, B arcade: 8-BIT LASER FALL COIN RND PITCH OCT UP / DOWN ECHO REVERSE SHUFFLE, C time + mix: HALF / DOUBLE TIME TRIPLET LOOP BEAT BUILD SOLOs NO KICK FADE CUT; a window while held); STEP REC (shift + white: the keyboard into the cursor step, the arrows move); undo / redo shift + BACK / FORWARD (also TE's own finger screen edits); patterns kept in TE's op1.db; `features/drumroll/README.md` (v1.0
   / v1.1 device-tested: "nice!", "really love it!"; v1.2 sim-verified)
-- `noteroll` 0.9 — NOTE ROLL, the synth finger sequencer's step editor (synth playmode, sequencer
+- `noteroll` 0.10 — NOTE ROLL, the synth finger sequencer's step editor (synth playmode, sequencer
   key with the finger sequencer picked, shift + blue press opens and closes; DRUM ROLL's handling, 5
   pages NOTE SHAPE CHORD PAT CLEAR): the selected finger pattern as a piano roll, up to 6 notes a step
   (chord shapes, inversions), per note VEL + LEN (to 16 steps, TIE), per step NUDGE PROB RATCH,
@@ -133,13 +140,13 @@ Performance:
 Debug / examples (not in op1plus): `fxdiag` 0.1 (FX hosting overlay, `recipes/op1diag.json`),
 `key_probe` (input probe, device-verified), `midi_filter` (MIDI CC filter example).
 
-Recipe `recipes/op1plus.json` (boot text `op1sdk +`): chordplus, lofi, wheel, warp, trio, m1, mono, reso,
+Recipe `recipes/op1plus.json` (boot text `op1sdk +`): chordplus, lofi, wheel, warp, trio, m1, party, mono, mallet, reso,
 shimmer, fxpack, drumroll, noteroll, requantize, engine_plus (+ enginehost, quantcore as dependencies). Factory synth
 presets: 164 of TE's 176 (one per engine).
 
 Key combinations in use (machine-readable in each manifest's `claims`; compose stops on overlaps):
 shift + insert (CHORD+ on / panel / off), shift + blue knob press (requantize; not in drum playmode, not on the sequencer screen), synth engine screen
-plain knob clicks (engine_plus pages on stock engines; page flips on LOFI / WHEEL / WARP / TRIO / STATION 1 / MONO 3),
+plain knob clicks (engine_plus pages on stock engines; page flips on LOFI / WHEEL / WARP / TRIO / STATION 1 / MONO 3 / PARTY / MALLET),
 shift + blue turn on an SDK engine's screen (its bank), CHORD+ panel knobs while open, requantize
 SYNTH ROLL on the tape screen (all knob turns and presses, with and without shift; green press = next page),
 shift + blue press on the synth finger sequencer screen (NOTE ROLL, as DRUM ROLL), shift + blue press on the drum finger sequencer screen (DRUM ROLL; while open all knob turns and presses
