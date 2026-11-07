@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "m1",
   "title": "STATION 1 synth engine (sample workstation, two multisounds layered)",
-  "version": "0.8",
+  "version": "0.9",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
@@ -11,7 +11,7 @@
   "prefix": [
     "m1_"
   ],
-  "summary": "Pick STATION 1 in the engine list or the 'station 1' preset: two of 100 sampled multisounds layered (piano, organs, strings, choir, brass, bells, single-cycle waves ...), B transposed and detuned, A decaying while B fades in, into a low-pass filter with its own envelope, resonance and key tracking. Page 1 (wave A, wave B, mix, cutoff) can be moved by TE's LFO. Shift + blue turn browses 28 built-in sounds; page 4 = the sound's FX knobs. The screen shows a station: LCD with the sound and its waves, fader, LEDs, MIX bar and a keyboard lighting the sounding keys, above the page's four knobs. The samples (a sound library at 31.25 kHz with its key splits and tuning, about 1.4 MB) are committed in build/ with a NOTICE (not MIT, never packed); without them the engine plays 8 built-in waves. Presets stay drwave presets with in-range values. With m1_drumkit.py, two drum kits (m1 drums, m1 perc) are built in as factory drum kits. The samples are a content file of the update, loaded at runtime into TE's sample memory (not the SDK region).",
+  "summary": "Pick STATION 1 in the engine list or the 'station 1' preset: two of 100 sampled multisounds layered (piano, organs, strings, choir, brass, bells, single-cycle waves ...), B transposed and detuned, A decaying while B fades in, into a low-pass filter with its own envelope, resonance and key tracking. Page 1 (wave A, wave B, mix, cutoff) can be moved by TE's LFO. Shift + blue turn browses 28 built-in sounds; page 4 = the sound's FX knobs. The screen is the workstation's LCD 40x4 (dot-matrix): page LEDs, the program and the sounding notes, a second line left empty (SHIFT+BLUE: SOUNDS until the first knob turn), the page's four knobs in fields (name over value) with a cursor under the knob turned last, above the page's four knobs. The samples (a sound library at 31.25 kHz with its key splits and tuning, about 1.4 MB) are committed in build/ with a NOTICE (not MIT, never packed); without them the engine plays 8 built-in waves. Presets stay drwave presets with in-range values. With m1_drumkit.py, two drum kits (m1 drums, m1 perc) are built in as factory drum kits. The samples are a content file of the update, loaded at runtime into TE's sample memory (not the SDK region).",
   "license": "MIT",
   "authors": [
     "unknown"

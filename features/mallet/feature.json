@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "mallet",
   "title": "MALLET synth engine (marimba, vibraphone, steelpan, bells)",
-  "version": "0.2",
+  "version": "0.3",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
@@ -129,7 +129,7 @@
       ]
     }
   ],
-  "status_note": "v0.2: screens after the user's MALLET art (8 instruments drawn in code, shared bar / pan drawings, ~2 KB); v0.1: eight instruments by modal synthesis on the engine host (tag 7), bank of 16, STATION 1 screen style",
+  "status_note": "v0.3: screens antialiased (lines, ellipses, rounded corners; shapes kept between frames, sim-verified); v0.2: screens after the user's MALLET art (8 instruments drawn in code, shared bar / pan drawings, ~2 KB); v0.1: eight instruments by modal synthesis on the engine host (tag 7), bank of 16, STATION 1 screen style",
   "init": "ml_init",
   "evidence": []
 }

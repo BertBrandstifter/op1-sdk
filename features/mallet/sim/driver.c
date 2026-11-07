@@ -26,6 +26,7 @@ extern void ml_tick(void);
 static int drwave_renders, drwave_notes, saves, fxsaves, keys_seen, knobs_seen;
 static int16_t out[128];
 volatile uint32_t cycles_plain, cycles_full, cycles_strike;    /* read by run_mallettest.py */
+volatile uint32_t cycles_first[8], cycles_frame[8];             /* per instrument screen: its first frame, the next */
 volatile int fails;                                             /* read by run_mallettest.py */
 
 void drwave_render(void *self, int16_t *o, int16_t *k)
@@ -363,7 +364,12 @@ int main(void)
             for (n = 0; n < 700; n++)           /* the title's second runs out */
                 ml_tick();
             ml_page = s == 1 ? 1 : 0;
+            t0 = cycles();
             hook_frame((uint16_t *)FBN(s));
+            cycles_first[s] = cycles() - t0;
+            t0 = cycles();                      /* the next frame: the same shapes again */
+            hook_frame((uint16_t *)FBN(s));
+            cycles_frame[s] = cycles() - t0;
         }
         ml_page = 0;
         for (i = 0; i < 3; i++)

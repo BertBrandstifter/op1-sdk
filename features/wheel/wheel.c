@@ -15,10 +15,10 @@
  *                 TE's FX save; drwave's knobs never see them
  *                 Shift + blue turn browses WHEEL's built-in bank (24 organ sounds): loads all 8
  *                 values (no TE preset rows: the factory list is capped at 176)
- * wh_note_key     on_key observe: the keyboard's held keys (the screen lights their notes)
+ * wh_note_key     on_key observe: the keyboard's held keys (the screen names their notes)
  * wh_frame        WHEEL screen over drwave's on the engine screen (kept above y 140, where
  *                 engine_plus draws its knob row)
- * wh_tick         seq_tick: the clock of the sound's name over the organ
+ * wh_tick         seq_tick: the clock of the sound's name on the lamps
  * TE's envelope, velocity, volume, FX and LFO apply as for any engine. */
 #include <op1/te246.h>
 #include <op1/gfx.h>
@@ -48,8 +48,10 @@ static volatile int8_t bank_slot = -1;          /* sound it was loaded into */
 static volatile uint32_t now;                   /* samples, advanced by wh_tick */
 static volatile uint32_t title_until;           /* the sound's name shown while now < this */
 volatile uint8_t wh_title_on;                   /* drawn in the last frame (bench reads) */
+volatile int8_t wh_note_shown = -1;             /* the lowest sounding note shown last frame (bench) */
+static volatile uint8_t touched;                /* the page's knob turned last (the lamps show it) */
 
-/* the screen's keyboard (as STATION 1): a held key lights its own note (TE plays note index + 53 +
+/* the sounding note (as STATION 1's LCD): a held key is its own note (TE plays note index + 53 +
  * 12 x octave), the octave from the voice it starts (rounded: TE's glide / LFO / bend at the start
  * move it by less than 6 semitones); new voices no held key accounts for (sequencer, MIDI, CHORD+'s
  * extra notes) flash at their pitch for FLASH blocks */
@@ -214,6 +216,7 @@ int wh_key(int key, int down)
     if (*TE_SHIFT_HELD || !engine_screen_wheel())
         return 0;
     wh_page = (uint8_t)(wh_page + 1 < PAGES ? wh_page + 1 : 0);
+    touched = 0;
     consumed |= (uint8_t)(1 << b);
     return 1;
 }
@@ -316,6 +319,7 @@ int wh_knob(int knob, int16_t *diff)
         bank_edited = 1;
     if (wh_page == 2)
         return eh_fx_knob(slot, knob, *diff);
+    touched = (uint8_t)knob;
     i = wh_page ? 4 + knob : knob;
     if (values(i)) {                            /* a value per detent, more when fast */
         int n = values(i), step = (*diff < 0 ? -*diff : *diff) >> 10;
@@ -344,12 +348,11 @@ void wh_tick(void)
 
 /* ------------------------------------------------------------------ GUI thread */
 
-/* Screen (spec: README.md "Screen"): the organ after "wheel · overview" (as MONO 3): the rotor's
- * air above the cabinet (moves with the horn's speed), the cabinet's grille = the nine drawbars
- * in their groups BASS / BODY / TOP, the drive pill, the registration's digits and the page, the
- * PERC and ROTARY buttons, the keyboard (the sounding keys lit); for 1 s after a sound is picked (or
- * the screen opens) its name over the organ, as STATION 1's LCD; below it the page's four knobs:
- * name and bar (as STATION 1). The current page's controls are in their knob colours. */
+/* Screen (spec: README.md "Screen"): after "CHORD · display overview": the 8 x 2 lamp display (the
+ * registration over the knob turned last; the sound's name for 1 s after it is picked or the screen
+ * opens), the fan = the rotary speaker (turning at the horn's speed), the grille = the nine
+ * drawbars, the six buttons PERC OFF 2ND 3RD and ROTARY OFF SLW FST; below it the page's four knobs:
+ * name and bar (as STATION 1). */
 
 static const char *const labels[WH_PARAMS] = {
     "REG", "PERC", "DRIVE", "ROTARY", "BASS", "BODY", "TOP", "CLICK",
@@ -365,138 +368,191 @@ static const char *const page_names[PAGES] = { "ORGAN", "DRAWBARS", "FX" };
 #define C_DIM       GFX_RGB(0x5a, 0x58, 0x66)
 #define C_LINE      GFX_RGB(0x48, 0x46, 0x50)
 #define C_TRACK     GFX_RGB(0x35, 0x32, 0x38)
-#define C_YELLOW    GFX_RGB(0xe2, 0xc2, 0x5a)   /* the case */
+#define C_GOLD      GFX_RGB(0xe6, 0xc0, 0x50)   /* the frame, lit buttons */
+#define C_AMBER     GFX_RGB(0xff, 0xb4, 0x30)   /* the lamps: lit, unlit, the glass */
+#define C_AMBER_OFF GFX_RGB(0x30, 0x22, 0x0a)
+#define C_AMBER_BG  GFX_RGB(0x12, 0x0c, 0x04)
 
-#define KEY_LO      48                          /* keyboard C3 .. C5, 15 white keys */
-#define KEYS        25
-#define KEY_X       105
-#define KEY_W       12
+static const eh_lcd lamps = { 74, 7, 8, 4, 3, 22, 33, C_AMBER, C_AMBER_OFF };
 
-static void outline(int x, int y, int w, int h, int r, uint16_t c)
+/* sin(5 deg * i) x 100, i = 0 .. 18 */
+static const int8_t sn[19] = { 0, 9, 17, 26, 34, 42, 50, 57, 64, 71, 77, 82, 87, 91, 94, 97, 98, 100, 100 };
+
+/* the direction of a (degrees, any) x 100, 0 = up, clockwise */
+static void dir(int a, int *dx, int *dy)
 {
     int i;
 
-    gfx_rect(x + r, y, w - 2 * r, 1, c);
-    gfx_rect(x + r, y + h - 1, w - 2 * r, 1, c);
-    gfx_rect(x, y + r, 1, h - 2 * r, c);
-    gfx_rect(x + w - 1, y + r, 1, h - 2 * r, c);
-    for (i = 1; i < r; i++) {
-        gfx_pixel(x + r - i, y + i, c);
-        gfx_pixel(x + w - 1 - r + i, y + i, c);
-        gfx_pixel(x + r - i, y + h - 1 - i, c);
-        gfx_pixel(x + w - 1 - r + i, y + h - 1 - i, c);
-    }
+    a %= 360;
+    a = a < 0 ? a + 360 : a;
+    a = a > 180 ? a - 360 : a;
+    i = a < 0 ? -a : a;
+    *dx = (i >= 90 ? sn[(180 - i) / 5] : sn[i / 5]) * (a < 0 ? -1 : 1);
+    *dy = i >= 90 ? sn[(i - 90) / 5] : -sn[(90 - i) / 5];
 }
 
-static void light(uint8_t *on, int k)          /* folded into C3 .. C5 */
+/* the fan: a white ring, three red blades at angle a (degrees), the hub */
+static void fan(int cx, int cy, int a)
 {
-    if (k <= 0)
-        return;
-    while (k < KEY_LO)
-        k += 12;
-    while (k >= KEY_LO + KEYS)
-        k -= 12;
-    on[k - KEY_LO] = 1;
-}
+    int i, j, dx, dy;
 
-/* the keys that sound: held ones (their own note), the notes without a key for FLASH blocks */
-static void keyboard(int y0, int y1)
-{
-    static const int8_t white_of[12] = { 0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6 };
-    uint8_t on[KEYS];
-    uint32_t now = blocks;
-    int i, split = y0 + (y1 - y0) * 3 / 5;
-
-    for (i = 0; i < KEYS; i++)
-        on[i] = 0;
-    for (i = 0; i < HELD; i++)
-        if (held_id[i])
-            light(on, held_key[i]);
-    for (i = 0; i < VOICES; i++)
-        if ((int32_t)(flash_until[i] - now) > 0)
-            light(on, flash_key[i]);
-
-    outline(KEY_X, y0, 15 * KEY_W + 1, y1 - y0 + 1, 0, C_WHITE);
-    for (i = 1; i < 15; i++)
-        gfx_rect(KEY_X + i * KEY_W, y0 + 1, 1, y1 - y0 - 1, C_LINE);
-    for (i = 0; i < KEYS; i++) {
-        int o = i / 12, n = i % 12, w = white_of[n];
-
-        if (w >= 0) {
-            if (on[i])
-                gfx_rect(KEY_X + (o * 7 + w) * KEY_W + 1, split + 1, KEY_W - 1, y1 - split - 2, C_GREEN);
-        } else {
-            int x = KEY_X + (o * 7 + white_of[n - 1] + 1) * KEY_W - 3;
-
-            gfx_rect(x, y0 + 1, 7, split - y0 - 1, on[i] ? C_GREEN : C_WHITE);
+    gfx_disc(cx, cy, 14, C_WHITE);
+    gfx_disc(cx, cy, 13, GFX_BLACK);
+    for (i = 0; i < 3; i++)
+        for (j = 0; j < 3; j++) {               /* a blade: three discs along it, widening */
+            dir(a + i * 120 + j * 8, &dx, &dy);
+            gfx_disc(cx + dx * (3 + 3 * j) / 100, cy + dy * (3 + 3 * j) / 100, j ? 2 : 1, C_RED);
         }
-    }
+    gfx_disc(cx, cy, 2, C_WHITE);
 }
 
-/* a radio button: ring, or lit in c (style 0 full, 1 a small dot, 2 a thick ring) */
+/* a button: a ring, lit in c (style 0 full, 1 a small dot, 2 a thick ring) */
 static void button(int x, int y, int lit, int style, uint16_t c)
 {
     if (!lit || style == 1) {
-        gfx_disc(x, y, 4, C_WHITE);
-        gfx_disc(x, y, 3, GFX_BLACK);
+        gfx_disc(x, y, 5, C_WHITE);
+        gfx_disc(x, y, 4, GFX_BLACK);
         if (lit)
             gfx_disc(x, y, 2, c);
     } else {
-        gfx_disc(x, y, 4, c);
+        gfx_disc(x, y, 5, c);
         if (style == 2)
             gfx_disc(x, y, 2, GFX_BLACK);
     }
 }
 
-/* the sound's name over the organ (STATION 1's LCD: its place, size and colour) while the title
- * time runs: P01 .. P24 and the name (* = edited), or P-- and how to browse */
-static void title(int slot)
+static int len(const char *s)
 {
-    char t[24];
+    int n = 0;
+
+    while (s[n])
+        n++;
+    return n;
+}
+
+static char *put(char *d, const char *s)
+{
+    while (*s)
+        *d++ = *s++;
+    *d = 0;
+    return d;
+}
+
+static char *put_dec(char *d, int v)
+{
+    char t[8];
+    int n = 0;
+
+    if (v < 0) {
+        *d++ = '-';
+        v = -v;
+    }
+    do {
+        t[n++] = (char)('0' + v % 10);
+        v /= 10;
+    } while (v);
+    while (n)
+        *d++ = t[--n];
+    *d = 0;
+    return d;
+}
+
+static void centred(int row, const char *s)
+{
+    int n = len(s);
+
+    eh_lcd_text(&lamps, row, n < 8 ? (8 - n) / 2 : 0, s, C_AMBER);
+}
+
+/* the lowest sounding note (held keys with their voice's pitch, the notes without a key for FLASH
+ * blocks), -1 = none */
+static int sounding(void)
+{
+    uint32_t b = blocks;
+    int i, k = -1;
+
+    for (i = 0; i < HELD; i++)
+        if (held_id[i] && held_key[i] > 0 && (k < 0 || held_key[i] < k))
+            k = held_key[i];
+    for (i = 0; i < VOICES; i++)
+        if ((int32_t)(flash_until[i] - b) > 0 && flash_key[i] > 0 && (k < 0 || flash_key[i] < k))
+            k = flash_key[i];
+    return k > 127 ? -1 : k;
+}
+
+/* the lamps: the sound's name while the title time runs (a word a line: SOUL / JAZZ, * = edited;
+ * P--), else the registration over the knob turned last (PERC 3RD, DRIVE 25, BASS +1; FX on page 3) */
+static void display(int slot, int pg, const int16_t *p)
+{
+    char t[24], v[12], *d;
     const char *s;
-    int own = wh_bank >= 0 && bank_slot == slot, n = 0, w;
+    int own = wh_bank >= 0 && bank_slot == slot, q = pg * 4 + touched, i;
 
     wh_title_on = (int32_t)(title_until - now) > 0;
-    if (!wh_title_on)
-        return;
-    t[n++] = 'P';
-    if (own) {
-        t[n++] = (char)('0' + (wh_bank + 1) / 10);
-        t[n++] = (char)('0' + (wh_bank + 1) % 10);
-        t[n++] = ' ';
-        for (s = bank[(int)wh_bank].name; *s; s++)
-            t[n++] = *s;
+    eh_lcd_blank(&lamps, 2);
+    if (wh_title_on) {
+        if (!own) {
+            centred(0, "P--");
+            return;
+        }
+        s = bank[(int)wh_bank].name;
+        for (i = 0; s[i] && s[i] != ' '; i++)
+            t[i] = s[i];
+        t[i] = 0;
+        centred(0, t);
+        d = put(t, s[i] ? s + i + 1 : "");
         if (bank_edited)
-            t[n++] = '*';
-    } else {
-        t[n++] = '-';
-        t[n++] = '-';
+            put(d, "*");
+        centred(1, t);
+        return;
     }
-    t[n] = 0;
-    w = n * 8 - 2;                              /* scale 2: 8 px a character */
-    if (!own && w < 71)                         /* SHIFT+BLUE: SOUNDS */
-        w = 71;
-    gfx_rect(74, 7, w + 10, own ? 18 : 26, GFX_BLACK);
-    outline(74, 7, w + 10, own ? 18 : 26, 2, C_GREEN);
-    gfx_text(79, 11, t, C_GREEN, 2);
-    if (!own)
-        gfx_text(79, 24, "SHIFT+BLUE: SOUNDS", C_GREEN, 1);
+    centred(0, wh_reg_name(wh_reg(p[WH_REG])));
+    if (pg == 2) {
+        centred(1, "FX");
+        return;
+    }
+    switch (q) {
+    case WH_REG:
+        put_dec(v, wh_reg(p[q]) + 1);
+        break;
+    case WH_PERC:
+        put(v, wh_perc_name(wh_perc(p[q])));
+        break;
+    case WH_ROTARY:
+        put(v, wh_rot_name(wh_rot(p[q])));
+        break;
+    case WH_DRIVE:
+    case WH_CLICK:
+        put_dec(v, p[q] * 100 >> 15);
+        break;
+    default:                                    /* BASS BODY TOP: -8 .. +8 */
+        i = wh_offset(p[q]);
+        put_dec(put(v, i > 0 ? "+" : ""), i);
+        break;
+    }
+    d = put(t, q == WH_ROTARY ? "ROT" : labels[q]);
+    if (len(t) + 1 + len(v) <= 8)
+        put(put(d, " "), v);
+    else
+        put(t, v);
+    centred(1, t);
 }
 
 void wh_frame(uint16_t *buf)
 {
     static const uint16_t col[4] = { C_BLUE, C_GREEN, C_WHITE, C_ORANGE };
     static const int32_t spins[WH_ROTS] = { 0, 54395, 442368 };   /* horn, Q16 Hz (wheel_core) */
-    static const uint8_t digit_x[WH_BARS] = { 112, 126, 148, 162, 184, 198, 212, 226, 240 };
     static const char *const perc_labels[3] = { "OFF", "2ND", "3RD" };
     static const char *const rot_labels[3] = { "OFF", "SLW", "FST" };
-    static uint32_t air;                        /* the air's rise, 1/16 px */
+    static const char *const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    static uint32_t angle;                      /* the fan's angle, 1/16 degree */
     static int32_t spin;                        /* horn speed shown: eases as the rotor does */
     static int8_t shown = -1;                   /* the sound slot the screen showed last frame */
     int16_t p[WH_PARAMS];
     int bar[WH_BARS];
     volatile int16_t *k;
-    int slot, i, b, x, y, pg = wh_page, perc, rot, sel;
+    int slot, i, b, x, pg = wh_page, perc, rot, sel, note;
+    char txt[16], *d;
     uint16_t c;
 
     if (!engine_screen_wheel()) {
@@ -520,63 +576,57 @@ void wh_frame(uint16_t *buf)
     gfx_begin(buf);
     gfx_rect(0, 0, gfx_w, 140, GFX_BLACK);
 
-    /* the rotor's air above the cabinet: three dashed zigzags rising with the horn's speed */
+    eh_frame(65, 1, 191, 72, 6, 2, C_GOLD, C_AMBER_BG);
+    display(slot, pg, p);
+
+    /* the fan = the rotary speaker: turns at the horn's speed (eased like the rotor), its name and
+     * the sounding note under it */
     spin += (spins[rot] - spin) >> 4;
-    air += (uint32_t)spin >> 14;
-    c = spin < 4096 ? C_LINE : pg == 0 ? C_ORANGE : C_RED;
-    for (i = 0; i < 3; i++)
-        for (y = 0; y < 10; y++) {
-            int t = y + (int)(air >> 4) + i * 5;
+    angle += (uint32_t)spin >> 12;
+    fan(32, 26, (int)(angle >> 4));
+    x = len(wh_rot_name(rot)) * 4 - 1;
+    gfx_text(32 - x / 2, 46, wh_rot_name(rot), pg == 0 ? C_ORANGE : C_GREY, 1);
+    note = sounding();
+    wh_note_shown = (int8_t)note;
+    if (note >= 0) {
+        d = put(txt, nn[note % 12]);
+        put_dec(d, note / 12 - 1);
+        x = len(txt) * 4 - 1;
+        gfx_disc(30 - x / 2, 58, 2, C_RED);
+        gfx_text(34 - x / 2, 56, txt, C_RED, 1);
+    }
 
-            if (t % 4 != 3)
-                gfx_pixel(150 + i * 10 + ((t >> 2) & 1), 1 + y, c);
-        }
-
-    /* the cabinet: its grille = the nine drawbars (BASS 16' 5 1/3', BODY 8' 4', TOP 2 2/3' .. 1'),
-     * each pulled out by its level */
-    outline(42, 12, 236, 23, 2, C_YELLOW);      /* a 2-pixel yellow frame */
-    outline(43, 13, 234, 21, 1, C_YELLOW);
-    gfx_rect(47, 16, 226, 1, C_LINE);
+    /* the grille = the nine drawbars (BASS 16' 5 1/3', BODY 8' 4', TOP 2 2/3' .. 1'), each line
+     * lit by its level, the registration's digits under it */
+    d = txt;
     for (b = 0; b < WH_BARS; b++) {
         int g = b < 2 ? 0 : b < 4 ? 1 : 2;
 
-        x = 52 + g * 77;
-        y = g < 2 ? 22 + (b & 1) * 6 : 19 + (b - 4) * 3;
         c = pg == 0 ? C_BLUE : pg == 1 ? col[g] : C_GREY;
-        gfx_rect(x, y, 62, 1, C_LINE);
-        gfx_rect(x, y, bar[b] * 62 / 8, 1, c);
+        gfx_rect(266, 6 + b * 6, 46, 1, C_LINE);
+        gfx_rect(266, 6 + b * 6, bar[b] * 46 / 8, 1, c);
+        if (b == 2 || b == 4)
+            *d++ = ' ';
+        *d++ = (char)('0' + bar[b]);
     }
+    *d = 0;
+    gfx_text(267, 60, txt, C_GREY, 1);
 
-    /* the console: drive pill, the registration's digits + the page, buttons, keyboard */
-    outline(35, 38, 66, 8, 0, C_GREY);
-    outline(52, 40, 32, 4, 2, C_WHITE);
-    gfx_rect(54, 41, p[WH_DRIVE] * 28 / 32767, 2, pg == 0 ? C_WHITE : C_GREY);
-    outline(KEY_X, 38, 15 * KEY_W + 1, 8, 0, C_GREY);
-    for (b = 0; b < WH_BARS; b++) {
-        int g = b < 2 ? 0 : b < 4 ? 1 : 2;
-
-        gfx_dec(digit_x[b], 40, bar[b], pg == 0 ? C_BLUE : pg == 1 ? col[g] : C_GREY, 1);
-        if (b == 0 || b == 2 || (b >= 4 && b < WH_BARS - 1))    /* inside a group */
-            gfx_rect((digit_x[b] + 3 + digit_x[b + 1]) / 2 - 2, 39, 4, 5, C_WHITE);
-    }
-    x = gfx_text(270, 40, "P", C_RED, 1);
-    gfx_dec(x, 40, pg + 1, C_RED, 1);
-
-    outline(35, 49, 66, 35, 2, C_GREY);
-    sel = perc ? (perc - 1) % 2 + 1 : 0;        /* OFF 2ND 3RD; normal / soft / slow */
+    /* the buttons: PERC OFF 2ND 3RD (lit full = normal, a dot = soft, a ring = slow), ROTARY OFF
+     * SLW FST */
+    sel = perc ? (perc - 1) % 2 + 1 : 0;
+    gfx_text(84, 78, "PERC", C_GREY, 1);
+    gfx_text(221, 78, "ROTARY", C_GREY, 1);
     for (i = 0; i < 3; i++) {
-        x = 50 + i * 18;
-        c = pg == 0 ? C_GREEN : C_WHITE;
-        gfx_text(x - 5, 51, perc_labels[i], sel == i ? c : C_GREY, 1);
-        button(x, 61, sel == i, perc ? (perc - 1) / 2 : 0, c);
-        c = pg == 0 ? C_ORANGE : C_WHITE;
-        button(x, 71, rot == i, 0, c);
-        gfx_text(x - 5, 78, rot_labels[i], rot == i ? c : C_GREY, 1);
+        x = 112 + i * 18;
+        c = pg == 0 ? C_GREEN : C_GOLD;
+        button(x, 80, sel == i, perc ? (perc - 1) / 2 : 0, c);
+        gfx_text(x - 5, 88, perc_labels[i], sel == i ? c : C_GREY, 1);
+        x = 172 + i * 18;
+        c = pg == 0 ? C_ORANGE : C_GOLD;
+        button(x, 80, rot == i, 0, c);
+        gfx_text(x - 5, 88, rot_labels[i], rot == i ? c : C_GREY, 1);
     }
-    keyboard(50, 86);                           /* on the case's bottom edge */
-    outline(30, 35, 261, 52, 2, C_YELLOW);      /* the console's 2-pixel yellow frame, over the keys' edge */
-    outline(31, 36, 259, 50, 1, C_YELLOW);
-    title(slot);
 
     /* the page's four knobs: name and bar (as STATION 1) */
     if (pg == 2) {                              /* page 3: the sound's FX knobs (engine host) */

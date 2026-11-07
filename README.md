@@ -11,7 +11,7 @@ features below have been flashed and played on a real OP-1.
 
 One image ("op1plus"), composed from the feature library — build it, flash it, have fun.
 
-**Synth engines** — seven new rows in TE's engine list with **114 ready-to-play sounds** between
+**Synth engines** — ten new rows in TE's engine list with **168 ready-to-play sounds** between
 them (plus PSS-11's built-in 8, or 39 with a ROM library), each engine with its own bank
 (**shift + blue turn**), knob push flips pages:
 
@@ -24,6 +24,8 @@ them (plus PSS-11's built-in 8, or 39 with a ROM library), each engine with its 
 | **TRIO** | 16 | SID-style 3 oscillators (ring/sync/AND) into an SVF filter, drive, noise |
 | **MONO 3** | 16 | classic 70s-style mono synth, played with 4 voices: 3 band-limited oscillators (range / wave / level), noise, a 4-pole ladder filter that self-oscillates in tune, filter and loudness contours, glide — fat basses, leads, brass, pads |
 | **PARTY** | 8 | Yamaha PSS-11 AWM tone generator (GEW7) recreated after MAME: 8/12-bit samples, chip envelope and LFO, two layers, filter, bank. No Yamaha sounds included: 8 own waves until you build the library from your own ROM dump with `gen_pss11.py --pss-rom` |
+| **ACID 3** | 16 | TD-3-MO-style bassline (303 type with the "modded out" mods), monophonic: saw / square + sub, overdrive into a resonant 4-pole filter, normal and accent decay, accent sweep that stacks up, slide on legato keys (10 .. 360 ms), soft attack, filter tracking, filter FM, muffler; accents from MIDI velocity, every note or every 2nd / 3rd / 4th |
+| **PALETTE** | 22 | JD-08-style layered digital synth: up to four tones per patch, each with its own wave (24 band-limited own waves), pitch envelope, filter (LPF 24 dB / BPF / HPF) with envelope, amp envelope and two LFOs; the four knobs are the palette: one page per parameter row (level, wave, pitch, cutoff, envelope time), one knob per tone. No Roland waves or patches included |
 | **STATION 1** | 28 | late-80s-style sample workstation: **100 sampled multisounds** (pianos, organs, strings, choir, brass, bells, basses, waves), two layered per sound, B transposed / fading in, low-pass with envelope; a sound library included (+ two drum kits for the drum sampler) |
 | **engine_plus** | | DRIVE / FILTER / RESO / CRUSH parameters for TE's own engines (fm, digital, string, cluster, phase, dna, voltage, iter) |
 
@@ -65,27 +67,11 @@ Controls and internals per feature: `features/<name>/README.md`. Full catalog:
 
 ## Image samples
 
+The synth engine displays at a glance — STATION 1, MONO 3, CHORD+, PARTY, HANDPAN and KALIMBA.
 Screens drawn by the real feature code in the simulator benches (`python3 tools/test_all.py`
 writes them to `build/demo/`):
 
-<table>
-  <tr>
-    <td><img src="images/sim/mono_screen.png" alt="MONO 3 synth engine screen" width="400"><br><b>MONO 3</b>: synth panel, page 1 (cutoff, emphasis, contour, glide)</td>
-    <td><img src="images/sim/m1_screen.png" alt="STATION 1 synth engine screen" width="400"><br><b>STATION 1</b>: two multisounds layered (built-in waves, a sound library)</td>
-  </tr>  
-  <tr>
-    <td><img src="images/sim/warp_screen.png" alt="WARP synth engine screen" width="400"><br><b>WARP</b>: preset SYNC LEAD, saw through the SYNC warp</td>
-    <td><img src="images/sim/wheel_screen.png" alt="WHEEL tonewheel organ screen" width="400"><br><b>WHEEL</b>: preset SOUL JAZZ, drawbars, percussion and rotary</td>
-  </tr>
-  <tr>
-    <td><img src="images/sim/trio_screen.png" alt="TRIO synth engine screen" width="400"><br><b>TRIO</b>: preset SID LEAD, three oscillators into the filter</td>
-    <td><img src="images/sim/mallet_screen.png" alt="MALLET synth engine screen" width="400"><br><b>MALLET</b>: preset STEELPAN, three notes lit on the pan</td>
-  </tr>
-  <tr>
-    <td><img src="images/sim/party_screen.png" alt="PARTY synth engine screen" width="400"><br><b>PARTY</b>: P02 E.PIANO, A4 held and lit (built-in waves)</td>
-    <td><img src="images/sim/lofi_screen.png" alt="LOFI synth engine screen" width="400"><br><b>LOFI</b>: preset TRI BASS, stepped triangle</td>
-  </tr>
-</table>
+<img src="images/overview.jpg" alt="Synth engine display overview" width="100%">
 
 ## Get it on your OP-1
 

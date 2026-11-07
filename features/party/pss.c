@@ -27,8 +27,8 @@
 #define TITLE_TIME      TE_SAMPLE_RATE          /* the sound's name over the voice list: 1 s */
 
 static pss_voice voices[EH_VOICES];
-/* the keyboard picture: a key held on the OP-1 (pss_note_key) is its note (TE plays note index + 53 +
- * 12 x octave); the next new voice tells the octave (its pitch rounded to the nearest octave of the
+/* the sounding notes (the lamps under the LCD): a key held on the OP-1 (pss_note_key) is its note
+ * (TE plays note index + 53 + 12 x octave); the next new voice tells the octave (its pitch rounded to the nearest octave of the
  * note: glide / LFO / bend at the start move it by less than 6 semitones). New voices no held key
  * accounts for (sequencer, MIDI, CHORD+'s extra notes) flash at their pitch for FLASH blocks. TE keeps
  * rendering a voice through its release and beyond, so rendering does not mean sounding. */
@@ -52,6 +52,8 @@ static int16_t own_knobs[8][8];                 /* per sound slot: P--, the soun
 static volatile uint32_t now;                   /* samples, advanced by pss_tick */
 static volatile uint32_t title_until;           /* the sound's name shown while now < this */
 volatile uint8_t pss_title_on;                  /* drawn in the last frame (bench reads) */
+volatile int8_t pss_note_shown = -1;            /* the lowest sounding note shown last frame (bench) */
+static volatile uint8_t touched;                /* the page's knob turned last (the LCD shows it) */
 
 static const uint8_t hi_max[4] = { 48, 63, 63, 63 };   /* B PITCH = semitones + 24 */
 
@@ -305,6 +307,7 @@ int pss_key(int key, int down)
     if (*TE_SHIFT_HELD || !engine_screen_pss())
         return 0;
     pss_page = (uint8_t)(pss_page + 1 < PAGES ? pss_page + 1 : 0);
+    touched = 0;
     consumed |= (uint8_t)(1 << b);
     return 1;
 }
@@ -415,6 +418,7 @@ int pss_knob(int knob, int16_t *diff)
     }
     if (pss_page == 3)
         return eh_fx_knob(slot, knob, (int16_t)d);
+    touched = (uint8_t)knob;
     bank_edited = 1;
     if (!(pss_bank >= 0 && bank_slot == slot))
         own_edited |= (uint8_t)(1u << slot);
@@ -450,12 +454,11 @@ void pss_tick(void)
 
 /* ------------------------------------------------------------------ GUI thread */
 
-/* Screen (spec: README.md "Screen"): the PARTY keyboard after "PARTY · overview", drawn live: the
- * voice list (the bank, 30 sounds a window, the sound in blue), the strip (the page, the sound's
- * name), the knob = the blue knob of this page, the 12 buttons = the 12 parameters (lit when on, the
- * page's column outlined), B on / MIX, the speaker and a 32-key keyboard (F3 .. C6) lighting the
- * sounding keys; for 1 s after a sound or wave is picked (or the screen opens) the sound over the
- * voice list, as STATION 1's LCD; below it the page's four knobs as on every SDK engine. */
+/* Screen (spec: README.md "Screen"): after "PARTY · display overview": the 16 x 2 LCD (the sound;
+ * the knob turned last, its name and value; for 1 s after a sound is picked or the screen opens its
+ * waves), the lamps under it (B on, the MIX bar, a lamp per sounding note), the knob (that value)
+ * and the 12 SELECT buttons (column = page, the knob turned last lit); below it the page's four
+ * knobs as on every SDK engine. */
 
 static const char *const labels[12] = {
     "WAVE A", "WAVE B", "MIX", "CUTOFF", "B PITCH", "DETUNE", "F.ENV", "F.DECAY",
@@ -468,152 +471,59 @@ static const char *const page_names[PAGES] = { "WAVES", "PITCH+FILTER", "SHAPE",
 #define C_WHITE     GFX_RGB(0xe6, 0xe6, 0xe6)
 #define C_ORANGE    GFX_RGB(0xff, 0x6a, 0x3d)
 #define C_RED       GFX_RGB(0xff, 0x4f, 0x5e)
+#define C_GREY      GFX_RGB(0x8a, 0x88, 0x98)
 #define C_DIM       GFX_RGB(0x5a, 0x58, 0x66)
 #define C_LINE      GFX_RGB(0x48, 0x46, 0x50)
 #define C_TRACK     GFX_RGB(0x35, 0x32, 0x38)
 #define C_TEAL      GFX_RGB(0x3f, 0xd0, 0xd4)   /* the case */
+#define C_LCD_BG    GFX_RGB(0x9c, 0xae, 0x94)   /* the LCD: its glass, unlit, lit dots */
+#define C_LCD_OFF   GFX_RGB(0x8e, 0xa0, 0x87)
+#define C_LCD_ON    GFX_RGB(0x1c, 0x24, 0x1c)
+#define C_LCD_ERR   GFX_RGB(0xa0, 0x20, 0x28)
 
-#define KEY_LO      53                          /* keyboard F3 .. C6: 32 keys, 19 white (PSS-11) */
-#define KEYS        32
-#define KEY_X       40
-#define KEY_W       10
-#define LIST        30                          /* voice list: 6 columns of 5 */
+#define NOTE_LAMPS  3
 
-/* 1-pixel outline with cut corners (r = 0: square) */
-static void outline(int x, int y, int w, int h, int r, uint16_t c)
+static const eh_lcd lcd = { 21, 18, 16, 2, 2, 12, 20, C_LCD_ON, C_LCD_OFF };
+
+/* sin(5 deg * i) x 4096, i = 0 .. 18 */
+static const int16_t sn[19] = {
+    0, 357, 711, 1060, 1401, 1731, 2048, 2349, 2633, 2896, 3138, 3355, 3547, 3712, 3849, 3956, 4034,
+    4080, 4096,
+};
+
+static int sin10(int a)                         /* a: 1/10 degree, 0 .. 900; x 4096 */
 {
-    int i;
+    int i = a / 50;
 
-    gfx_rect(x + r, y, w - 2 * r, 1, c);
-    gfx_rect(x + r, y + h - 1, w - 2 * r, 1, c);
-    gfx_rect(x, y + r, 1, h - 2 * r, c);
-    gfx_rect(x + w - 1, y + r, 1, h - 2 * r, c);
-    for (i = 1; i < r; i++) {                   /* the corners as short diagonals */
-        gfx_pixel(x + r - i, y + i, c);
-        gfx_pixel(x + w - 1 - r + i, y + i, c);
-        gfx_pixel(x + r - i, y + h - 1 - i, c);
-        gfx_pixel(x + w - 1 - r + i, y + h - 1 - i, c);
-    }
+    return i >= 18 ? 4096 : sn[i] + (sn[i + 1] - sn[i]) * (a - i * 50) / 50;
 }
 
-static void line(int x0, int y0, int x1, int y1, uint16_t c)
+/* the direction of a (1/10 degree, -1800 .. 1800, 0 = up, clockwise) x 4096 */
+static void dir(int a, int *dx, int *dy)
 {
-    int dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = y1 > y0 ? y1 - y0 : y0 - y1;
-    int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, e = dx - dy, e2;
+    int i = a < 0 ? -a : a;
 
-    for (;;) {
-        gfx_pixel(x0, y0, c);
-        if (x0 == x1 && y0 == y1)
-            break;
-        e2 = 2 * e;
-        if (e2 > -dy) { e -= dy; x0 += sx; }
-        if (e2 < dx) { e += dx; y0 += sy; }
-    }
+    *dx = (i >= 900 ? sin10(1800 - i) : sin10(i)) * (a < 0 ? -1 : 1);
+    *dy = i >= 900 ? sin10(i - 900) : -sin10(900 - i);
 }
 
-static int text_w(const char *s, int scale)    /* 4 px a character at scale 1 */
-{
-    int n = 0;
-
-    while (s[n])
-        n++;
-    return n ? n * 4 * scale - scale : 0;
-}
-
-static void light(uint8_t *on, int k)          /* folded into F3 .. C6 */
-{
-    if (k < 0)
-        return;
-    while (k < KEY_LO)
-        k += 12;
-    while (k >= KEY_LO + KEYS)
-        k -= 12;
-    on[k - KEY_LO] = 1;
-}
-
-/* the keys held (with their voice's pitch) and the voices flashing */
-static void sounding(uint8_t *on)
-{
-    uint32_t now_b = blocks;
-    int i;
-
-    for (i = 0; i < KEYS; i++)
-        on[i] = 0;
-    for (i = 0; i < HELD; i++)
-        if (held_id[i])
-            light(on, held_key[i]);
-    for (i = 0; i < EH_VOICES; i++)
-        if ((int32_t)(flash_until[i] - now_b) > 0)
-            light(on, flash_key[i]);
-}
-
-static void keyboard(int y0, int y1)
-{
-    static const int8_t white_of[12] = { 0, -1, 1, -1, 2, -1, 3, 4, -1, 5, -1, 6 };   /* from F */
-    uint8_t on[KEYS];
-    int k, split = y0 + (y1 - y0) * 3 / 5;
-
-    sounding(on);
-    gfx_rect(KEY_X, y0, 19 * KEY_W + 1, 1, C_WHITE);
-    for (k = 0; k <= 19; k++)                   /* white key borders */
-        gfx_rect(KEY_X + k * KEY_W, y0 + 1, 1, y1 - y0 - 1, C_LINE);
-    for (k = 0; k < KEYS; k++) {
-        int o = k / 12, n = k % 12, w = white_of[n];
-
-        if (w >= 0) {                           /* a sounding white key: its lower part */
-            if (on[k])
-                gfx_rect(KEY_X + (o * 7 + w) * KEY_W + 1, split, KEY_W - 1, y1 - split, C_GREEN);
-        } else {                                /* black keys between the white ones */
-            int x = KEY_X + (o * 7 + white_of[n - 1] + 1) * KEY_W - 3;
-
-            gfx_rect(x, y0 + 1, 6, split - y0 - 1, on[k] ? C_GREEN : C_WHITE);
-        }
-    }
-    for (k = 0; k < 19; k += 2)                 /* the dots above every other white key */
-        gfx_pixel(KEY_X + k * KEY_W + KEY_W / 2, y0 - 2, C_DIM);
-}
-
-/* the voice list: the bank in columns of 5 (header line, a line per sound as long as its name), the
- * window of LIST holding the sound; the sound itself as a blue bar */
-static void voice_list(int n, int e)
-{
-    int i, first = e < 0 ? 0 : e / LIST * LIST;
-
-    outline(39, 8, 186, 27, 2, C_LINE);
-    for (i = 0; i < 6; i++) {
-        int x = 43 + i * 31;
-
-        if (i)
-            gfx_rect(39 + i * 31, 11, 1, 21, C_GREEN);
-        gfx_rect(x, 12, 13, 1, C_GREEN);
-    }
-    for (i = 0; i < LIST && first + i < n; i++) {
-        int x = 43 + i / 5 * 31, y = 17 + i % 5 * 3, w = text_w(bank_name(first + i), 1) / 2 + 4;
-
-        if (first + i == e)
-            gfx_rect(x, y - 1, 24, 3, C_BLUE);
-        else
-            gfx_rect(x, y, w > 23 ? 23 : w, 1, C_DIM);
-    }
-}
-
-/* the knob: the value 0..32767 as -135 .. +135 degrees */
+/* the knob (antialiased, engine host eh_aa.c): a white ring, a grey one inside, the teal pointer
+ * at q (0..32767 = -135 .. +135 deg) with a round tip, the green arc above it on the left
+ * (-80 .. -30 deg: steps 68 .. 85 of 128, 0 = right) */
 static void knob(int cx, int cy, int q)
 {
-    static const int8_t sn[19] = { 0, 9, 17, 26, 34, 42, 50, 57, 64, 71, 77, 82, 87, 91, 94, 97, 98,
-                                   100, 100 };   /* sin(5 deg * i) x 100, i = 0 .. 18 */
-    int a = q * 270 / 32767 - 135, i = a < 0 ? -a : a, dx, dy;   /* 0 deg = up */
+    int dx, dy;
 
-    dx = (i >= 90 ? sn[18] : sn[i / 5]) * (a < 0 ? -1 : 1);
-    dy = i >= 90 ? sn[(i - 90) / 5] : -sn[(90 - i) / 5];
-    gfx_disc(cx, cy, 10, C_WHITE);
-    gfx_disc(cx, cy, 9, GFX_BLACK);
-    gfx_disc(cx, cy, 7, C_LINE);
-    gfx_disc(cx, cy, 6, GFX_BLACK);
-    line(cx, cy, cx + dx * 7 / 100, cy + dy * 7 / 100, C_BLUE);
-    gfx_disc(cx + dx * 7 / 100, cy + dy * 7 / 100, 1, C_BLUE);
-    gfx_rect(cx - 6, cy - 13, 7, 1, C_GREEN);   /* the little arc above */
-    gfx_pixel(cx - 7, cy - 12, C_GREEN);
+    cx *= 16;
+    cy *= 16;
+    eh_aa_ellipse(cx, cy, 23 * 16, 23 * 16, 8, 68, 85, 0, C_GREEN);
+    eh_aa_ellipse(cx, cy, 18 * 16 + 8, 18 * 16 + 8, 12, 0, 128, 0, C_WHITE);
+    eh_aa_ellipse(cx, cy, 13 * 16 + 8, 13 * 16 + 8, 8, 0, 128, 0, C_LINE);
+    dir(q * 2700 / 32767 - 1350, &dx, &dy);
+    dx = dx * 14 * 16 >> 12;
+    dy = dy * 14 * 16 >> 12;
+    eh_aa_line(cx, cy, cx + dx, cy + dy, 12, C_TEAL);
+    eh_aa_ellipse(cx + dx, cy + dy, 40, 40, -1, 0, 128, 0, C_TEAL);
 }
 
 /* text helpers (no printf) */
@@ -625,53 +535,71 @@ static char *put(char *d, const char *s)
     return d;
 }
 
-static char *put_num(char *d, int v)           /* P01 .. P99, P100 .. */
+static char *put_dec(char *d, int v)
 {
-    if (v >= 100)
-        *d++ = (char)('0' + v / 100 % 10);
-    *d++ = (char)('0' + v / 10 % 10);
-    *d++ = (char)('0' + v % 10);
+    char t[8];
+    int n = 0;
+
+    if (v < 0) {
+        *d++ = '-';
+        v = -v;
+    }
+    do {
+        t[n++] = (char)('0' + v % 10);
+        v /= 10;
+    } while (v);
+    while (n)
+        *d++ = t[--n];
     *d = 0;
     return d;
 }
 
-/* the sound over the voice list (STATION 1's LCD: its place, size, colour and lines) while the title
- * time runs: P01 .. Pnn and the name (* = edited) above the waves, or P-- and wave A above how to
- * browse (once changed: wave B) */
-static void title(int own, int slot, const int16_t *p)
+static int len(const char *s)
 {
-    int x, wb = pss_waveb_of(p[PSS_WAVE_B]), s = pss_semis_of(p[PSS_BPITCH]);
+    int n = 0;
 
-    pss_title_on = (int32_t)(title_until - now) > 0;
-    if (!pss_title_on)
-        return;
-    gfx_rect(74, 7, 142, 26, GFX_BLACK);
-    outline(74, 7, 142, 26, 2, C_GREEN);
-    if (own) {
-        x = gfx_text(79, 11, "P", C_GREEN, 2);
-        x = gfx_text(x, 11, pss_bank < 9 ? "0" : "", C_GREEN, 2);
-        x = gfx_dec(x, 11, pss_bank + 1, C_GREEN, 2);
-        x = gfx_text(x + 8, 11, bank_name(pss_bank), C_GREEN, 2);
-        if (bank_edited)
-            gfx_text(x, 11, "*", C_GREEN, 2);
-    } else {
-        x = gfx_text(79, 11, "P-- ", C_GREEN, 2);
-        gfx_text(x, 11, pss_wave_name(pss_wave_of(p[PSS_WAVE_A])), C_GREEN, 2);
-        if (!(own_edited >> slot & 1)) {
-            gfx_text(79, 24, "SHIFT+BLUE: SOUNDS", C_GREEN, 1);
-            return;
-        }
-    }
-    if (own) {
-        x = gfx_text(79, 24, "A ", C_GREEN, 1);
-        x = gfx_text(x, 24, pss_wave_name(pss_wave_of(p[PSS_WAVE_A])), C_GREEN, 1);
-        x = gfx_text(x + 6, 24, "B ", C_GREEN, 1);
-    } else {
-        x = gfx_text(79, 24, "B ", C_GREEN, 1);
-    }
-    x = gfx_text(x, 24, pss_wave_name(wb), C_GREEN, 1);
+    while (s[n])
+        n++;
+    return n;
+}
+
+/* the waves: A SAW  B SINE +7 (P--: B SINE +7) */
+static void waves(char *t, int a, const int16_t *p)
+{
+    int wb = pss_waveb_of(p[PSS_WAVE_B]), s = pss_semis_of(p[PSS_BPITCH]);
+    char *d = t;
+
+    if (a)
+        d = put(put(put(d, "A "), pss_wave_name(pss_wave_of(p[PSS_WAVE_A]))), " ");
+    d = put(put(d, "B "), pss_wave_name(wb));
     if (wb >= 0 && s)
-        gfx_dec(gfx_text(x + 4, 24, s > 0 ? "+" : "", C_GREEN, 1), 24, s, C_GREEN, 1);
+        put_dec(put(d, s > 0 ? " +" : " "), s);
+}
+
+/* the sounding notes, lowest first; returns how many (at most n) */
+static int sounding(int *key, int n)
+{
+    uint32_t now_b = blocks;
+    int i, j, k, c = 0;
+
+    for (i = 0; i < HELD + EH_VOICES; i++) {
+        k = i < HELD ? (held_id[i] ? held_key[i] : -1)
+                     : (int32_t)(flash_until[i - HELD] - now_b) > 0 ? flash_key[i - HELD] : -1;
+        if (k < 0 || k > 127)
+            continue;
+        for (j = 0; j < c && key[j] != k; j++)
+            ;
+        if (j < c)
+            continue;
+        for (j = c; j > 0 && key[j - 1] > k; j--)    /* insert, lowest first */
+            if (j < n)
+                key[j] = key[j - 1];
+        if (j < n)
+            key[j] = k;
+        if (c < n)
+            c++;
+    }
+    return c;
 }
 
 void pss_frame(uint16_t *buf)
@@ -683,11 +611,10 @@ void pss_frame(uint16_t *buf)
     };
     static int8_t shown = -1;                   /* the sound slot the screen showed last frame */
     int16_t p[PSS_PARAMS];
-    uint8_t on[PSS_PARAMS];
     volatile int16_t *k;
-    int slot, i, x, pg = pss_page, wb, n, own;
+    int slot, i, x, pg = pss_page, wb, n, own, q, key[NOTE_LAMPS];
     const char *ld;
-    char txt[24], *d;
+    char txt[40], *d;
 
     if (!engine_screen_pss()) {
         shown = -1;
@@ -695,7 +622,7 @@ void pss_frame(uint16_t *buf)
         return;
     }
     k = current(&slot);
-    if (slot != shown) {                        /* the screen opens or shows another sound: its name */
+    if (slot != shown) {                        /* the screen opens or shows another sound: its waves */
         shown = (int8_t)slot;
         title_until = now + TITLE_TIME;
     }
@@ -703,62 +630,76 @@ void pss_frame(uint16_t *buf)
     n = bank_n();
     own = pss_bank >= 0 && pss_bank < n && bank_slot == slot;
     wb = pss_waveb_of(p[PSS_WAVE_B]);
-    for (i = 0; i < PSS_PARAMS; i++)            /* what is on: B, its mix and interval, the filter ... */
-        on[i] = p[i] > 0;
-    on[PSS_WAVE_A] = 1;
-    on[PSS_WAVE_B] = wb >= 0;
-    on[PSS_MIX] = wb >= 0 && p[PSS_MIX] > 0;
-    on[PSS_CUTOFF] = p[PSS_CUTOFF] < 32766;     /* top = filter off */
-    on[PSS_BPITCH] = wb >= 0 && pss_semis_of(p[PSS_BPITCH]) != 0;
+    pss_title_on = (int32_t)(title_until - now) > 0;
 
     gfx_begin(buf);
+    eh_aa_begin(buf);
     gfx_rect(0, 0, gfx_w, 140, GFX_BLACK);
 
-    /* the keyboard (253 x 81, centred): voice list and strip, knob and buttons; speaker and keys */
-    outline(34, 4, 253, 81, 3, C_TEAL);         /* the case: a 2-pixel teal frame */
-    outline(35, 5, 251, 79, 2, C_TEAL);
-    voice_list(n, own ? pss_bank : -1);
-
-    outline(39, 37, 186, 10, 1, C_LINE);        /* the strip: the page, the sound (or the loader) */
-    for (i = 0; i < PAGES; i++)
-        gfx_rect(43 + i * 14, 41, 10, 2, i == pg ? C_BLUE : C_DIM);
-    if ((ld = load_text(txt)) != 0) {
-        gfx_text(221 - text_w(ld, 1), 40, ld, pss_load == LD_READING || pss_load == LD_IDLE ? C_GREEN : C_RED, 1);
+    /* the LCD: 02 E.PIANO* / the knob turned last (CUTOFF 75), the waves while the title time runs
+     * and on the FX page, SHIFT+BLUE:SOUND for P-- until it is changed, the loader */
+    eh_frame(10, 4, 212, 62, 5, 2, C_TEAL, GFX_BLACK);
+    eh_rrect(16, 10, 200, 50, 2, C_LCD_BG);
+    eh_lcd_blank(&lcd, 2);
+    if (own) {
+        d = put_dec(put(txt, pss_bank < 9 ? "0" : ""), pss_bank + 1);
+        put(put(d, " "), bank_name(pss_bank));
+        eh_lcd_text(&lcd, 0, 0, txt, C_LCD_ON);
+        if (bank_edited)
+            eh_lcd_text(&lcd, 0, 15, "*", C_LCD_ON);
     } else {
-        if (own) {
-            d = put(put_num(put(txt, "P"), pss_bank + 1), " ");
-            d = put(d, bank_name(pss_bank));
-            if (bank_edited)
-                put(d, "*");
+        put(txt, "-- ");
+        put(txt + 3, pss_wave_name(pss_wave_of(p[PSS_WAVE_A])));
+        eh_lcd_text(&lcd, 0, 0, txt, C_LCD_ON);
+    }
+    if ((ld = load_text(txt)) != 0) {
+        eh_lcd_text(&lcd, 1, 0, ld, pss_load == LD_READING || pss_load == LD_IDLE ? C_LCD_ON : C_LCD_ERR);
+    } else if (!own && !(own_edited >> slot & 1) && pss_title_on) {
+        eh_lcd_text(&lcd, 1, 0, "SHIFT+BLUE:SOUND", C_LCD_ON);
+    } else if (pss_title_on || pg == 3) {
+        waves(txt, own, p);
+        eh_lcd_text(&lcd, 1, 0, txt, C_LCD_ON);
+    } else {
+        q = page_param[pg][touched];
+        if (q == PSS_WAVE_A || q == PSS_WAVE_B) {
+            put(txt, pss_wave_name(q == PSS_WAVE_A ? pss_wave_of(p[q]) : wb));
+        } else if (q == PSS_BPITCH) {
+            i = pss_semis_of(p[q]);
+            put_dec(put(txt, i > 0 ? "+" : ""), i);
         } else {
-            put(put(txt, "P-- "), pss_wave_name(pss_wave_of(p[PSS_WAVE_A])));
+            put_dec(txt, p[q] * 100 >> 15);
         }
-        gfx_text(221 - text_w(txt, 1), 40, txt, C_GREEN, 1);
+        eh_lcd_text(&lcd, 1, 0, labels[q], C_LCD_ON);
+        eh_lcd_text(&lcd, 1, 16 - len(txt) > len(labels[q]) ? 16 - len(txt) : len(labels[q]) + 1, txt,
+                    C_LCD_ON);
     }
 
-    knob(243, 21, pg < 3 ? p[page_param[pg][0]] : 16384);
-    for (i = 0; i < 12; i++) {                  /* the 12 parameters: column = page, row = knob */
-        int c = i / 4, bx = 258 + c * 8, by = 11 + i % 4 * 6;
-
-        if (on[page_param[c][i % 4]])
-            gfx_rect(bx, by, 6, 4, C_BLUE);
-        outline(bx, by, 6, 4, 0, c == pg ? C_WHITE : C_DIM);
-    }
-    if (wb >= 0)                                /* B sounds, the MIX bar */
-        gfx_rect(230, 39, 5, 5, C_GREEN);
-    else
-        outline(230, 39, 5, 5, 0, C_GREEN);
-    outline(239, 39, 14, 5, 0, C_RED);
+    /* the lamps (rounded, antialiased): B on, the MIX bar, a lamp per sounding note */
     if (wb >= 0)
-        gfx_rect(240, 40, p[PSS_MIX] * 12 / 32767, 3, C_RED);
-    for (i = 0; i < 3; i++)
-        outline(258 + i * 8, 39, 6, 5, 0, C_DIM);
+        eh_aa_box(12, 71, 6, 4, 1, C_GREEN);
+    else
+        eh_aa_frame(12, 71, 6, 4, 1, 1, C_GREEN);
+    eh_aa_frame(22, 71, 22, 4, 1, 1, C_RED);
+    if (wb >= 0)
+        eh_aa_box(22, 71, 1 + p[PSS_MIX] * 21 / 32767, 4, 1, C_RED);
+    n = sounding(key, NOTE_LAMPS);
+    pss_note_shown = (int8_t)(n ? key[0] : -1);
+    for (i = 0; i < NOTE_LAMPS; i++)
+        if (i < n)
+            eh_aa_box(48 + i * 11, 71, 9, 4, 1, C_TEAL);
+        else
+            eh_aa_frame(48 + i * 11, 71, 9, 4, 1, 1, C_WHITE);
 
-    gfx_rect(36, 48, 249, 1, C_LINE);
-    for (i = 0; i < 9; i++)                     /* the speaker */
-        gfx_rect(237, 55 + 3 * i, 45, 1, C_DIM);
-    keyboard(52, 82);
-    title(own, slot, p);
+    knob(256, 34, pg < 3 ? p[page_param[pg][touched]] : 16384);
+    for (i = 0; i < 12; i++) {                  /* SELECT: column = page, row = knob */
+        int c = i / 4, r = i % 4, bx = 284 + c * 8, by = 17 + r * 7;
+
+        if (c == pg && r == touched)
+            eh_aa_box(bx, by, 7, 5, 1, C_TEAL);
+        else
+            eh_aa_frame(bx, by, 7, 5, 1, 1, c == pg ? C_WHITE : C_DIM);
+    }
+    gfx_text(284, 48, "SELECT", C_GREY, 1);
 
     /* the page's four knobs (as every SDK engine) */
     if (pg == 3) {                              /* page 4: the sound's FX knobs (engine host) */
@@ -766,8 +707,7 @@ void pss_frame(uint16_t *buf)
         return;
     }
     for (i = 0; i < 4; i++) {
-        int q = page_param[pg][i];
-
+        q = page_param[pg][i];
         x = 4 + i * 80;
         gfx_text(x, 99, labels[q], col[i], 2);
         gfx_rect(x, 112, 72, 6, C_TRACK);

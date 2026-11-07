@@ -1,6 +1,10 @@
 # PARTY synth engine (Yamaha PSS-11, feature `party`)
 
-Status: **v0.2** (2026-10-22): the PSS-11's AWM tone generator (GEW7) is recreated: its 8- and
+Status: **v0.4** (2026-10-27): the knob, the lamps and the SELECT buttons drawn antialiased
+(smooth rings, pointer, round corners; engine host `eh_aa.c`), the LCD unchanged (sim-verified).
+v0.3 (2026-10-26): the screen is the LCD 16×2 (after "PARTY · display overview"):
+the sound, the knob turned last, lamps for B / MIX / the sounding notes, the knob and the SELECT
+buttons; the knob rows below unchanged (sim-verified). v0.2 (2026-10-22): the PSS-11's AWM tone generator (GEW7) is recreated: its 8- and
 12-bit samples played as stored, its envelope (attack, decay 1, decay level, decay 2, key scaling,
 96 dB exponential level) and LFO (vibrato, tremolo, reverse start), tested against MAME's
 per-chip-sample code. **No Yamaha sound ships with it**: without a ROM dump the engine plays 8
@@ -26,27 +30,26 @@ has 8 entries.
 
 ## Screen
 
-Bench screens: `build/demo/pss_screen.png` (P02, A4 held), `build/demo/pss_screen_fx.png` (page 4), `build/demo/pss_screen_own.png` (a changed P--).
+After "PARTY · display overview": the screen is built around the keyboard's green-grey **LCD 16×2**,
+not the whole instrument. Bench screens: `build/demo/pss_screen.png` (P02, A4 held),
+`build/demo/pss_screen_fx.png` (page 4), `build/demo/pss_screen_own.png` (a changed P--).
 
-The PARTY keyboard (253 x 81, as STATION 1's station), drawn live from the sound:
-
-- **voice list**: the bank in six columns of five (a line per sound, as long as its name), the sound
-  as a blue bar; 30 sounds a window, the window holding the sound.
-- **strip**: the four pages (the current one blue) and the sound, `P02 E.PIANO` (`*` = edited) or
-  `P--` and wave A; the sample loader's state instead while it has one.
-- **knob**: the blue knob of the page. **12 buttons**: the 12 parameters (column = page 1..3, row =
-  blue / green / white / orange), filled when on (B on, MIX with B, cutoff below the top, B PITCH off
-  unison, others above 0); the page's column outlined white.
-- **green square** = B sounds, **red bar** = MIX.
-- **keyboard**: 32 keys F3 .. C6 like the PSS-11's. A key held on the OP-1 lights its own note in the
-  octave its voice plays (TE's octave; glide / LFO / bend do not move it), until the key is released;
-  notes without a key (sequencer, MIDI) light for ~145 ms. Notes outside F3 .. C6 fold in by octaves.
-- **title**: for 1 s after a sound is picked (shift + blue), a wave is turned (WAVE A / B) or the
-  screen opens, STATION 1's LCD over the voice list: `P02 E.PIANO` above `A <wave> B <wave> +st`, or
-  `P--` and wave A above `SHIFT+BLUE: SOUNDS` (wave B once the sound is changed).
-
-Below it, as on STATION 1: the page's four knobs (name and bar), `PUSH: <next page>`; page 4 = the
-sound's FX knobs.
+- No header line: the LCD sits at the top.
+- **LCD** (teal frame, 16 × 2 cells of 5 × 7 dots, dark on green-grey): line 1 = the sound, `02
+  E.PIANO` (`*` at the end = edited) or `-- <wave A>`; line 2 = the knob turned last on this page
+  (knob push starts at the blue one): its name and value (`CUTOFF      75`, `WAVE B    SINE`,
+  `B PITCH     +7`). For 1 s after a sound is picked (shift + blue) or the screen opens, and on the
+  FX page, line 2 shows the waves (`A SAW B SINE +7`); for P-- `SHIFT+BLUE:SOUND` until the sound is
+  changed (then `B <wave> +st`). The sample loader's state on line 2 while it has one.
+- **Lamps** under the LCD: green = B sounds, the red **MIX** bar, a teal lamp per sounding note (up
+  to 3): a key held on the OP-1 counts until it is released (its note from its voice, rounded, so
+  glide / LFO / bend do not move it); notes without a key (sequencer, MIDI) for ~145 ms.
+- **Knob** (antialiased: white and grey rings, the teal pointer with a round tip in 0.1° steps, the
+  green arc): the value on line 2. **SELECT**: the 12 parameters as 3 × 4 buttons (column = page 1..3,
+  row = blue / green / white / orange), the current page's column white, the knob turned last teal;
+  buttons and lamps with rounded, antialiased corners.
+- Below, as on STATION 1 (unchanged): the page's four knobs (name and bar), `PUSH: <next page>`;
+  page 4 = the sound's FX knobs.
 
 ## What it is
 
@@ -134,8 +137,8 @@ release stage is TE's release.
    cycles per voice block on the Blackfin model (one sound <= 12.2k, two + every stage 22.3k of 30k).
 3. `sim/run_psstest.py`: engine host tag 1 routing, pitch/restart, 4 pages, WAVE stepping, 6-bit
    fields, bank, FX page, engine-list rename (`party` → `drwave`), screens
-   (`build/demo/pss_screen*.png`), keyboard lighting (held A4 lit, G4 dark, dark after release),
-   P-- title hint, the 1 s title, voice-list bar, cycles per voice block.
+   (`build/demo/pss_screen*.png`), the sounding note (held A4, not the voice's G4 start, none after
+   release), P-- title hint, the 1 s title, the sound's number on the LCD, cycles per voice block.
 4. `sim/run_pssload.py` (with `build/pss_rom.bin`): the runtime loader and its error paths.
 
 `python3 tools/test_all.py` runs them with everything else.

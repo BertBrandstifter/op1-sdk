@@ -14,6 +14,7 @@ extern char FB[];
 extern volatile uint8_t wh_page, ep_page[4];
 extern volatile int8_t wh_bank;
 extern volatile uint8_t wh_title_on;
+extern volatile int8_t wh_note_shown;
 extern void wh_tick(void);
 
 #define INC         ((volatile uint32_t *)0xff801950)
@@ -356,13 +357,11 @@ int main(void)
         CHECK(16, wh_bank == 1);
     }
 
-    /* 17: keyboard picture (as STATION 1): a held key (id 41: note 4 = A, TE octave +1 -> A4) lights A4
-     * even long after the start, though its voice starts 2 semitones low (TE's glide), and goes dark
-     * on release while TE still renders the voice */
+    /* 17: the sounding note (as STATION 1's LCD): a held key (id 41: note 4 = A, TE octave +1 -> A4)
+     * shows A4 (MIDI 69) under the fan even long after the start, though its voice starts 2 semitones
+     * low (TE's glide, G4 = 67), and none on release while TE still renders the voice */
     {
-        volatile uint16_t *fb = (volatile uint16_t *)FB;
-        const uint16_t green = (uint16_t)(((0x3d >> 3) << 11) | ((0xdc >> 2) << 5) | (0x97 >> 3));
-        int lit_held, lit_g4, lit_after;
+        int shown_held, shown_after;
 
         hook_key(41, 1);
         pitch((uint32_t)(392.0 / 88200 * 4294967296.0));
@@ -370,17 +369,16 @@ int main(void)
         for (n = 0; n < 300; n++)               /* > FLASH blocks */
             wh_te_render(VOICE(2), out, knobs);
         hook_frame((uint16_t *)FB);
-        lit_held = fb[(319 - 255) * 256 + 78] == green;   /* A4: white key 12, lower part */
-        lit_g4 = fb[(319 - 243) * 256 + 78] == green;     /* G4: white key 11 */
+        shown_held = wh_note_shown;
         hook_key(41, 0);
         for (n = 0; n < 10; n++)
             wh_te_render(VOICE(2), out, knobs);
         hook_frame((uint16_t *)FB);
-        lit_after = fb[(319 - 255) * 256 + 78] == green;
-        CHECK(17, lit_held && !lit_g4 && !lit_after);
+        shown_after = wh_note_shown;
+        CHECK(17, shown_held == 69 && shown_after == -1);
     }
 
-    /* 18: the sound's name over the organ: shown when a sound is picked, for 1 s (Seq ticks of 64
+    /* 18: the sound's name on the lamps: shown when a sound is picked, for 1 s (Seq ticks of 64
      * samples), then gone */
     {
         int on_pick, on_late, off;

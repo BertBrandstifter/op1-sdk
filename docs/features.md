@@ -75,30 +75,41 @@ bank on **shift + blue turn**; knob push = pages; last page = the sound's FX kno
   0.7: preset `lofi` back in the preset browser, shift + white push gesture removed). To be reworked;
   it stays in the images: its range check is what lets stored LOFI sounds pass the boot validator
   (an image without it halted the boot on 2026-10-22)
-- `mallet` 0.1 — MALLET (tag 7): modal synthesis of struck instruments (marimba, vibes with motor,
-  xylophone, glockenspiel, steelpan, handpan, kalimba, tubular bells), bank of 16
-- `enginehost` 1.2 — library: SDK engines share drwave via a tag in knob slots 5-8 (1 PARTY (PSS-11), 2 MONO 3,
-  3 STATION 1, 4 TRIO, 5 WHEEL, 6 WARP, 7 MALLET) + the shared FX page (device-verified)
-- `wheel` 0.10 — WHEEL tonewheel organ (tag 5): 16 registrations, percussion, click, drive, rotary,
-  bank of 24 (0.4 device-verified; 0.7 clean output: no clipping, drive level-compensated)
+- `mallet` 0.3 — MALLET (tag 7): modal synthesis of struck instruments (marimba, vibes with motor,
+  xylophone, glockenspiel, steelpan, handpan, kalimba, tubular bells), bank of 16; the instrument
+  screens drawn antialiased (0.3, sim-verified)
+- `enginehost` 1.4 — library: SDK engines share drwave via a tag in knob slots 5-8 (1 PARTY (PSS-11), 2 MONO 3,
+  3 STATION 1, 4 TRIO, 5 WHEEL, 6 WARP, 7 MALLET; extended `7 7 7 x`: 8 ACID 3, 9 PALETTE, 10..13 free) + the shared FX page (device-verified) and the engine screens' dot-matrix displays (`eh_dots.c`) and antialiased shapes (`eh_aa.c`) (1.3 sim-verified)
+- `wheel` 0.11 — WHEEL tonewheel organ (tag 5): 16 registrations, percussion, click, drive, rotary,
+  bank of 24; amber 8x2 lamp display screen (0.4 device-verified; 0.7 clean output: no clipping, drive
+  level-compensated; 0.11 screen sim-verified)
 - `warp` 0.1 — WARP (tag 6): 8 waves x 16 phase / output warps, sweep, motion, unison, bank of 16
   (device-verified)
 - `trio` 0.1 — TRIO (tag 4): SID-style 3 oscillators (ring, sync, AND waves) into an LP/BP/HP/notch
   SVF with envelope, drive, noise; page 1 LFO-able; bank of 16 (device-verified)
-- `mono` 0.3 — MONO 3 (tag 2): classic 3-oscillator mono synth voice, 4 voices: 3 oscillators
+- `mono` 0.6 — MONO 3 (tag 2): classic 3-oscillator mono synth voice, 4 voices: 3 oscillators
   (range, wave, level each; osc 2 / 3 frequency), white / pink noise, 4-pole ladder (self-oscillation, bass loss,
   keyboard control), filter + loudness contours (decay switch), constant-time glide; page 1 LFO-able; 7 pages;
-  bank of 16 + P-- (sim-verified)
-- `party` 0.2 — PSS-11 (tag 1): the PSS-11's GEW7 AWM tone generator recreated after MAME (8/12-bit samples, chip envelope +
-  LFO, BSD-3 parts: NOTICE), live PARTY keyboard screen (keys lit as they sound), two layers, filter, bank; built-in 8 waves,
+  bank of 16 + P--; red LED 12x2 display screen (sim-verified)
+- `acid` 0.1 — ACID 3 (extended tag 8): TD-3-MO-style bassline (303 type + Devil-Fish-style mods), monophonic:
+  saw / square + sub, overdrive into a resonant 4-pole filter (feedback high-pass), normal / accent decay, accent
+  sweep (OFF / NORM / HIGH, 3 speeds), slide on legato keys (10 .. 360 ms), soft attack, tracking, filter FM,
+  muffler; accents from MIDI velocity / every note / every 2nd-4th; amber LCD 16x2 + 16 step lamps; bank of 16 +
+  P-- (sim-verified)
+- `palette` 0.1 — PALETTE (extended tag 9): JD-08-style layered digital synth: each patch up to 4 tones A-D (wave
+  generator with pitch envelope, TVF LPF 24 / BPF / HPF with envelope, TVA envelope, 2 LFOs); the four knobs are
+  the palette (pages LEVEL WAVE PITCH CUTOFF TIME, a value per tone); 24 own waves (band-limited, mip-mapped);
+  12-tone polyphony budget; green LCD 20x2 + palette sliders; bank of 22 + P-- (sim-verified, no Roland data)
+- `party` 0.4 — PSS-11 (tag 1): the PSS-11's GEW7 AWM tone generator recreated after MAME (8/12-bit samples, chip envelope +
+  LFO, BSD-3 parts: NOTICE), PARTY LCD 16x2 screen (the sound, the knob turned last, note lamps; knob and buttons antialiased), two layers, filter, bank; built-in 8 waves,
   every ROM sample-table sound from your own dump with `gen_pss11.py --pss-rom` (sim-verified, no Yamaha data included)
-- `m1` 0.8 — STATION 1 (tag 3): two of 100 sampled multisounds layered (B pitch / detune, A decay, B fade-in) into
+- `m1` 0.9 — STATION 1 (tag 3): two of 100 sampled multisounds layered (B pitch / detune, A decay, B fade-in) into
   a low-pass with envelope, resonance, key tracking; page 1 LFO-able; bank of 28. MIX is a crossfade, the output has headroom for
   chords and a soft knee. Samples: a sound library (1.4 MB, committed in
   `features/m1/build/`, not MIT: see its NOTICE; built-in waves
   without it); `m1_drumkit.py`
-  makes two drum sampler kits, built in as factory kits (folder station 1); station screen with LCD, LEDs and a keyboard lighting the sounding
-  keys (sim-verified)
+  makes two drum sampler kits, built in as factory kits (folder station 1); LCD 40x4 screen (the program, the sounding
+  notes, the waves, the page's knobs with a cursor; sim-verified)
 - `engine_plus` 2.0 — 4 extra parameters for fm, digital, string, cluster, phase, dna, voltage, iter
   (generic stages device-verified; engine-specific hidden parameters sim-verified)
 

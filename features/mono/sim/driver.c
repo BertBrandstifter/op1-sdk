@@ -13,6 +13,7 @@ extern char FB[];
 extern volatile uint8_t mo_page;
 extern volatile int8_t mo_bank;
 extern volatile uint8_t mo_title_on;
+extern volatile int8_t mo_note_shown;
 extern void mo_tick(void);
 extern int mo_param(const volatile int16_t *k, int id);
 extern void mo_param_set(volatile int16_t *k, int id, int v);
@@ -382,13 +383,11 @@ int main(void)
     }
     CHECK(11, ok == 4);
 
-    /* 12: keyboard picture (as STATION 1): a held key (id 41: note 4 = A, TE octave +1 -> A4) lights A4
-     * even long after the start, though its voice starts 2 semitones low (TE's glide), and goes dark
-     * on release while TE still renders the voice */
+    /* 12: the sounding note (as STATION 1's LCD): a held key (id 41: note 4 = A, TE octave +1 -> A4)
+     * shows A4 (MIDI 69) under the DATA knob even long after the start, though its voice starts 2
+     * semitones low (TE's glide, G4 = 67), and none on release while TE still renders the voice */
     {
-        volatile uint16_t *fb = (volatile uint16_t *)FB;
-        const uint16_t green = (uint16_t)(((0x3d >> 3) << 11) | ((0xdc >> 2) << 5) | (0x97 >> 3));
-        int lit_held, lit_g4, lit_after;
+        int shown_held, shown_after;
 
         hook_key(41, 1);
         pitch((uint32_t)(392.0 / 88200 * 4294967296.0));
@@ -396,14 +395,13 @@ int main(void)
         for (n = 0; n < 300; n++)               /* > FLASH blocks */
             wh_te_render(VOICE(2), out, knobs);
         hook_frame((uint16_t *)FB);
-        lit_held = fb[(319 - 186) * 256 + 76] == green;   /* A4: white key 19, lower part */
-        lit_g4 = fb[(319 - 181) * 256 + 76] == green;     /* G4: white key 18 */
+        shown_held = mo_note_shown;
         hook_key(41, 0);
         for (n = 0; n < 10; n++)
             wh_te_render(VOICE(2), out, knobs);
         hook_frame((uint16_t *)FB);
-        lit_after = fb[(319 - 186) * 256 + 76] == green;
-        CHECK(12, lit_held && !lit_g4 && !lit_after);
+        shown_after = mo_note_shown;
+        CHECK(12, shown_held == 69 && shown_after == -1);
     }
     /* 13: the sound's name over the panel: shown when a sound is picked, for 1 s (Seq ticks of 64
      * samples), then gone */

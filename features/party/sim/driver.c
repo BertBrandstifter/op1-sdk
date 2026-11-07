@@ -13,6 +13,7 @@ extern char FB[];
 extern volatile uint8_t pss_page;
 extern volatile int16_t pss_bank;
 extern volatile uint8_t pss_title_on;
+extern volatile int8_t pss_note_shown;
 extern void pss_tick(void);
 
 #define INC         ((volatile uint32_t *)0xff801950)
@@ -264,13 +265,11 @@ int main(void)
     pss_page = 0;
     CHECK(9, pss_bank == 4);
 
-    /* 10: keyboard picture (F3 .. C6): a held key (id 41: note 4 = A, TE octave +1 -> A4) lights A4
-     * even long after the start, though its voice starts 2 semitones low (glide, G4 stays dark), and
-     * goes dark on release while TE still renders the voice */
+    /* 10: the sounding notes (the lamps under the LCD): a held key (id 41: note 4 = A, TE octave +1
+     * -> A4) shows A4 (MIDI 69) even long after the start, though its voice starts 2 semitones low
+     * (glide, G4 = 67), and none on release while TE still renders the voice */
     {
-        volatile uint16_t *fb = (volatile uint16_t *)FB;
-        const uint16_t green = (uint16_t)(((0x3d >> 3) << 11) | ((0xdc >> 2) << 5) | (0x97 >> 3));
-        int lit_held, lit_g4, lit_after;
+        int shown_held, shown_after;
 
         hook_key(41, 1);
         pitch((uint32_t)(392.0 / 88200 * 4294967296.0));
@@ -278,23 +277,23 @@ int main(void)
         for (n = 0; n < 300; n++)               /* > FLASH blocks */
             wh_te_render(VOICE(2), out, knobs);
         hook_frame((uint16_t *)FB);
-        lit_held = fb[(319 - 135) * 256 + 76] == green;   /* A4: white key 9, lower part */
-        lit_g4 = fb[(319 - 125) * 256 + 76] == green;     /* G4: white key 8 */
+        shown_held = pss_note_shown;
         hook_key(41, 0);
         for (n = 0; n < 10; n++)
             wh_te_render(VOICE(2), out, knobs);
         hook_frame((uint16_t *)FB);
-        lit_after = fb[(319 - 135) * 256 + 76] == green;
-        CHECK(10, lit_held && !lit_g4 && !lit_after);
+        shown_after = pss_note_shown;
+        CHECK(10, shown_held == 69 && shown_after == -1);
     }
 
-    /* 11: P-- (bank 4 back to P--): the title's second line says SHIFT+BLUE: SOUNDS until the sound
-     * is changed, then wave B (here after WAVE B one step); wave A stays on top; browsing to a bank
-     * sound and back to P-- shows the hint again. Screen run_psstest.py: pss_screen_own (the changed
-     * P--) */
+    /* 11: P-- (bank 4 back to P--): while the title time runs the LCD's second line says
+     * SHIFT+BLUE:SOUND until the sound is changed, then wave B (here after WAVE B one step); wave A
+     * stays on the first line; browsing to a bank sound and back to P-- shows the hint again. The
+     * LCD's cells: x 21 .. 210, lines at y 18 and 38 (14 high). Screen run_psstest.py: pss_screen_own
+     * (the changed P--) */
     {
         volatile uint16_t *fb = (volatile uint16_t *)(FB + 0x80000);
-        static uint16_t hint[8 * 136], top[14 * 136];
+        static uint16_t hint[14 * 190], top[14 * 190];
         int x, y, same_top = 1, other = 0, back = 1;
 
         *TE_SHIFT_HELD = 1;
@@ -303,37 +302,35 @@ int main(void)
         *TE_SHIFT_HELD = 0;
         CHECK(11, pss_bank == -1);
         hook_frame((uint16_t *)fb);
-        for (y = 0; y < 8; y++)
-            for (x = 0; x < 136; x++)
-                hint[y * 136 + x] = fb[(319 - (79 + x)) * 256 + 24 + y];
         for (y = 0; y < 14; y++)
-            for (x = 0; x < 136; x++)
-                top[y * 136 + x] = fb[(319 - (79 + x)) * 256 + 10 + y];
+            for (x = 0; x < 190; x++) {
+                hint[y * 190 + x] = fb[(319 - (21 + x)) * 256 + 38 + y];
+                top[y * 190 + x] = fb[(319 - (21 + x)) * 256 + 18 + y];
+            }
         turn(1, 1024);                          /* WAVE B */
         hook_frame((uint16_t *)fb);
-        for (y = 0; y < 8; y++)
-            for (x = 0; x < 136; x++)
-                other |= fb[(319 - (79 + x)) * 256 + 24 + y] != hint[y * 136 + x];
         for (y = 0; y < 14; y++)
-            for (x = 0; x < 136; x++)
-                same_top &= fb[(319 - (79 + x)) * 256 + 10 + y] == top[y * 136 + x];
+            for (x = 0; x < 190; x++) {
+                other |= fb[(319 - (21 + x)) * 256 + 38 + y] != hint[y * 190 + x];
+                same_top &= fb[(319 - (21 + x)) * 256 + 18 + y] == top[y * 190 + x];
+            }
         CHECK(11, other && same_top);
         *TE_SHIFT_HELD = 1;
         turn(0, 1024);                          /* P01 */
         turn(0, -1024);                         /* P-- */
         *TE_SHIFT_HELD = 0;
         hook_frame((uint16_t *)(FB + 0x40000));     /* scratch draw: the hint is back */
-        for (y = 0; y < 8; y++)
-            for (x = 0; x < 136; x++)
-                back &= ((volatile uint16_t *)(FB + 0x40000))[(319 - (79 + x)) * 256 + 24 + y] == hint[y * 136 + x];
+        for (y = 0; y < 14; y++)
+            for (x = 0; x < 190; x++)
+                back &= ((volatile uint16_t *)(FB + 0x40000))[(319 - (21 + x)) * 256 + 38 + y] == hint[y * 190 + x];
         CHECK(11, pss_bank == -1 && back);
     }
 
-    /* 12: the sound's name over the voice list: shown when a sound is picked, for 1 s (Seq ticks of
-     * 64 samples), then gone; the voice list shows the sound as a blue bar */
+    /* 12: the title (the sound's waves on the LCD's second line): shown when a sound is picked, for
+     * 1 s (Seq ticks of 64 samples), then gone; the LCD's first line starts with the sound's number */
     {
         volatile uint16_t *fb = (volatile uint16_t *)FB;
-        const uint16_t blue = (uint16_t)(((0x6e >> 3) << 11) | ((0x8b >> 2) << 5) | (0xff >> 3));
+        const uint16_t dark = (uint16_t)(((0x1c >> 3) << 11) | ((0x24 >> 2) << 5) | (0x1c >> 3));
         int on_pick, on_late, off, bar;
 
         *TE_SHIFT_HELD = 1;
@@ -349,7 +346,7 @@ int main(void)
             pss_tick();
         hook_frame((uint16_t *)FB);
         off = !pss_title_on;
-        bar = fb[(319 - 50) * 256 + 17] == blue;    /* P01: column 1, row 1 */
+        bar = fb[(319 - 23) * 256 + 18] == dark;    /* 01: the 0's top bar (cell 0, dot 1) */
         CHECK(12, pss_bank == 0 && on_pick && on_late && off && bar);
     }
 

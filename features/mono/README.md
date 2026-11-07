@@ -1,6 +1,8 @@
 # MONO 3 synth engine — spec
 
-Status: **v0.5** (2026-10-20): RELEASE off = a key up leaves the note to TE's envelope (0.4 cut
+Status: **v0.6** (2026-10-26): the screen is the LED 12×2 display (after "MONO · display
+overview"): pages down the left, the knob turned last and the page's oscillator on the display,
+the DATA knob and the sounding note; the knob rows below unchanged (sim-verified). v0.5 (2026-10-20): RELEASE off = a key up leaves the note to TE's envelope (0.4 cut
 it within 21 ms in poly; unison's extra voices already rang on). v0.4 (2026-10-19): page knobs as
 STATION 1 (name + bar), the sound's name over the panel for 1 s, keys lit as STATION 1 (a held key
 its own note). Code: `features/mono/` (engine host,
@@ -64,23 +66,23 @@ closed the filter within ~60 ms, a click).
 
 ## Screen
 
-As STATION 1: no header line, the
-panel smaller with room around it, the page's four knobs below it.
+After "MONO · display overview": the screen is built around a red **LED 12×2** dot display, not the
+whole instrument. No header line: the display sits at the top.
 
-- The panel (red outline, white control box): **CONTROL** (glide), **OSCILLATORS**
-  (a row per oscillator: range, frequency, wave), **MIXER** (the three levels with their switches,
-  noise with white / pink), **MODIFIERS** (keyboard control 1 / 2; cutoff, emphasis, contour; the
-  filter contour; the loudness contour), **OUT**. Every knob shows its value; the current page's
-  four are larger and in their knob colours (blue, green, white, orange), the others grey.
-- Under it the wheel box (glide and decay switches, pitch / mod), the page (P1-P7)
-  and osc 1's wave above the keyboard; the keyboard lights the held keys as STATION 1: a held key
-  lights its own note (the octave from its voice, rounded, so TE's glide / LFO / bend at the note
-  start do not move it); notes without a key (sequencer, MIDI, CHORD+'s extra notes) flash ~145 ms.
-- The sound's name over the panel for 1 s when a sound is picked (shift + blue) or the screen opens:
-  STATION 1's LCD (same place, scale-2 text, green): `P02 PLUCK BASS`, `*` when edited, or `P--`
-  with `SHIFT+BLUE: SOUNDS`. Its clock is the Seq tick (`mo_tick`, 64 samples).
-- Below, as STATION 1: the page's four knob names (scale 2, knob colours) over a bar each, then
-  `PUSH:` the next page; page 7 = the sound's FX. (Values are read off the panel's knobs.)
+- **Pages** down the left: FILTER, OSC 1, OSC 2, OSC 3, F.CONT, L.CONT, FX; the current one red with
+  a dashed line to the display.
+- **Display** (12 × 2 cells of 5 × 7 dots, unlit dots shown): line 1 = the knob turned last on this
+  page (knob push starts at the blue one): its name and value on the panel's scale (`CUTOFF  7.5`,
+  `RANGE  16'`, `FREQ  +7.0` semitones, `ATTACK  250MS`, `KEYBOARD  2/3`, `NOISE  P 4.7`); line 2 =
+  the page's oscillator (OSC 1 elsewhere): `OSC1 32' TRI`. For 1 s when a sound is picked (shift +
+  blue) or the screen opens, and on the FX page: the sound, `P02` over `PLUCK BASS` (`*` = edited),
+  or `P--` over `SHIFT+BLUE`. Its clock is the Seq tick (`mo_tick`, 64 samples).
+- **DATA** knob: the value on the display; under it the **sounding note** (red LED + `A4`, the
+  lowest): a held key names its own note (the octave from its voice, rounded, so TE's glide / LFO /
+  bend at the note start do not move it); notes without a key (sequencer, MIDI, CHORD+'s extra
+  notes) for ~145 ms.
+- Below, as STATION 1 (unchanged): the page's four knob names (scale 2, knob colours) over a bar
+  each, then `PUSH:` the next page; page 7 = the sound's FX.
 
 ## How
 
@@ -114,7 +116,8 @@ panel smaller with room around it, the page's four knobs below it.
    pitch, poly in TE's render order (held notes together; a key up: RELEASE off = the voice sounds on, on = it releases), 7 pages,
    fields (clamps, one step per detent, the tag kept), bank with P--, page-7 FX knob, engine-list
    rename, cycles, TE's LFO scrambling slot 3's low bits leaves the sound alone, the 4-voice limit,
-   screens.
+   screens, the sounding note shown (held A4, not the voice's G4 start, none after release), the 1 s
+   title.
 3. Screens `build/demo/mono_screen.png`, `mono_screen_p5.png`.
 
 Cost (sim, per voice block of 128 samples): a saw, filter open 22.9k; three oscillators, pink noise,

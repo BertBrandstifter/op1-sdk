@@ -1,0 +1,149 @@
+{
+  "schema": 1,
+  "name": "acid",
+  "title": "ACID 3 synth engine (TD-3-MO-style bassline: 303 type with the modded-out mods)",
+  "version": "0.2",
+  "status": "sim-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "ac_"
+  ],
+  "summary": "Pick ACID 3 in the engine list or the 'acid 3' preset: a monophonic bassline voice in the style of the Behringer TD-3-MO, its sound a fixed-point port of Open303 (MIT, NOTICE: TB-303 diode-ladder filter model, measured cutoff / env-mod mapping, envelopes, accent, slide; A/B within 0.2 dB / 0.03 oct of Open303): saw / square + sub oscillator, overdrive into a resonant 4-pole filter (303 type: feedback high-pass, tanh-limited), the envelope with normal and accent decay, accent with its sweep circuit (OFF / NORM / HIGH, SLOW / NORM / FAST), slide (10 .. 360 ms, legato keys or every note), soft attack, filter tracking, filter FM, muffler. Accents from MIDI velocity, every note or every 2nd / 3rd / 4th note. Page 1 (cutoff, resonance, env mod, decay) can be moved by TE's LFO. Shift + blue turn browses P-- and 16 built-in sounds; page 6 = the sound's FX knobs. The screen is a green (80s phosphor) LCD 16x2 (the knob turned last, the page, the note) over 16 step lamps (the last notes: accents, slides), above the page's knobs as the other engines. Presets stay drwave presets with in-range values.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "acid.c",
+    "ac_core.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "init": "ac_setup",
+  "shared": [
+    {
+      "point": "kb_note_on",
+      "fn": "ac_kb_note_on",
+      "mode": "observe"
+    },
+    {
+      "point": "kb_note_off",
+      "fn": "ac_kb_note_off",
+      "mode": "observe"
+    },
+    {
+      "point": "midi_note_on",
+      "fn": "ac_midi_note_on",
+      "mode": "observe"
+    },
+    {
+      "point": "midi_note_off",
+      "fn": "ac_midi_note_off",
+      "mode": "observe"
+    },
+    {
+      "point": "on_key",
+      "fn": "ac_key",
+      "mode": "filter"
+    },
+    {
+      "point": "on_knob",
+      "fn": "ac_knob",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "ac_frame"
+    },
+    {
+      "point": "seq_tick",
+      "fn": "ac_tick"
+    },
+    {
+      "point": "engine_name",
+      "fn": "ac_engine_name"
+    }
+  ],
+  "hooks": {},
+  "controls": [
+    "engine list: ACID 3; preset browser: folder acid 3 (one preset, 'acid 3'); sounds: shift + blue turn (P-- + 16)",
+    "ACID 3 sound: knob push cycles page 1 FILTER (CUTOFF RESONANCE ENV MOD DECAY) / 2 ACCENT (ACCENT ACC DECAY SWEEP SPEED) / 3 VCO (WAVE SUB TUNE SLIDE) / 4 MODS (SOFT ATK TRACKING FILTER FM OVERDRIVE) / 5 PLAY (MUFFLER ACCENTS SLIDES LEVEL) / 6 FX knobs",
+    "slide: a note played while another key is held (SLIDES LEGATO); accents: ACCENTS ALL / VEL (MIDI) / 2ND / 3RD / 4TH"
+  ],
+  "tests": [
+    "test_ac_core.c",
+    "sim/run_acidtest.py"
+  ],
+  "depends": [
+    "enginehost"
+  ],
+  "conflicts": [],
+  "claims": [
+    {
+      "input": "blue_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "green_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "white_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "orange_push",
+      "shift": "no",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "blue_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "green_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "white_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    },
+    {
+      "input": "orange_turn",
+      "shift": "any",
+      "screen": "synth",
+      "modal": true
+    }
+  ],
+  "content_sql": [
+    {
+      "file": "content/op1_factory.db",
+      "sql": [
+        "INSERT INTO synth_types (id, type, default_params) SELECT MAX(id) + 1, 'acid 3', '[6445,10893,8965,9612,29168,28672,31360,4096]' FROM synth_types",
+        "INSERT INTO synth_presets (patch, folder) VALUES ('{\"adsr\":[64,8128,32767,4000,4000,64,4000,4000],\"fx_active\":false,\"fx_params\":[8000,14368,9438,20044,0,0,0,0],\"fx_type\":\"delay\",\"knobs\":[6445,10893,8965,9612,29168,28672,31360,4096],\"lfo_active\":false,\"lfo_params\":[24172,3068,0,16000,0,0,0,0],\"lfo_type\":\"tremolo\",\"name\":\"acid 3\",\"octave\":-1,\"synth_version\":1,\"type\":\"drwave\"}', 'acid 3')"
+      ]
+    }
+  ],
+  "evidence": []
+}

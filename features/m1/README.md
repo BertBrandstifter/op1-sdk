@@ -1,12 +1,15 @@
 # STATION 1 synth engine (feature m1) — spec
 
-Status: **v0.8** (2026-10-20): the 100 multisounds now come from a sound library at its
+Status: **v0.9** (2026-10-26): the screen is the LCD 40×4 (after "STATION · display overview",
+no header line): page LEDs, the program and the sounding notes, an empty second line (only `SHIFT+BLUE: SOUNDS`
+until the first knob turn), the page's knobs in four
+fields (name over value) with a cursor under the knob turned last; the knob rows below unchanged (sim-verified). v0.8 (2026-10-20): the 100 multisounds now come from a sound library at its
 own rate (31.25 kHz), with its key splits, root keys, fine tuning and zone levels. Same compression
 (4-bit block ADPCM, PCM16 for small samples), 1.43 MB; the room left in the budget keeps the 17
 samples where ADPCM would hiss most (E.Piano, BellRing, Brass 1 top zones ...) as PCM16. Measured
 against v0.7 through the voice core: pitch median 0.0 cents (383 tonal notes, 4 beyond 10 cents),
 level within about 1 dB. See **Data**. P--: the preset `station 1` plays all A (MIX 0, was all B:
-PIANO 16'), and once changed the LCD's second line shows wave B. v0.7 (2026-10-20): the 28 bank
+PIANO 16'). v0.7 (2026-10-20): the 28 bank
 sounds follow the original programs' multisounds, octave transpositions and layer levels. Many
 programs play a multisound an octave down (16') or up: a one-oscillator program is played as B only
 at -12/+12 (STATION 1 has no A transpose), so its pitch matches the original. Filter / envelope
@@ -59,23 +62,27 @@ triangle, sine, organ, e.piano, voice) and the bank has 8 sounds.
 
 ## Screen
 
-- The station (253 × 81, centred, room to the sides and to the knobs): **fader** = CUTOFF; left LEDs = A, B, F.ENV, RES on; **LCD** = the
-  bank sound (`P01 M1 PIANO`, `*` when edited) and its waves (`A PIANO  B STRINGS +12`), or
-  `P-- <wave A>` and `SHIFT+BLUE: SOUNDS` for P-- (the sound itself, in front of the bank), the
-  second line `B <wave B> +12` once the P-- sound is changed (until browsing back to P--); under it
-  the 4 **page** segments (blue = current); right LEDs = A DECAY, B FADE, KEY TRK on; top right the **page**
-  (P1-P4, red) above the blue **MIX** bar, green LED = B sounds; **knob** = this page's blue knob;
-  **keyboard** C2-B6 (5-pixel keys, room around it) lights the keys being played.
-- Lit keys: a key held on the OP-1 lights its own note until it is released (the octave from the
-  voice it started, rounded, so glide / LFO / bend at the note start do not move it); notes
-  without a key (sequencer, MIDI, CHORD+'s extra notes) flash for ~145 ms. Folded into C2-B6 by
-  octaves. (TE keeps rendering a voice through its release and beyond, so rendering alone does not
-  mean sounding.)
-- Below, as on every SDK engine: the page's four knob names and bars, the next page; page 4 = the
-  sound's FX (engine host).
-- Design after "01 Station · overview" (1280 × 640 = 4 × the OP-1's screen); bench screenshots:
-  `build/demo/m1_screen.png`, `build/demo/m1_screen_fx.png`, `build/demo/m1_screen_own.png` (a changed
-  P--) (`sim/run_m1test.py`).
+After "STATION · display overview" (1280 × 640 = 4 × the OP-1's screen): the screen is built around
+the workstation's **LCD 40×4**, not the whole instrument. No header line: the LEDs and the LCD sit
+at the top.
+
+- **Page LEDs**: WAVES, PITCH, SHAPE, FX (red = the current page); `PAGE -` / `PAGE +` on the right
+  (knob push turns the page).
+- **LCD** (blue frame, 40 × 4 cells of 5 × 7 dots, unlit dots shown): line 1 = `PROG P02  M1 Piano`
+  (`*` when edited) or `PROG P--  <wave A>`, the **sounding notes** at its end (`A4 C#5 E5`: up to 3,
+  lowest first; a key held on the OP-1 names its own note until it is released, the octave from the
+  voice it started, rounded, so glide / LFO / bend at the note start do not move it; notes without
+  a key (sequencer, MIDI, CHORD+'s extra notes) for ~145 ms). Line 2 stays empty (a gap between the
+  sound and the knobs; the waves are on page 1's fields): `SHIFT+BLUE: SOUNDS` after boot until the
+  first knob turn (any knob, shift + blue included; not shown again until the next boot), and the
+  sample loader's state while it has one. Lines 3 and 4 = the page's four knobs in fields of 10 cells, name over value
+  (`WAVE A` / `Piano`, `MIX` / `49`, `B PITCH` / `+12`); `FX` on page 4.
+- **Cursor**: a segment under each field, the one of the knob turned last filled in its knob colour
+  (blue, green, white, orange); the page's name between two lines.
+- Below, as on every SDK engine (unchanged): the page's four knob names and bars, the next page;
+  page 4 = the sound's FX (engine host).
+- Bench screenshots: `build/demo/m1_screen.png`, `build/demo/m1_screen_fx.png`,
+  `build/demo/m1_screen_own.png` (a changed P--) (`sim/run_m1test.py`).
 
 ## Data
 
@@ -230,9 +237,9 @@ The `.aif` files also work on a stock OP-1 (disk mode, below).
 2. `sim/run_m1test.py`: plain drwave untouched, tag 3 routing, 441 Hz pitch, restart, 4 pages,
    WAVE A / B one multisound per detent, page-1 clamp, 6-bit fields (B PITCH max +24, other field
    untouched, tag kept), bank (8 in range, wraps), page-4 FX knob, engine-list rename ("station 1"
-   only), cycles, screens (`m1_screen.png`, `m1_screen_fx.png`, `m1_screen_own.png`), P--: hint until
-   changed, then wave B on the second line (wave A unchanged on top), hint again after browsing back; keyboard: a held key lit long
-   after its note on (voice starting 2 semitones off), dark after release; with the data, a second run measures it (worst cycles, < 30k with every stage on).
+   only), cycles, screens (`m1_screen.png`, `m1_screen_fx.png`, `m1_screen_own.png`), the hint on the
+   second line before the first knob turn, dark after it (P--, also after WAVE B; wave A unchanged on top); the LCD names a held key's note (A4) long
+   after its note on (voice starting 2 semitones off), gone after release; with the data, a second run measures it (worst cycles, < 30k with every stage on).
 3. `sim/run_m1load.py` (with the data): the loader against stub TE file / heap calls serving
    `build/m1_rom.bin`: no STATION 1 sound = nothing loaded; file missing; sample memory full, retried
    after ~250 passes and not before; one damaged byte = DAMAGED and silent; the good file in 64 KB

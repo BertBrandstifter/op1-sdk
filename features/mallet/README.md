@@ -1,7 +1,8 @@
 # MALLET synth engine — spec
 
-Status: **v0.2** (2026-10-22: screens after the user's "MALLET · <instrument>" art, header left
-out, instruments centred), sim-verified;
+Status: **v0.3** (2026-10-27: the screens drawn antialiased: smooth lines, circles and rounded
+corners instead of hard pixel steps; sim-verified). v0.2 (2026-10-22: screens after the user's
+"MALLET · <instrument>" art, header left out, instruments centred), sim-verified;
 v0.1 device-booted (2026-10-22). Code: `features/mallet/` (in
 recipe `op1plus`, after mono; engine host tag 7). Own code (modal synthesis; mode ratios from the
 acoustics literature of bars, pans and tubes).
@@ -53,7 +54,7 @@ SDK engine.
 ## Screen
 
 After the user's "MALLET · <instrument>" art (1280 × 640 = 4 × the screen), drawn from lines,
-ellipses and dashes in code (no bitmaps: the eight screens add ~2 KB), without the art's header
+ellipses, rounded boxes and dashes in code (no bitmaps), without the art's header
 (name, number, info: more room), each instrument centred between the screen's top and the knob row.
 The sounding notes are lit (a held key its own note; sequencer / MIDI notes
 flash ~145 ms) and the mallet sits on the newest one, with dashed waves round it:
@@ -70,6 +71,16 @@ flash ~145 ms) and the mallet sits on the newest one, with dashed waves round it
 - **KALIMBA**: the board with 17 tines (C3 .. E5's naturals, the lowest in the middle, alternating
   out), the sound hole, a tine from the side and its decaying ring.
 - **TUBULAR**: 12 tubes (one octave, chromatic) hanging from the red frame on wheels, the hammer.
+
+**Antialiased** (v0.3; the drawing code is the engine host's `eh_aa.c`): every line, ellipse, arc, dash end and rounded corner gives the pixels
+along its edge a coverage from their distance to it (1/16 px), blended into the frame (RGB565), so
+edges are smooth instead of stepped; bars and tubes have round corners and ends. Ellipses are
+drawn in two scan passes (rows where the curve is steeper than 45°, columns elsewhere: each pixel
+once, its distance from the crossing on its scan line; no divide or root per pixel), corners from
+small coverage tables. An instrument's lines and ellipses are kept (pixels + coverage, up to
+16384, 64 KB) and played back while they are drawn the same way again, so a frame costs about what
+the hard-pixel screens did: 0.29 .. 0.60 M cycles in the sim (v0.2: 0.20 .. 0.78 M); the first frame of
+an instrument computes them, 0.53 .. 2.6 M.
 
 For 1 s after a sound is picked (or the screen opens) its name over the instrument (`P01 MARIMBA`,
 `*` = edited). Below, unchanged (as STATION 1): the page's four knobs, name and bar (INSTR: one
@@ -106,7 +117,8 @@ value per detent), `PUSH:` the next page and the page (P1–P3) at the right.
    restrike; pages; MOTOR / INSTR edits, ranges, marker; shift / other screens / other engines are
    TE's; page 3 FX knobs; bank (16, wraps, marked, in range); engine-list rename next to WHEEL's;
    bars lit by a held key; the name for 1 s; a screen per instrument →
-   `build/demo/mallet_screen_<instrument>.png`; cycles.
+   `build/demo/mallet_screen_<instrument>.png`; cycles per voice block and per screen frame (the
+   first frame of each instrument and the next, with its shapes kept).
 
 ## Risks (device test)
 

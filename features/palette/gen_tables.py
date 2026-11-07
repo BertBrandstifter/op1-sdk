@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Generate pl_tables.h: PALETTE's tables: the additive single-cycle waves (mip-mapped, one level per
+octave, band-limited to 20 kHz), state-variable filter coefficients per semitone, resonance damping,
+envelope times, LFO rates, palette PITCH steps and TIME scales, tanh (the output limiter), exp2 / log2.
+Own designs (no sampled data). Run: python3 gen_tables.py"""
+import math, random
+
+SR, BLK = 88200, 128
+
+
+def arr(name, ctype, vals, comment, per=10):
+    out = [f"/* {comment} */", f"static const {ctype} {name}[{len(vals)}] = {{"]
+    out += ["    " + ", ".join(str(v) for v in vals[i:i + per]) + "," for i in range(0, len(vals), per)]
+    return out + ["};", ""]
+
+
+# ---------------------------------------------------------------- waves
+# level o (0..9) plays phase steps inc with msb(inc) = 20 + o (o = 0 below): fundamentals up to
+# f_top(o) = 2^(21 + o) * SR / 2^32. Harmonics kept: below 20 kHz at f_top (at most 400).
+LEVELS = 10
+F_TOP = [2 ** (21 + o) * SR / 2 ** 32 for o in range(LEVELS)]
+H = [max(1, min(400, int(20000 / F_TOP[o]))) for o in range(LEVELS)]
+H[0] = H[1]                                     # below 43 Hz: level 1's table (harmonics to 10 kHz)
+BITS = []
+for o in range(LEVELS):
+    n = 128                                     # linear interpolation: images stay small
+    while n < 2.2 * H[o]:
+        n *= 2
+    BITS.append(int(math.log2(n)))
+
+F0 = 130.8                                      # VOX formants placed for C3
+
+
+def formant(n, fs):
+    f = n * F0
+    return sum(g * math.exp(-((f - c) / bw) ** 2) for c, bw, g in fs) / math.sqrt(n)
+
+
+rng = random.Random(8)
+SPEC_PH = [rng.random() * 2 * math.pi for _ in range(401)]
+
+WAVES = [  # (name, amplitude(n) -> (amp, phase))
+    ("TRIANGLE", lambda n: ((-1) ** ((n - 1) // 2) / n ** 2 if n % 2 else 0, 0)),
+    ("SINE", lambda n: (1 if n == 1 else 0, 0)),
+    ("DIGI 1", lambda n: ((2 if n % 3 == 0 else 1) / n if n <= 64 else 0, 0 if n % 2 else math.pi)),
+    ("DIGI 2", lambda n: (1 / n + 0.8 * math.exp(-((n - 8) / 2.5) ** 2), 0)),
+    ("WIRE", lambda n: (abs(math.sin(math.pi * n * 0.13)) / n, 0)),
+    ("VOX A", lambda n: (formant(n, [(730, 120, 1.0), (1090, 150, 0.5), (2440, 250, 0.25)]) + 0.3 / n ** 1.5, 0)),
+    ("VOX O", lambda n: (formant(n, [(570, 100, 1.0), (840, 130, 0.45), (2410, 250, 0.12)]) + 0.3 / n ** 1.5, 0)),
+    ("ORGAN", lambda n: ({1: 1, 2: .7, 3: .6, 4: .5, 6: .3, 8: .3}.get(n, 0), 0)),
+    ("E.PIANO", lambda n: ({1: 1, 2: .5, 3: .15, 4: .1, 7: .05, 14: .12}.get(n, 0), 0)),
+    ("CLAV", lambda n: (abs(math.sin(math.pi * n * 0.2)) / n ** 0.8 * math.exp(-n / 60), 0)),
+    ("SYN BASS", lambda n: ((1.5 if n == 2 else 1.3 if n == 3 else 1) / n * math.exp(-n / 40), 0)),
+    ("GLASS", lambda n: ({1: 1, 4: .6, 9: .4, 16: .3, 25: .2}.get(n, 0), 0)),
+    ("REED", lambda n: ((1 if n % 2 else 0.1) / n, 0)),
+    ("BRASS", lambda n: (n ** -0.7 * (1 if n <= 30 else math.exp(-(n - 30) / 10)), 0)),
+    ("SOFT PAD", lambda n: (1 / n ** 2 + 0.3 / n * math.exp(-n / 8), 0)),
+    ("SPECTRAL", lambda n: (1 / math.sqrt(n) if n <= 48 else 0, SPEC_PH[n])),
+]
+
+
+def table(fn, o):
+    n_samp = 1 << BITS[o]
+    t = [0.0] * n_samp
+    for n in range(1, H[o] + 1):
+        if n >= n_samp // 2:
+            break
+        a, ph = fn(n)
+        if not a:
+            continue
+        for i in range(n_samp):
+            t[i] += a * math.sin(2 * math.pi * n * i / n_samp + ph)
+    return t
+
+
+wt, off = [], []
+for name, fn in WAVES:
+    tabs = [table(fn, max(o, 1)) for o in range(LEVELS)]
+    peak = max(max(abs(x) for x in t) for t in tabs)
+    s = 29000 / peak
+    row = []
+    for o, t in enumerate(tabs):
+        if o == 1:
+            row.append(row[0])                  # levels 0 and 1 share one table
+            continue
+        row.append(len(wt))
+        wt += [round(x * s) for x in t]
+    off.append(row)
+
+# ---------------------------------------------------------------- filter
+# Chamberlin state-variable filter: f = 2 sin(pi fc / SR), Q15, per semitone above 20 Hz (0..121),
+# fc capped at 14 kHz (stable with q <= 1.414)
+svf_f = [round(2 * math.sin(math.pi * min(20 * 2 ** (s / 12), 14000) / SR) * 32768) for s in range(123)]
+# damping q = 1 / Q, Q14: resonance 0..100 -> Q 0.707 .. 21
+svf_q = [round(16384 / (0.7071 * 2 ** (r * 4.9 / 100))) for r in range(101)]
+
+# ---------------------------------------------------------------- envelopes, LFOs
+time_us = [round((2 ** (v * 14.3 / 100) - 1) * 1000) for v in range(101)]     # 0 .. 20 s
+lfo_inc = [round(0.1 * 2 ** (v * 9 / 100) * BLK / SR * 2 ** 32) for v in range(101)]   # per block
+PITCH = [-24, -19, -17] + list(range(-12, 13)) + [17, 19, 24, 31]
+TSCALE = [64, 128, 179, 256, 358, 512, 768, 1024]                # Q8: x1/4 .. x4
+
+tnh = [round(math.tanh(-4 + i / 64) * 16384) for i in range(513)]
+ex2 = [round(2 ** (i / 256) * 65536) for i in range(257)]
+lg2 = [round(math.log2(1 + i / 256) * 65536) for i in range(257)]
+
+out = ["/* PALETTE tables: generated by gen_tables.py (do not edit). Own designs. */",
+       "#ifndef PL_TABLES_H", "#define PL_TABLES_H", "", "#include <stdint.h>", "",
+       f"#define PL_TWAVES {len(WAVES)}", f"#define PL_MIPS {LEVELS}", ""]
+out += arr("pl_wbits", "uint8_t", BITS, "log2 of each level's table length")
+out += ["/* table waves: offset of each level in pl_wt */",
+        f"static const uint32_t pl_woff[{len(WAVES)}][{LEVELS}] = {{"]
+out += ["    { " + ", ".join(str(v) for v in r) + " }," for r in off] + ["};", ""]
+out += arr("pl_wt", "int16_t", wt, "the waves: " + ", ".join(n for n, _ in WAVES) + "; peak 29000", 16)
+out += arr("pl_svf_f", "uint16_t", svf_f, "SVF frequency 2 sin(pi fc / SR), Q15, fc = 20 Hz * 2^(s/12) (capped 14 kHz)")
+out += arr("pl_svf_q", "uint16_t", svf_q, "SVF damping 1/Q, Q14, resonance 0..100")
+out += arr("pl_time_us", "uint32_t", time_us, "envelope / LFO delay times 0..100, microseconds", 8)
+out += arr("pl_lfo_inc", "uint32_t", lfo_inc, "LFO phase step per block (128 samples), rate 0..100 = 0.1 .. 51 Hz", 8)
+out += arr("pl_pitch_st", "int8_t", PITCH, "palette PITCH steps, semitones", 16)
+out += arr("pl_tscale", "uint16_t", TSCALE, "palette TIME: envelope time scale, Q8", 8)
+out += arr("pl_tanh", "int16_t", tnh, "tanh(x), Q14, x = -4 .. 4 in 512 steps of 1/64 (+ guard)", 12)
+out += arr("pl_texp2", "uint32_t", ex2, "2^(i/256), Q16", 8)
+out += arr("pl_tlog2", "uint32_t", lg2, "log2(1 + i/256), Q16", 8)
+out += ["#endif", ""]
+open("pl_tables.h", "w").write("\n".join(out))
+print("waves", len(WAVES), "samples", len(wt), "bytes", 2 * len(wt), "H", H, "bits", BITS)

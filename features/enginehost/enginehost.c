@@ -28,12 +28,14 @@ void eh_register(int tag, eh_render_fn render)
 
 int eh_tag(const volatile int16_t *k)
 {
-    int t = (k[4] >> 12) & 7;
+    int t = (k[4] >> 12) & 7, t8 = (k[7] >> 12) & 7;
 
-    if (t == 0 || t >= EH_TAGS || k[4] < 0)
+    if (t == 0 || k[4] < 0 || k[5] < 0 || k[6] < 0 || k[7] < 0
+        || ((k[5] >> 12) & 7) != t || ((k[6] >> 12) & 7) != t)
         return 0;
-    return ((k[5] >> 12) & 0xf) == t && ((k[6] >> 12) & 0xf) == t && ((k[7] >> 12) & 0xf) == t
-           && k[5] >= 0 && k[6] >= 0 && k[7] >= 0 ? t : 0;
+    if (t8 == t)
+        return t;                               /* tags 1..7: all four slots alike */
+    return t == 7 && t8 >= 1 && t8 <= EH_TAGS - 8 ? 7 + t8 : 0;     /* extended: 7 7 7 x */
 }
 
 static int voice_index(void *self)

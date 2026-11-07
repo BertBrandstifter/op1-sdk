@@ -55,13 +55,18 @@ def main():
     elf_run = os.path.join(OUT, "mallettest_run.elf")
     r = run_model(elf_run, segs, d["_start"], timeout=300)
     vals = run_gdb(elf_run, [f"*(unsigned*){d[s]:#x}" for s in ("_cycles_plain", "_cycles_full", "_cycles_strike")]
+                   + [f"*(unsigned*){d['_cycles_frame'] + 4 * i:#x}" for i in range(8)]
+                   + [f"*(unsigned*){d['_cycles_first'] + 4 * i:#x}" for i in range(8)]
                    + [f"/x *(unsigned*){d['_fails']:#x}"],
                    [(f"mallet_screen_{n}", FB + i * 0x40000) for i, n in enumerate(SHOTS)])
-    if len(vals) == 4 and r.returncode:
-        print(f"failed check bits: {vals[3]}")
+    if len(vals) == 20 and r.returncode:
+        print(f"failed check bits: {vals[19]}")
     if len(vals) >= 3:
         print(f"cycles per voice block (128 samples): MARIMBA {vals[0]}, TUBULAR (6 modes) {vals[1]}, "
               f"TUBULAR strike block {vals[2]}")
+    if len(vals) >= 19:
+        print("cycles per screen frame (first frame of the instrument): "
+              + ", ".join(f"{n} {v} ({w})" for n, v, w in zip(SHOTS, vals[3:11], vals[11:19])))
     print("PASS" if r.returncode == 0 else f"FAIL (exit {r.returncode}; R7 = failed check bits)")
     sys.exit(r.returncode)
 

@@ -8,8 +8,8 @@ next to the bench driver). Checks: plain drwave untouched; the host routes tag 1
 TE's per-sample buffer (SAW, 441 Hz) and note restart; knob push = page 1..4; WAVE A / B one
 multisound per detent; page 1 clamp; 6-bit fields step one per detent and keep tag 1 (B PITCH limited
 to +24); shift + blue = bank (8 entries in range, tag 1); page 4 = FX knobs; "pss-11" -> "drwave" in the
-engine list; screen draw (bank entry 2, page 1, A4 held; SINE PAD on page 4); the keyboard lights a held key's
-voice and clears it on release (TE keeps rendering the voice); P-- title hint; the 1 s title. Prints cycles per voice block.
+engine list; screen draw (bank entry 2, page 1, A4 held; SINE PAD on page 4); the lamps show a held key's
+voice and clear it on release (TE keeps rendering the voice); P-- title hint; the 1 s title. Prints cycles per voice block.
 When build/pss_data.inc exists (gen_pss11.py --pss-rom / --sf2), a second run measures the PSS-11 ROM data: pss_core.c
 alone at 0x00100000 (-O2, as in the image), worst cycles per voice block over keys 36..108 (sounding) for piano,
 clav, harpsichord, organ 2, strings, lore and saw, alone, layered and with every filter / level stage on.
@@ -40,7 +40,7 @@ def main():
         {"STACK": STACK, "_eh_render_" if False else "_wh_te_render": syms["_eh_te_render"], "_wh_te_note_on": syms["_eh_te_note_on"],
          "_compose_init": syms["_compose_init"],
          "_engine_name": syms["_compose_engine_name"], "_pss_page": syms["_pss_page"], "_pss_bank": syms["_pss_bank"], 
-         "_pss_title_on": syms["_pss_title_on"], "_pss_tick": syms["_pss_tick"],
+         "_pss_title_on": syms["_pss_title_on"], "_pss_note_shown": syms["_pss_note_shown"], "_pss_tick": syms["_pss_tick"],
          "_hook_key": syms["__sdk_hook_019b6c74"], "_hook_frame": syms["__sdk_hook_019ab8b2"], "_FB": 0x03000000, "_hook_knob": syms["__sdk_hook_019b6c0c"]},
     )
     segs = [(0x01E00000, code), (DRIVER_AT, driver), (0x03000000, bytes(320 * 512)), (0x03040000, bytes(320 * 512)), (0x03080000, bytes(320 * 512))]

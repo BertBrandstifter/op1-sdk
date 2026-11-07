@@ -1,6 +1,8 @@
 # WHEEL synth engine — spec
 
-Status: **v0.10** (2026-10-22): the cabinet and the console in a 2-pixel yellow frame (the user's
+Status: **v0.11** (2026-10-26): the screen is an amber 8×2 lamp display (after "CHORD · display
+overview"): registration and the knob turned last, the fan = rotary, the drawbar grille, the PERC /
+ROTARY buttons; the knob rows below unchanged (sim-verified). v0.10 (2026-10-22): the cabinet and the console in a 2-pixel yellow frame (the user's
 updated "overview" art). **v0.9** (2026-10-19): page knobs as STATION 1 (name + bar), the sound's name over
 the organ for 1 s, keys lit as STATION 1 (a held key its own note). v0.8 (2026-10-18): new screen after "wheel · overview" (as MONO 3's refresh; see
 **Screen**). v0.7 (2026-10-13): cleaner output. The user heard crackle when notes overlapped; measured:
@@ -93,27 +95,28 @@ and sequencers apply as for any stock engine (use a full-sustain envelope for or
 
 ## Screen
 
-After "wheel · overview" (1280 × 640 = 4 × the OP-1's screen), as MONO 3: no header line, the
-organ smaller with room around it, the page's four knobs below it. The current page's controls are
-in their knob colours (blue, green, white, orange), the rest grey / white.
+After "CHORD · display overview" (1280 × 640 = 4 × the OP-1's screen): the screen is built around an
+amber **8×2 lamp display**, not the whole organ. No header line: the display sits at the top.
 
-- **Air** above the cabinet: three dashed zigzags rising at the horn's speed (eased like the rotor:
-  SLOW → FAST speeds up, OFF stops and dims them).
-- **Cabinet**: its grille = the nine drawbars in three groups, **BASS** (16' 5⅓'), **BODY** (8'
-  4'), **TOP** (2⅔' 2' 1⅗' 1⅓' 1'), each line pulled out by the bar's level (registration +
-  offsets; the 1' bar is 0 with percussion on). Page 1: blue (REG), page 2: each group in its
-  knob's colour.
-- **Console**: the pill = DRIVE; the strip = the registration's digits (`88 80 00000`, the groups
-  split as on the grille) and the page (P1-P3); the buttons = PERC (OFF / 2ND / 3RD; lit full =
-  normal, a dot = soft, a ring = slow) and ROTARY (OFF / SLW / FST); the keyboard C3-C5 lights the
-  held keys as STATION 1 (a held key its own note, the octave from its voice, rounded, so TE's
-  glide / LFO / bend at the note start do not move it; folded into the two octaves; notes without
-  a key, sequencer / MIDI / CHORD+'s extra notes, for ~145 ms).
-- The sound's name over the organ for 1 s when a sound is picked (shift + blue) or the screen opens:
-  STATION 1's LCD (same place, scale-2 text, green): `P02 SOUL JAZZ`, `*` when edited, or `P--` with
-  `SHIFT+BLUE: SOUNDS`. Its clock is the Seq tick (`wh_tick`, 64 samples).
-- Below, as STATION 1: the page's four knob names (scale 2, knob colours) over a bar each, then
-  `PUSH:` the next page. Page 3: the FX knobs (engine host).
+- **Lamps** (gold frame, 8 × 2 cells of 5 × 7 round amber lamps, unlit ones shown): line 1 = the
+  registration (`JAZZ`, `GOSPEL`, `CLARINET`); line 2 = the knob turned last on this page (knob push
+  starts at the blue one): `REG 5`, `PERC 3RD`, `2ND SOFT`, `DRIVE 25`, `ROT SLOW`, `BASS +1`,
+  `CLICK 40`; `FX` on page 3. For 1 s when a sound is picked (shift + blue) or the screen opens: its
+  name, a word a line (`SOUL` / `JAZZ`, `*` = edited), or `P--`. Its clock is the Seq tick
+  (`wh_tick`, 64 samples).
+- **Fan** (left) = the rotary speaker: turns at the horn's speed, eased like the rotor (SLOW → FAST
+  speeds up, OFF stops it); its setting under it (orange on page 1), then the **sounding note**
+  (red LED + `A4`, the lowest): a held key names its own note (the octave from its voice, rounded,
+  so TE's glide / LFO / bend at the note start do not move it); notes without a key (sequencer,
+  MIDI, CHORD+'s extra notes) for ~145 ms.
+- **Grille** (right) = the nine drawbars, **BASS** (16' 5⅓'), **BODY** (8' 4'), **TOP** (2⅔' 2' 1⅗'
+  1⅓' 1'), each line lit by the bar's level (registration + offsets; the 1' bar is 0 with
+  percussion on); page 1 blue, page 2 each group in its knob's colour; the digits under it
+  (`88 80 00000`).
+- **Buttons** under the lamps: **PERC** OFF / 2ND / 3RD (lit full = normal, a dot = soft, a ring =
+  slow) and **ROTARY** OFF / SLW / FST; on page 1 in their knob colours (green, orange), else gold.
+- Below, as STATION 1 (unchanged): the page's four knob names (scale 2, knob colours) over a bar
+  each, then `PUSH:` the next page. Page 3: the FX knobs (engine host).
 
 ## How
 
@@ -147,7 +150,8 @@ in their knob colours (blue, green, white, orange), the rest grey / white.
    buffer (441 Hz), restart, paging hidden from engine_plus/LOFI, page-2 edits keep the marker,
    page-1 clamps at drwave's ranges, shift + knob, other screens, every stored value inside
    drwave's ranges, rename chained with LOFI's, cycle counts, screens (`build/demo/wheel_screen.png`:
-   SOUL JAZZ with A4 C5 E5 held, page 1; `wheel_screen_p2.png`: page 2).
+   SOUL JAZZ with A4 C5 E5 held, page 1; `wheel_screen_p2.png`: page 2), the sounding note shown (held A4, not
+   the voice's G4 start, none after release), the 1 s title.
 3. Demo: `build/demo/wheel_demo.wav` (jazz chords, rotary slow → fast → slow, rock organ).
 
 ## Device test

@@ -37,7 +37,7 @@ def main():
         {"STACK": STACK, "_wh_te_render": syms["_eh_te_render"], "_wh_te_note_on": syms["_eh_te_note_on"],
          "_compose_init": syms["_compose_init"],
          "_engine_name": syms["_compose_engine_name"], "_wh_page": syms["_wh_page"], "_wh_bank": syms["_wh_bank"],
-         "_wh_title_on": syms["_wh_title_on"], "_wh_tick": syms["_wh_tick"],
+         "_wh_title_on": syms["_wh_title_on"], "_wh_note_shown": syms["_wh_note_shown"], "_wh_tick": syms["_wh_tick"],
          "_ep_page": syms["_ep_page"],
          "_hook_key": syms["__sdk_hook_019b6c74"], "_hook_knob": syms["__sdk_hook_019b6c0c"],
          "_hook_frame": syms["__sdk_hook_019ab8b2"], "_FB": 0x03000000},

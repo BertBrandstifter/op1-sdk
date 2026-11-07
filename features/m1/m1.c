@@ -25,8 +25,8 @@
 #define OFF             (-1)
 
 static m1_voice voices[EH_VOICES];
-/* the keyboard picture: a key held on the OP-1 (m1_note_key) is its note (TE plays note index + 53 +
- * 12 x octave); the next new voice tells the octave (its pitch rounded to the nearest octave of the
+/* the sounding notes (the LCD names them): a key held on the OP-1 (m1_note_key) is its note (TE
+ * plays note index + 53 + 12 x octave); the next new voice tells the octave (its pitch rounded to the nearest octave of the
  * note: glide / LFO / bend at the start move it by less than 6 semitones). New voices no held key
  * accounts for (sequencer, MIDI, CHORD+'s extra notes) flash at their pitch for FLASH blocks. TE keeps
  * rendering a voice through its release and beyond, so rendering does not mean sounding. */
@@ -41,11 +41,12 @@ static volatile uint8_t press_seq;
 static volatile int8_t flash_key[EH_VOICES];
 static volatile uint32_t flash_until[EH_VOICES];
 volatile uint8_t m1_page;                       /* 0..3 = page 1..4 (bench reads) */
+static volatile uint8_t touched;                /* the page's knob turned last (the LCD's cursor) */
 static volatile uint8_t consumed;
 volatile int8_t m1_bank = -1;                   /* bench reads */
 static volatile uint8_t bank_edited;
 static volatile int8_t bank_slot = -1;
-static volatile uint8_t own_edited;             /* per sound slot (bit): P-- changed since shown */
+static volatile uint8_t hint_done;              /* a knob was turned since boot: no SHIFT+BLUE hint */
 static int16_t own_knobs[8][8];                 /* per sound slot: P--, the sound before the bank */
 
 static const uint8_t hi_max[4] = { 48, 63, 63, 63 };   /* B PITCH = semitones + 24 */
@@ -300,6 +301,7 @@ int m1_key(int key, int down)
     if (*TE_SHIFT_HELD || !engine_screen_m1())
         return 0;
     m1_page = (uint8_t)(m1_page + 1 < PAGES ? m1_page + 1 : 0);
+    touched = 0;
     consumed |= (uint8_t)(1 << b);
     return 1;
 }
@@ -368,6 +370,8 @@ int m1_knob(int knob, int16_t *diff)
     if ((unsigned int)knob > 3 || !engine_screen_m1())
         return 0;
     k = current(&slot);
+    if (d)
+        hint_done = 1;
     if (*TE_SHIFT_HELD) {                       /* drwave's shift + knob: not on an M1 sound */
         if (knob == 0 && d) {                   /* P-- (the sound as it was), P01 .. Pnn, P-- ... */
             int n, e = bank_slot == slot ? m1_bank : -1, s = d > 0 ? 1 : -1, i;
@@ -387,16 +391,14 @@ int m1_knob(int knob, int16_t *diff)
                 m1_bank = -1;
                 bank_slot = (int8_t)slot;
                 bank_edited = 0;
-                own_edited &= (uint8_t)~(1u << slot);
             }
         }
         return 1;
     }
     if (m1_page == 3)
         return eh_fx_knob(slot, knob, (int16_t)d);
+    touched = (uint8_t)knob;
     bank_edited = 1;
-    if (!(m1_bank >= 0 && bank_slot == slot))
-        own_edited |= (uint8_t)(1u << slot);
     if (m1_page == 0 && knob < 2) {             /* WAVE A / B: one multisound per detent */
         int n = m1_nwaves() + knob, z = (k[knob] < 0 ? 0 : k[knob]) * 2 * n >> 15;
         int step = (d < 0 ? -d : d) >> 10;
@@ -420,122 +422,135 @@ int m1_knob(int knob, int16_t *diff)
     return 1;
 }
 
+
 /* ------------------------------------------------------------------ GUI thread */
 
-/* Screen (spec: README.md "Screen"): the station panel (fader = CUTOFF, LEDs = what is on, LCD =
- * sound / waves, page segments, the page and the MIX bar, knob = the blue knob, keyboard with the
- * sounding keys); below it the current page's four knobs as on every SDK engine. */
+/* Screen (spec: README.md "Screen"): the page LEDs, the 40 x 4 LCD (the program and the sounding
+ * notes; the waves; the page's four knobs in four fields, name over value), the cursor under the
+ * field of the knob turned last; below it the current page's four knobs as on every SDK engine. */
 
 static const char *const labels[12] = {
     "WAVE A", "WAVE B", "MIX", "CUTOFF", "B PITCH", "DETUNE", "F.ENV", "F.DECAY",
     "RES", "KEY TRK", "A DECAY", "B FADE",
 };
 static const char *const page_names[PAGES] = { "WAVES", "PITCH+FILTER", "SHAPE", "FX" };
+static const char *const page_leds[PAGES] = { "WAVES", "PITCH", "SHAPE", "FX" };
 
 #define C_BLUE      GFX_RGB(0x6e, 0x8b, 0xff)
 #define C_GREEN     GFX_RGB(0x3d, 0xdc, 0x97)
 #define C_WHITE     GFX_RGB(0xe6, 0xe6, 0xe6)
 #define C_ORANGE    GFX_RGB(0xff, 0x6a, 0x3d)
 #define C_RED       GFX_RGB(0xff, 0x4f, 0x5e)
+#define C_GREY      GFX_RGB(0x8a, 0x88, 0x98)
 #define C_DIM       GFX_RGB(0x5a, 0x58, 0x66)
 #define C_LINE      GFX_RGB(0x48, 0x46, 0x50)
 #define C_TRACK     GFX_RGB(0x35, 0x32, 0x38)
+#define C_LIME      GFX_RGB(0xc8, 0xe6, 0x3c)  /* the LCD: lit, unlit dots, its glass */
+#define C_LIME_OFF  GFX_RGB(0x1a, 0x20, 0x0c)
+#define C_LIME_BG   GFX_RGB(0x0c, 0x10, 0x06)
 
-#define KEY_LO      36                          /* keyboard C2 .. B6, 35 white keys */
-#define KEY_X       90
-#define KEY_W       5
+#define NOTES       3                           /* sounding notes named on the LCD */
 
-/* 1-pixel outline with cut corners (r = 0: square) */
-static void outline(int x, int y, int w, int h, int r, uint16_t c)
+static const eh_lcd lcd = { 20, 23, 40, 1, 1, 7, 11, C_LIME, C_LIME_OFF };
+
+/* text helpers (no printf) */
+static char *put(char *d, const char *s)
 {
-    int i;
-
-    gfx_rect(x + r, y, w - 2 * r, 1, c);
-    gfx_rect(x + r, y + h - 1, w - 2 * r, 1, c);
-    gfx_rect(x, y + r, 1, h - 2 * r, c);
-    gfx_rect(x + w - 1, y + r, 1, h - 2 * r, c);
-    for (i = 1; i < r; i++) {                   /* the corners as short diagonals */
-        gfx_pixel(x + r - i, y + i, c);
-        gfx_pixel(x + w - 1 - r + i, y + i, c);
-        gfx_pixel(x + r - i, y + h - 1 - i, c);
-        gfx_pixel(x + w - 1 - r + i, y + h - 1 - i, c);
-    }
+    while (*s)
+        *d++ = *s++;
+    *d = 0;
+    return d;
 }
 
-static void led(int x, int y, int lit, uint16_t c)
+static char *put_dec(char *d, int v)
 {
-    if (lit) {
-        gfx_disc(x, y, 2, c);
+    char t[8];
+    int n = 0;
+
+    if (v < 0) {
+        *d++ = '-';
+        v = -v;
+    }
+    do {
+        t[n++] = (char)('0' + v % 10);
+        v /= 10;
+    } while (v);
+    while (n)
+        *d++ = t[--n];
+    *d = 0;
+    return d;
+}
+
+/* a name as the LCD shows it: capitals at the start of a word, small letters after (M1 Piano) */
+static char *put_name(char *d, const char *s)
+{
+    int first = 1;
+
+    for (; *s; s++) {
+        char c = *s;
+
+        *d++ = !first && c >= 'A' && c <= 'Z' ? (char)(c + 32) : c;
+        first = !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'));
+    }
+    *d = 0;
+    return d;
+}
+
+/* the value of parameter q in a field of the LCD's last line (9 cells): waves by name */
+static void lcd_value(char *t, int q, const int16_t *p)
+{
+    int v;
+
+    if (q == M1_WAVE_A || q == M1_WAVE_B) {
+        if (put_name(t, m1_wave_name(q == M1_WAVE_A ? m1_wave_of(p[q]) : m1_waveb_of(p[q]))) - t > 9)
+            t[9] = 0;
+    } else if (q == M1_BPITCH) {
+        v = m1_semis_of(p[q]);
+        put_dec(put(t, v > 0 ? "+" : ""), v);
     } else {
-        gfx_disc(x, y, 2, C_WHITE);
-        gfx_disc(x, y, 1, GFX_BLACK);
+        put_dec(t, p[q] * 100 >> 15);
     }
 }
 
-static void line(int x0, int y0, int x1, int y1, uint16_t c)
+/* the sounding notes (held keys with their voice's pitch, flashing voices), lowest first: A4 C#5 */
+static void notes(char *t)
 {
-    int dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = y1 > y0 ? y1 - y0 : y0 - y1;
-    int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, e = dx - dy, e2;
-
-    for (;;) {
-        gfx_pixel(x0, y0, c);
-        if (x0 == x1 && y0 == y1)
-            break;
-        e2 = 2 * e;
-        if (e2 > -dy) { e -= dy; x0 += sx; }
-        if (e2 < dx) { e += dx; y0 += sy; }
-    }
-}
-
-static void light(uint8_t *on, int k)          /* folded into C2 .. B6 */
-{
-    if (k < 0)
-        return;
-    while (k < KEY_LO)
-        k += 12;
-    while (k >= KEY_LO + 60)
-        k -= 12;
-    on[k - KEY_LO] = 1;
-}
-
-/* the keys held (with their voice's pitch) and the voices flashing */
-static void sounding(uint8_t *on)
-{
+    static const char *const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
     uint32_t now = blocks;
-    int i;
+    int key[HELD + EH_VOICES], n = 0, i, j, k;
+    char *d = t;
 
-    for (i = 0; i < 60; i++)
-        on[i] = 0;
-    for (i = 0; i < HELD; i++)
-        if (held_id[i])
-            light(on, held_key[i]);
-    for (i = 0; i < EH_VOICES; i++)
-        if ((int32_t)(flash_until[i] - now) > 0)
-            light(on, flash_key[i]);
+    for (i = 0; i < HELD + EH_VOICES; i++) {
+        k = i < HELD ? (held_id[i] ? held_key[i] : -1)
+                     : (int32_t)(flash_until[i - HELD] - now) > 0 ? flash_key[i - HELD] : -1;
+        if (k < 0 || k > 127)
+            continue;
+        for (j = 0; j < n && key[j] != k; j++)
+            ;
+        if (j == n)
+            key[n++] = k;
+    }
+    for (i = 1; i < n; i++)                     /* sort */
+        for (j = i; j > 0 && key[j - 1] > key[j]; j--) {
+            k = key[j];
+            key[j] = key[j - 1];
+            key[j - 1] = k;
+        }
+    *d = 0;
+    for (i = n > NOTES ? n - NOTES : 0; i < n; i++) {
+        if (d != t)
+            d = put(d, " ");
+        d = put_dec(put(d, nn[key[i] % 12]), key[i] / 12 - 1);
+    }
 }
 
-static void keyboard(int y0, int y1)
+static int len(const char *s)
 {
-    static const int8_t white_of[12] = { 0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6 };
-    uint8_t on[60];
-    int k, split = y0 + (y1 - y0) * 3 / 5;
+    int n = 0;
 
-    sounding(on);
-    gfx_rect(KEY_X, y0, 35 * KEY_W + 1, 1, C_WHITE);
-    for (k = 0; k <= 35; k++)                   /* white key borders */
-        gfx_rect(KEY_X + k * KEY_W, y0 + 1, 1, y1 - y0 - 1, C_LINE);
-    for (k = 0; k < 60; k++) {
-        int o = k / 12, n = k % 12, w = white_of[n];
-
-        if (w >= 0) {                           /* a sounding white key: its lower part */
-            if (on[k])
-                gfx_rect(KEY_X + (o * 7 + w) * KEY_W + 1, split, KEY_W - 1, y1 - split, C_GREEN);
-        } else {                                /* black keys between the white ones */
-            int x = KEY_X + (o * 7 + white_of[n - 1] + 1) * KEY_W - (KEY_W - 2) / 2;
-
-            gfx_rect(x, y0 + 1, KEY_W - 2, split - y0 - 1, on[k] ? C_GREEN : C_WHITE);
-        }
-    }
+    while (s[n])
+        n++;
+    return n;
 }
 
 void m1_frame(uint16_t *buf)
@@ -547,10 +562,10 @@ void m1_frame(uint16_t *buf)
     };
     int16_t p[M1_PARAMS];
     volatile int16_t *k;
-    int slot, i, x, pg = m1_page, wb, s, n, own;
+    int slot, i, x, pg = m1_page, n, own, cx;
     const bank_entry *b;
     const char *ld;
-    char txt[24];
+    char txt[48], *d;
 
     if (!engine_screen_m1())
         return;
@@ -558,86 +573,65 @@ void m1_frame(uint16_t *buf)
     unpack(k, p);
     b = bank(&n);
     own = m1_bank >= 0 && m1_bank < n && bank_slot == slot;
-    wb = m1_waveb_of(p[M1_WAVE_B]);
-    s = m1_semis_of(p[M1_BPITCH]);
 
     gfx_begin(buf);
     gfx_rect(0, 0, gfx_w, 140, GFX_BLACK);
 
-    /* the station (253 x 81, centred): upper half fader, LEDs, LCD, page + MIX; lower half knob and
-     * keyboard */
-    outline(34, 4, 253, 81, 3, C_BLUE);         /* the case: a 2-pixel blue frame */
-    outline(35, 5, 251, 79, 2, C_BLUE);
-    gfx_rect(36, 42, 249, 1, C_LINE);
-    gfx_rect(46, 9, 1, 28, C_WHITE);            /* fader = CUTOFF */
-    gfx_rect(43, 33 - p[M1_CUTOFF] * 24 / 32767, 7, 3, C_WHITE);
-    led(60, 11, 1, C_RED);                      /* A, B, F.ENV, RES on */
-    led(60, 17, wb >= 0, C_RED);
-    led(60, 23, p[M1_FENV] > 0, C_RED);
-    led(60, 29, p[M1_RES] > 0, C_RED);
-    for (i = 0; i < 4; i++)
-        led(66, 11 + 6 * i, 0, C_RED);
+    for (i = 0; i < PAGES; i++) {               /* the page LEDs (red = this page), PAGE - / + */
+        x = 10 + i * 40;
+        gfx_disc(x, 6, 2, i == pg ? C_RED : C_GREY);
+        gfx_text(x + 6, 4, page_leds[i], i == pg ? C_WHITE : C_GREY, 1);
+    }
+    eh_frame(243, 1, 33, 11, 2, 1, C_WHITE, GFX_BLACK);
+    gfx_text(249, 4, "PAGE -", C_WHITE, 1);
+    eh_frame(279, 1, 33, 11, 2, 1, C_WHITE, GFX_BLACK);
+    gfx_text(285, 4, "PAGE +", C_WHITE, 1);
 
-    outline(74, 7, 142, 26, 2, C_GREEN);        /* LCD: the sound, the waves */
-    if (own) {                                  /* P01 M1 PIANO / A PIANO  B STRINGS +12 */
-        x = gfx_text(79, 11, "P", C_GREEN, 2);
-        x = gfx_text(x, 11, m1_bank < 9 ? "0" : "", C_GREEN, 2);
-        x = gfx_dec(x, 11, m1_bank + 1, C_GREEN, 2);
-        x = gfx_text(x + 8, 11, b[(int)m1_bank].name, C_GREEN, 2);
+    /* the LCD: PROG P02  M1 Piano* ... A4 C#5 / empty (how to browse until a knob turns; the
+     * loader) / the page's four knobs, name over value */
+    eh_frame(8, 15, 304, 55, 5, 2, C_BLUE, C_LIME_BG);
+    eh_lcd_blank(&lcd, 4);
+    d = put(txt, "PROG ");
+    if (own) {
+        d = put_dec(put(d, m1_bank < 9 ? "P0" : "P"), m1_bank + 1);
+        d = put_name(put(d, "  "), b[(int)m1_bank].name);
         if (bank_edited)
-            gfx_text(x, 11, "*", C_GREEN, 2);
-        x = gfx_text(79, 24, "A ", C_GREEN, 1);
-        x = gfx_text(x, 24, m1_wave_name(m1_wave_of(p[M1_WAVE_A])), C_GREEN, 1);
-        x = gfx_text(x + 6, 24, "B ", C_GREEN, 1);
-        x = gfx_text(x, 24, m1_wave_name(wb), C_GREEN, 1);
-        if (wb >= 0 && s)
-            gfx_dec(gfx_text(x + 4, 24, s > 0 ? "+" : "", C_GREEN, 1), 24, s, C_GREEN, 1);
-    } else {                                    /* P--: the sound itself; wave A, where the bank is */
-        x = gfx_text(79, 11, "P-- ", C_GREEN, 2);
-        gfx_text(x, 11, m1_wave_name(m1_wave_of(p[M1_WAVE_A])), C_GREEN, 2);
-        if (own_edited >> slot & 1) {           /* once changed: wave B, as on a bank sound */
-            x = gfx_text(79, 24, "B ", C_GREEN, 1);
-            x = gfx_text(x, 24, m1_wave_name(wb), C_GREEN, 1);
-            if (wb >= 0 && s)
-                gfx_dec(gfx_text(x + 4, 24, s > 0 ? "+" : "", C_GREEN, 1), 24, s, C_GREEN, 1);
-        } else {
-            gfx_text(79, 24, "SHIFT+BLUE: SOUNDS", C_GREEN, 1);
+            put(d, "*");
+    } else {
+        put_name(put(d, "P--  "), m1_wave_name(m1_wave_of(p[M1_WAVE_A])));
+    }
+    eh_lcd_text(&lcd, 0, 0, txt, C_LIME);
+    notes(txt);
+    eh_lcd_text(&lcd, 0, 40 - len(txt), txt, C_LIME);
+
+    if ((ld = load_text(txt)) != 0) {           /* the sample data is not there (yet) */
+        eh_lcd_text(&lcd, 1, 0, ld, m1_load == LD_READING || m1_load == LD_IDLE ? C_LIME : C_RED);
+    } else if (!hint_done) {                    /* until the first knob turn; then the line stays dark */
+        eh_lcd_text(&lcd, 1, 0, "SHIFT+BLUE: SOUNDS", C_LIME);
+    }
+    if (pg == 3) {
+        eh_lcd_text(&lcd, 2, 0, "FX", C_LIME);
+    } else {
+        for (i = 0; i < 4; i++) {
+            eh_lcd_text(&lcd, 2, i * 10, labels[page_param[pg][i]], C_LIME);
+            lcd_value(txt, page_param[pg][i], p);
+            eh_lcd_text(&lcd, 3, i * 10, txt, C_LIME);
         }
     }
-    if ((ld = load_text(txt)) != 0) {           /* the sample data is not there (yet) */
-        gfx_rect(76, 23, 138, 8, GFX_BLACK);
-        gfx_text(79, 24, ld, m1_load == LD_READING || m1_load == LD_IDLE ? C_GREEN : C_RED, 1);
+
+    /* the cursor: a segment under each field, filled in its knob's colour under the knob turned
+     * last; the page's name between two lines */
+    for (i = 0; i < 4; i++) {
+        cx = lcd.x + i * 10 * lcd.adv + (9 * lcd.adv - 2) / 2;
+        if (pg < 3 && i == touched)
+            eh_rrect(cx - 10, 74, 20, 4, 1, col[i]);
+        else
+            eh_frame(cx - 10, 74, 20, 4, 1, 1, C_GREY, GFX_BLACK);
     }
-    for (i = 0; i < PAGES; i++)                 /* the pages */
-        gfx_rect(88 + i * 30, 36, 22, 2, i == pg ? C_BLUE : C_DIM);
-
-    for (i = 0; i < 12; i++)                    /* A DECAY, B FADE, KEY TRK on */
-        led(226 + 6 * (i % 3), 11 + 6 * (i / 3), (i == 9 && p[M1_ADECAY] > 0) || (i == 10 && p[M1_BFADE] > 0)
-            || (i == 11 && p[M1_KEYTRK] > 0), C_RED);
-    x = gfx_text(253, 8, "P", C_RED, 2);        /* the page, above the MIX bar */
-    gfx_dec(x, 8, pg + 1, C_RED, 2);
-    outline(251, 22, 22, 5, 0, C_BLUE);         /* MIX */
-    if (wb >= 0)
-        gfx_rect(252, 23, 1 + p[M1_MIX] * 19 / 32767, 3, C_BLUE);
-    led(255, 32, wb >= 0, C_GREEN);             /* B sounds */
-
-    outline(42, 48, 30, 31, 3, C_LINE);         /* knob: the blue knob of this page */
-    {
-        int q = pg < 3 ? p[page_param[pg][0]] : 16384, a = q * 270 / 32767;  /* -135 .. +135 deg */
-        int dx, dy;
-        static const int8_t sn[19] = { 0, 9, 17, 26, 34, 42, 50, 57, 64, 71, 77, 82, 87, 91, 94, 97, 98,
-                                       100, 100 };       /* sin(5 deg * i) x 100, i = 0 .. 18 */
-
-        a -= 135;                               /* 0 deg = up */
-        i = a < 0 ? -a : a;
-        dx = (i >= 90 ? sn[18] : sn[i / 5]) * (a < 0 ? -1 : 1);
-        dy = i >= 90 ? sn[(i - 90) / 5] : -sn[(90 - i) / 5];
-        gfx_disc(57, 63, 8, C_BLUE);
-        gfx_disc(57, 63, 7, GFX_BLACK);
-        line(57, 63, 57 + dx * 7 / 100, 63 + dy * 7 / 100, C_BLUE);
-        gfx_disc(57 + dx * 8 / 100, 63 + dy * 8 / 100, 2, C_BLUE);
-    }
-    keyboard(48, 79);                           /* ~18 px left and right, 5 px above and below */
+    n = len(page_names[pg]) * 4 - 1;
+    gfx_rect(24, 86, 136 - n / 2, 1, C_LINE);
+    gfx_text(160 - n / 2, 84, page_names[pg], C_GREY, 1);
+    gfx_rect(166 + n / 2, 86, 130 - n / 2, 1, C_LINE);
 
     /* the page's four knobs (as every SDK engine) */
     if (pg == 3) {                              /* page 4: the sound's FX knobs (engine host) */

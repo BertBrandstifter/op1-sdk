@@ -337,10 +337,12 @@ void ml_tick(void)
 /* ------------------------------------------------------------------ GUI thread */
 
 /* Screen (spec: README.md "Screen"), after the "MALLET · <instrument>" art (1280 x 640 = 4 x the
- * screen), drawn from lines and ellipses (no bitmaps), without the art's header: the instrument
- * with the sounding notes lit and the mallet on the newest one, centred above the knob row; for 1 s after a sound is picked (or the screen opens) its name over the instrument,
- * as STATION 1's LCD; below it the page's four knobs: name and bar (as STATION 1). Bars (marimba,
- * vibraphone, glockenspiel), pans (steelpan, handpan) and the rest share their drawing code. */
+ * screen), drawn from antialiased lines, ellipses and rounded boxes (no bitmaps), without the
+ * art's header: the instrument with the sounding notes lit and the mallet on the newest one,
+ * centred above the knob row; for 1 s after a sound is picked (or the screen opens) its name over
+ * the instrument, as STATION 1's LCD; below it the page's four knobs: name and bar (as STATION 1).
+ * Bars (marimba, vibraphone, glockenspiel), pans (steelpan, handpan) and the rest share their
+ * drawing code. */
 
 static const char *const labels[ML_PARAMS] = {
     "INSTR", "MALLET", "DECAY", "STRIKE", "MOTOR", "TUBE", "DETUNE", "TONE",
@@ -368,38 +370,49 @@ static const char *const page_names[PAGES] = { "MALLET", "BAR", "FX" };
 static int oy;
 static void rect(int x, int y, int w, int h, uint16_t c) { gfx_rect(x, y + oy, w, h, c); }
 static void pixel(int x, int y, uint16_t c) { gfx_pixel(x, y + oy, c); }
-static void disc(int x, int y, int r, uint16_t c) { gfx_disc(x, y + oy, r, c); }
 
-static void outline(int x, int y, int w, int h, int r, uint16_t c)
+/* the shapes: antialiased (engine host, eh_aa.c), oy as eh_aa_dy */
+static int iabs(int v) { return v < 0 ? -v : v; }
+static void seg(int x0, int y0, int x1, int y1, int hw, uint16_t c) { eh_aa_line(x0, y0, x1, y1, hw, c); }
+static void plot(int x, int y, uint16_t c, int a) { eh_aa_plot(x, y, c, a); }
+static void frame(int x, int y, int w, int h, int r, int t, uint16_t c) { eh_aa_frame(x, y, w, h, r, t, c); }
+static void rbox(int x, int y, int w, int h, int r, uint16_t c) { eh_aa_box(x, y, w, h, r, c); }
+
+static void ell(int cx, int cy, int a, int b, int hw, int s0, int s1, int dash, uint16_t c)
 {
-    int i;
-
-    rect(x + r, y, w - 2 * r, 1, c);
-    rect(x + r, y + h - 1, w - 2 * r, 1, c);
-    rect(x, y + r, 1, h - 2 * r, c);
-    rect(x + w - 1, y + r, 1, h - 2 * r, c);
-    for (i = 1; i < r; i++) {
-        pixel(x + r - i, y + i, c);
-        pixel(x + w - 1 - r + i, y + i, c);
-        pixel(x + r - i, y + h - 1 - i, c);
-        pixel(x + w - 1 - r + i, y + h - 1 - i, c);
-    }
+    eh_aa_ellipse(cx, cy, a, b, hw, s0, s1, dash, c);
 }
 
+/* the shapes in whole pixels: 1 px lines / outlines, 2 px (thick, ring2), filled (disc, blob) */
+static void outline(int x, int y, int w, int h, int r, uint16_t c) { frame(x, y, w, h, r, 1, c); }
+static void pill(int x, int y, int w, int h, uint16_t c) { frame(x, y, w, h, (w - 1) / 2, 1, c); }
 static void line(int x0, int y0, int x1, int y1, uint16_t c)
 {
-    int dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = y1 > y0 ? y1 - y0 : y0 - y1;
-    int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, e = dx - dy, e2;
-
-    for (;;) {
-        pixel(x0, y0, c);
-        if (x0 == x1 && y0 == y1)
-            break;
-        e2 = 2 * e;
-        if (e2 > -dy) { e -= dy; x0 += sx; }
-        if (e2 < dx) { e += dx; y0 += sy; }
-    }
+    seg(x0 * 16, y0 * 16, x1 * 16, y1 * 16, 8, c);
 }
+
+static void thick(int x0, int y0, int x1, int y1, uint16_t c)
+{
+    int ox = iabs(y1 - y0) > iabs(x1 - x0) ? 8 : 0;    /* 2 px: below a flat line, right of a steep one */
+
+    seg(x0 * 16 + ox, y0 * 16 + 8 - ox, x1 * 16 + ox, y1 * 16 + 8 - ox, 16, c);
+}
+
+static void arc(int cx, int cy, int rx, int ry, int a0, int a1, int dash, uint16_t c)
+{
+    ell(cx * 16, cy * 16, rx * 16, ry * 16, 8, a0, a1, dash, c);
+}
+
+static void ring(int cx, int cy, int rx, int ry, uint16_t c) { arc(cx, cy, rx, ry, 0, 128, 0, c); }
+static void ring2(int cx, int cy, int rx, int ry, uint16_t c)
+{
+    ell(cx * 16, cy * 16, rx * 16 - 8, ry * 16 - 8, 16, 0, 128, 0, c);
+}
+static void blob(int cx, int cy, int rx, int ry, uint16_t c)
+{
+    ell(cx * 16, cy * 16, rx * 16 + 8, ry * 16 + 8, -1, 0, 128, 0, c);
+}
+static void disc(int x, int y, int r, uint16_t c) { blob(x, y, r, r, c); }
 
 /* sin(90 deg * i / 32) x 256: a turn is 128 steps, 0 = right, 32 = down, 64 = left, 96 = up */
 static const uint8_t qs[33] = {
@@ -412,62 +425,6 @@ static int sin128(int a)
     a &= 127;
     return a < 32 ? qs[a] : a < 64 ? qs[64 - a] : a < 96 ? -qs[a - 64] : -qs[128 - a];
 }
-
-/* ellipse outline from step a0 to a1 (128 a turn), dashed when dash (every other 4 steps) */
-static void arc(int cx, int cy, int rx, int ry, int a0, int a1, int dash, uint16_t c)
-{
-    int a, x0 = cx + rx * sin128(a0 + 32) / 256, y0 = cy + ry * sin128(a0) / 256;
-
-    for (a = a0 + 2; a <= a1; a += 2) {
-        int x1 = cx + rx * sin128(a + 32) / 256, y1 = cy + ry * sin128(a) / 256;
-
-        if (!dash || ((a >> 2) & 1))
-            line(x0, y0, x1, y1, c);
-        x0 = x1;
-        y0 = y1;
-    }
-}
-
-static void ring(int cx, int cy, int rx, int ry, uint16_t c)
-{
-    if (rx == ry && rx <= 4) {                  /* small circles: rounder from two discs */
-        disc(cx, cy, rx, c);
-        disc(cx, cy, rx - 1, GFX_BLACK);
-    } else {
-        arc(cx, cy, rx, ry, 0, 128, 0, c);
-    }
-}
-static void ring2(int cx, int cy, int rx, int ry, uint16_t c) { ring(cx, cy, rx, ry, c); ring(cx, cy, rx - 1, ry - 1, c); }
-
-static int isqrt(int v)
-{
-    int r = 0, b = 1 << 14;
-
-    while (b > v)
-        b >>= 2;
-    for (; b; b >>= 2)
-        if (v >= r + b) {
-            v -= r + b;
-            r = (r >> 1) + b;
-        } else {
-            r >>= 1;
-        }
-    return r;
-}
-
-static void blob(int cx, int cy, int rx, int ry, uint16_t c)          /* filled ellipse */
-{
-    int y;
-
-    for (y = -ry; y <= ry; y++) {
-        int dx = rx * isqrt(ry * ry - y * y) / (ry ? ry : 1);
-
-        rect(cx - dx, cy + y, 2 * dx + 1, 1, c);
-    }
-}
-
-static void pill(int x, int y, int w, int h, uint16_t c) { outline(x, y, w, h, h > 6 ? 2 : 1, c); }
-static void thick(int x0, int y0, int x1, int y1, uint16_t c) { line(x0, y0, x1, y1, c); line(x0, y0 + 1, x1, y1 + 1, c); }
 
 /* waves round a struck note: two dashed arcs above it (dir 0) or one either side (dir 1) */
 static void waves(int cx, int cy, int r, int dir, uint16_t c)
@@ -487,8 +444,7 @@ static void waves(int cx, int cy, int r, int dir, uint16_t c)
 /* the mallet: its head on (x, y), the stick out to (x + dx, y + dy) */
 static void mallet(int x, int y, int dx, int dy, int r, uint16_t head)
 {
-    line(x, y, x + dx, y + dy, C_WHITE);
-    line(x + 1, y, x + dx + 1, y + dy, C_WHITE);
+    seg(x * 16 + 8, y * 16, (x + dx) * 16 + 8, (y + dy) * 16, 16, C_WHITE);
     disc(x, y, r, head);
 }
 
@@ -557,13 +513,11 @@ static void bars(int instr, const uint8_t *on, int newest, int16_t tube, int mot
     int glock = instr == ML_GLOCK, i, hx = 0, hy = 0;
 
     if (glock) {
-        outline(35, 25, 251, 58, 4, fc);
-        outline(36, 26, 249, 56, 3, fc);
+        frame(35, 25, 251, 58, 5, 2, fc);
         outline(150, 21, 21, 5, 2, fc);         /* the handle */
         rect(36, 51, 249, 1, C_LINE);
     } else {
-        outline(28, 23, 259, 56, 2, fc);
-        outline(29, 24, 257, 54, 1, fc);
+        frame(28, 23, 259, 56, 3, 2, fc);
         rect(28, 78, 2, 14, fc);            /* legs */
         rect(285, 78, 2, 14, fc);
         ring(29, 93, 2, 2, C_WHITE);
@@ -592,8 +546,8 @@ static void bars(int instr, const uint8_t *on, int newest, int16_t tube, int mot
                     blob(x + 6, 85, ((col & 1) ^ (motor > 0)) ? 3 : 1, ((col & 1) ^ (motor > 0)) ? 1 : 2, C_BLUE);
             }
         }
-        rect(x, y, w, h, on[i] ? lit : GFX_BLACK);   /* in front of the rails */
-        outline(x, y, w, h, 1, on[i] ? lit : sharp ? C_GREY : C_WHITE);
+        rbox(x, y, w, h, 2, on[i] ? lit : GFX_BLACK);   /* in front of the rails */
+        outline(x, y, w, h, 2, on[i] ? lit : sharp ? C_GREY : C_WHITE);
         if (glock)
             rect(x + w / 2 - 1, y + 3, 2, 2, C_TEAL);
         if (i == newest) {
@@ -642,8 +596,8 @@ static void xylo(const uint8_t *on, int newest)
         for (k = 0; k < 25; k++)
             if (on[k] && col_of(k) == i)
                 lit = 1;
-        rect(x, yt, 11, yb - yt, lit ? C_GREEN : GFX_BLACK);  /* in front of the rails */
-        outline(x, yt, 11, yb - yt, 1, lit ? C_GREEN : C_WHITE);
+        rbox(x, yt, 11, yb - yt, 2, lit ? C_GREEN : GFX_BLACK);  /* in front of the rails */
+        outline(x, yt, 11, yb - yt, 2, lit ? C_GREEN : C_WHITE);
         rect(x + 4, yt + 3, 2, 2, C_YELLOW);
         rect(x + 4, yb - 5, 2, 2, C_YELLOW);
         if (newest >= 0 && col_of(newest) == i) {
@@ -701,8 +655,7 @@ static void pans(int instr, const uint8_t *on, int newest)
         arc(232, 34, 34, 4, 0, 128, 1, C_GREY);
         thick(182, 34, 182, 70, pc);
         thick(281, 34, 281, 70, pc);
-        arc(232, 70, 50, 9, 0, 64, 0, pc);
-        arc(232, 71, 50, 9, 0, 64, 0, pc);
+        ell(232 * 16, 70 * 16 + 8, 50 * 16, 9 * 16, 16, 0, 64, 0, pc);
         line(190, 74, 207, 91, C_GREY);
         line(274, 74, 257, 91, C_GREY);
         line(198, 84, 266, 84, C_GREY);
@@ -745,14 +698,16 @@ static void pans(int instr, const uint8_t *on, int newest)
     arc(230, 76, 28, 9, 8, 56, 1, C_PURPLE);
 }
 
+/* the kalimba's ringing at half pixel t2 (1/16 px): 12 px decaying to 1.5, 10 steps a pixel */
+static int ring_y(int t2) { return 66 * 16 + (192 - t2 * 4 / 3) * sin128(t2 * 5) / 256; }
+
 /* kalimba: the board with 17 tines (C3 .. E5's naturals: the lowest in the middle, then
  * alternating out), the sound hole; beside it a tine from the side and its ringing */
 static void kalimba(const uint8_t *on, int newest)
 {
     int n, i;
 
-    outline(90, 22, 141, 71, 7, C_WHITE);
-    outline(91, 23, 139, 69, 6, C_WHITE);
+    frame(90, 22, 141, 71, 8, 2, C_WHITE);
     rect(100, 28, 121, 1, C_GREY);
     rect(97, 32, 127, 2, C_GREY);           /* the bridge */
     for (n = 0; n < 17; n++) {
@@ -779,10 +734,16 @@ static void kalimba(const uint8_t *on, int newest)
     gfx_text(43, 78 + oy, "SIDE", C_GREY, 1);
     /* its ringing: a decaying sine */
     rect(240, 66, 63, 1, C_LINE);
-    for (i = 0; i < 62; i++) {
-        int a = 12 - i / 6, y0 = 66 + a * sin128(i * 10) / 256, y1 = 66 + a * sin128(i * 10 + 10) / 256;
+    for (i = 0; i < 63; i++) {                  /* a span per column (1/16 px): no pixel twice */
+        int y0 = ring_y(2 * i - 1), y1 = ring_y(2 * i), y2 = ring_y(2 * i + 1), lo, hi, py;
 
-        line(240 + i, y0, 241 + i, y1, C_RED);
+        lo = (y0 < y1 ? (y0 < y2 ? y0 : y2) : (y1 < y2 ? y1 : y2)) - 8;
+        hi = (y0 > y1 ? (y0 > y2 ? y0 : y2) : (y1 > y2 ? y1 : y2)) + 8;
+        for (py = (lo - 8) >> 4; py <= (hi + 23) >> 4; py++) {
+            int t = py * 16 - 8 < lo ? lo : py * 16 - 8, b = py * 16 + 8 > hi ? hi : py * 16 + 8;
+
+            plot(240 + i, py, C_RED, (b - t) * 16);
+        }
     }
 }
 
@@ -808,7 +769,7 @@ static void tubular(const uint8_t *on, int newest)
                 lit = 1;
         rect(x + 4, 28, 1, 6, C_GREY);
         if (lit)
-            rect(x, 34, 9, len, C_GREEN);
+            rbox(x, 34, 9, len, 4, C_GREEN);
         pill(x, 34, 9, len, lit ? C_GREEN : C_WHITE);
         rect(x + 1, 37, 7, 1, lit ? GFX_BLACK : C_WHITE);   /* the cap */
         if (newest >= 0 && newest % 12 == k) {
@@ -862,6 +823,7 @@ void ml_frame(uint16_t *buf)
 {
     static const uint16_t col[4] = { C_BLUE, C_GREEN, C_WHITE, C_ORANGE };
     static int8_t shown = -1;                   /* the sound slot the screen showed last frame */
+    static int8_t drawn = -1;                   /* the instrument it drew (its shapes kept) */
     int16_t p[ML_PARAMS];
     uint8_t on[KEYS_MAX];
     volatile int16_t *k;
@@ -881,13 +843,19 @@ void ml_frame(uint16_t *buf)
     instr = ml_instr(p[ML_INSTR]);
     motor = p[ML_MOTOR] < 300 ? 0 : (int32_t)motor_ph < 0 ? 1 : -1;
     newest = sounding(on, instr == ML_KALIMBA ? KEYS_MAX : 25);
+    if (instr != drawn) {
+        drawn = (int8_t)instr;
+        eh_aa_forget();
+    }
 
     gfx_begin(buf);
+    eh_aa_begin(buf);
     gfx_rect(0, 0, gfx_w, 140, GFX_BLACK);
 
     /* the instrument, centred between the top and the knob row (its body's middle at y 48) */
     oy = instr == ML_MARIMBA || instr == ML_VIBES ? -11 : instr == ML_GLOCK ? -4 : instr == ML_XYLO ? -8
          : instr == ML_TUBULAR || instr == ML_KALIMBA ? -10 : -9;
+    eh_aa_dy = oy;
     switch (instr) {
     case ML_XYLO:     xylo(on, newest); break;
     case ML_STEELPAN:
@@ -896,7 +864,7 @@ void ml_frame(uint16_t *buf)
     case ML_TUBULAR:  tubular(on, newest); break;
     default:          bars(instr, on, newest, p[ML_TUBE], motor); break;
     }
-    oy = 0;
+    oy = eh_aa_dy = 0;
     title(slot);
 
     /* the page's four knobs: name and bar (as STATION 1), the page at the right */

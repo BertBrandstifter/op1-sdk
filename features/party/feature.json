@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "party",
   "title": "PARTY synth engine (Yamaha PSS-11: the GEW7 AWM tone generator, recreated)",
-  "version": "0.2",
+  "version": "0.4",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
@@ -11,7 +11,7 @@
   "prefix": [
     "pss_"
   ],
-  "summary": "Pick PARTY in the engine list or the 'party' preset: the Yamaha PortaSound PSS-11's AWM tone generator (GEW7) recreated after MAME's gew.cpp / gew7.cpp (BSD-3, see NOTICE): its 8- and 12-bit samples played as stored, per-sample envelope (attack, decay 1, decay level, decay 2, key scaling, 96 dB exponential level) and LFO (vibrato, tremolo, reverse start), tested against MAME's per-chip-sample code. Two layers (A/B), mix, low-pass filter with envelope, resonance, key tracking, A decay and B fade-in, bank on shift + blue turn; a live PARTY keyboard screen (voice list, knob, buttons, keys lit as they sound) above the STATION 1-style parameter rows. No Yamaha data ships: without a ROM dump it plays 8 own built-in waves; gen_pss11.py --pss-rom turns the user's own PSS-11/21/31 or PSR-75 ROM (xl437a00.ic4) into a library of every sample-table sound. Sample data is a content file loaded into TE's sample memory, not the SDK region.",
+  "summary": "Pick PARTY in the engine list or the 'party' preset: the Yamaha PortaSound PSS-11's AWM tone generator (GEW7) recreated after MAME's gew.cpp / gew7.cpp (BSD-3, see NOTICE): its 8- and 12-bit samples played as stored, per-sample envelope (attack, decay 1, decay level, decay 2, key scaling, 96 dB exponential level) and LFO (vibrato, tremolo, reverse start), tested against MAME's per-chip-sample code. Two layers (A/B), mix, low-pass filter with envelope, resonance, key tracking, A decay and B fade-in, bank on shift + blue turn; a PARTY LCD 16x2 screen (the sound, the knob turned last, lamps for B / MIX / the sounding notes, knob, SELECT buttons; knob and buttons antialiased) above the STATION 1-style parameter rows. No Yamaha data ships: without a ROM dump it plays 8 own built-in waves; gen_pss11.py --pss-rom turns the user's own PSS-11/21/31 or PSR-75 ROM (xl437a00.ic4) into a library of every sample-table sound. Sample data is a content file loaded into TE's sample memory, not the SDK region.",
   "license": "MIT",
   "authors": [
     "unknown"

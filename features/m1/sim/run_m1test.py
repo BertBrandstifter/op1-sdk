@@ -8,7 +8,7 @@ next to the bench driver). Checks: plain drwave untouched; the host routes tag 3
 TE's per-sample buffer (SAW, 441 Hz) and note restart; knob push = page 1..4; WAVE A / B one
 multisound per detent; page 1 clamp; 6-bit fields step one per detent and keep tag 3 (B PITCH limited
 to +24); shift + blue = bank (8 entries in range, tag 3); page 4 = FX knobs; "station 1" -> "drwave" in the
-engine list; screen draw (bank entry 2, page 1; SINE PAD on page 4); the keyboard lights a held key's
+engine list; screen draw (bank entry 2, page 1; SINE PAD on page 4); the LCD names a held key's
 voice and clears it on release (TE keeps rendering the voice). Prints cycles per voice block.
 When build/m1_data.inc exists (gen_m1.py --rom / --sf2), a second run measures the SoundFont data: m1_core.c
 alone at 0x00100000 (-O2, as in the image), worst cycles per voice block over keys 36..108 (sounding) for piano,

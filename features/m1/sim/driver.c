@@ -74,6 +74,7 @@ static void name(te_string *s, const char *n)
 #define CHECK(bit, c) do { if (!(c)) fails |= 1 << (bit); } while (0)
 #define K(i)        TE_SYNTH_KNOBS[2 * 8 + (i)]  /* sound 3 */
 #define F(hi, lo)   P2(3, (hi) << 6 | (lo))
+#define LIME        ((uint16_t)(((0xc8 >> 3) << 11) | ((0xe6 >> 2) << 5) | (0x3c >> 3)))
 #define Z1(z, n)    ((int16_t)(((2 * (z) + 1) * 32768 / (2 * (n))) >> 1))
 
 int main(void)
@@ -131,6 +132,19 @@ int main(void)
     CHECK(2, m1_page == 3);
     push(59, 0);
     CHECK(2, m1_page == 0);
+
+    /* 8 (before any knob turn): until the first knob turn since boot the LCD's second line (y 34)
+     * says SHIFT+BLUE: SOUNDS (knob pushes do not count; check 11: dark afterwards) */
+    {
+        volatile uint16_t *fb = (volatile uint16_t *)(FB + 0x80000);
+        int x, y, lit = 0;
+
+        hook_frame((uint16_t *)fb);
+        for (y = 0; y < 7; y++)
+            for (x = 0; x < 278; x++)
+                lit += fb[(319 - (20 + x)) * 256 + 34 + y] == LIME;
+        CHECK(8, lit > 100);
+    }
 
     /* 3: page 1 WAVE A / B one multisound per detent (B: off .. 8), CUTOFF clamps at 16383;
      * page 2 B PITCH one semitone per detent, max +24 (48), the low field (page 3) untouched,
@@ -264,12 +278,11 @@ int main(void)
     m1_page = 0;
     CHECK(9, m1_bank == 4);
 
-    /* 10: keyboard picture: a held key (id 41: note 4 = A, TE octave +1 -> A4) lights A4 even long
-     * after the start, though its voice starts 2 semitones low (glide), and goes dark on release while
-     * TE still renders the voice */
+    /* 10: the LCD names the sounding notes: a held key (id 41: note 4 = A, TE octave +1 -> A4) shows
+     * A4 at the end of the first line even long after the start, though its voice starts 2 semitones
+     * low (glide), and goes dark on release while TE still renders the voice */
     {
         volatile uint16_t *fb = (volatile uint16_t *)FB;
-        const uint16_t green = (uint16_t)(((0x3d >> 3) << 11) | ((0xdc >> 2) << 5) | (0x97 >> 3));
         int lit_held, lit_after;
 
         hook_key(41, 1);
@@ -278,22 +291,23 @@ int main(void)
         for (n = 0; n < 300; n++)               /* > FLASH blocks */
             wh_te_render(VOICE(2), out, knobs);
         hook_frame((uint16_t *)FB);
-        lit_held = fb[(319 - 188) * 256 + 72] == green;   /* A4: white key 19, lower part */
+        lit_held = fb[(319 - 287) * 256 + 23] == LIME;    /* cell 38 (x 286): A's top bar */
         hook_key(41, 0);
         for (n = 0; n < 10; n++)
             wh_te_render(VOICE(2), out, knobs);
         hook_frame((uint16_t *)FB);
-        lit_after = fb[(319 - 188) * 256 + 72] == green;
+        lit_after = fb[(319 - 287) * 256 + 23] == LIME;
         CHECK(10, lit_held && !lit_after);
     }
 
-    /* 11: P-- (bank 4 back to P--): the LCD's second line says SHIFT+BLUE: SOUNDS until the sound is
-     * changed, then wave B (here after WAVE B one step); wave A stays on top; browsing to a bank sound
-     * and back to P-- shows the hint again. Screen run_m1test.py: m1_screen_own (the changed P--) */
+    /* 11: P-- (bank 4 back to P--): after the first knob turn the LCD's second line stays dark
+     * (no hint, no waves: they are on the knob rows), on P-- and after WAVE B one step; wave A stays
+     * on the first line. The LCD's cells: x 20 .. 297, lines at y 23, 34, 45, 56 (7 high). Screen
+     * run_m1test.py: m1_screen_own (the changed P--) */
     {
         volatile uint16_t *fb = (volatile uint16_t *)(FB + 0x80000);
-        static uint16_t hint[8 * 136], top[14 * 136];
-        int x, y, same_top = 1, other = 0, back = 1;
+        static uint16_t top[7 * 278];
+        int x, y, same_top = 1, lit = 0;
 
         *TE_SHIFT_HELD = 1;
         for (n = 0; n < 5; n++)
@@ -301,30 +315,19 @@ int main(void)
         *TE_SHIFT_HELD = 0;
         CHECK(11, m1_bank == -1);
         hook_frame((uint16_t *)fb);
-        for (y = 0; y < 8; y++)
-            for (x = 0; x < 136; x++)
-                hint[y * 136 + x] = fb[(319 - (79 + x)) * 256 + 24 + y];
-        for (y = 0; y < 14; y++)
-            for (x = 0; x < 136; x++)
-                top[y * 136 + x] = fb[(319 - (79 + x)) * 256 + 10 + y];
+        for (y = 0; y < 7; y++)
+            for (x = 0; x < 278; x++) {
+                lit += fb[(319 - (20 + x)) * 256 + 34 + y] == LIME;
+                top[y * 278 + x] = fb[(319 - (20 + x)) * 256 + 23 + y];
+            }
         turn(1, 1024);                          /* WAVE B */
         hook_frame((uint16_t *)fb);
-        for (y = 0; y < 8; y++)
-            for (x = 0; x < 136; x++)
-                other |= fb[(319 - (79 + x)) * 256 + 24 + y] != hint[y * 136 + x];
-        for (y = 0; y < 14; y++)
-            for (x = 0; x < 136; x++)
-                same_top &= fb[(319 - (79 + x)) * 256 + 10 + y] == top[y * 136 + x];
-        CHECK(11, other && same_top);
-        *TE_SHIFT_HELD = 1;
-        turn(0, 1024);                          /* P01 */
-        turn(0, -1024);                         /* P-- */
-        *TE_SHIFT_HELD = 0;
-        hook_frame((uint16_t *)(FB + 0x40000));     /* scratch draw: the hint is back */
-        for (y = 0; y < 8; y++)
-            for (x = 0; x < 136; x++)
-                back &= ((volatile uint16_t *)(FB + 0x40000))[(319 - (79 + x)) * 256 + 24 + y] == hint[y * 136 + x];
-        CHECK(11, m1_bank == -1 && back);
+        for (y = 0; y < 7; y++)
+            for (x = 0; x < 278; x++) {
+                lit += fb[(319 - (20 + x)) * 256 + 34 + y] == LIME;
+                same_top &= fb[(319 - (20 + x)) * 256 + 23 + y] == top[y * 278 + x];
+            }
+        CHECK(11, lit == 0 && same_top);
         m1_page = 3;                            /* restore m1_screen_fx */
         *TE_SHIFT_HELD = 1;
         for (n = 0; n < 5; n++)
