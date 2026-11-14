@@ -113,6 +113,18 @@ def hook_addr(kind, h):
     return int(h["site" if kind == "call_sites" else "func" if kind == "entry_hooks" else "addr"], 0)
 
 
+def blank_collisions(order, owner):
+    """hooks (any feature, any shared point: owner = {address: who}) inside TE code a feature blanks"""
+    out = []
+    for f in order:
+        for bl in f.get("hooks", {}).get("blank", []):
+            lo, hi = int(bl["addr"], 0), int(bl["end"], 0)
+            for a, who in owner.items():
+                if lo < a < hi or (a == lo and who != f"feature '{f['name']}'"):
+                    out.append(f"hook at {a:#010x} ({who}) is inside code {f['name']} blanks ({lo:#x}..{hi:#x})")
+    return out
+
+
 def resolve(names):
     """feature list in dependency order, with all checks"""
     order, seen = [], set()
@@ -157,6 +169,9 @@ def resolve(names):
         for s in f.get("shared", []):
             if s["point"] not in POINTS:
                 sys.exit(f"{f['name']}: unknown shared point '{s['point']}' (known: {', '.join(POINTS)})")
+    clash = blank_collisions(order, owner)
+    if clash:
+        sys.exit(clash[0])
     errors, notes = fpkg.check_claims(order)
     for n in notes:
         print(f"note: input shared while a panel is open: {n}")
@@ -216,10 +231,11 @@ def compose(names, name, boot_text=None, out=None):
     code, used, has_init = dispatcher(order)
     open(os.path.join(out, "_compose.c"), "w").write(code)
     sources, bases, libs, cflags = ["_compose.c"], {"_compose.c": "composer"}, [], []
-    hooks = {"call_sites": [], "entry_hooks": [], "pointers": [], "patches": []}
-    content_sql, content_files = [], []
+    hooks = {"call_sites": [], "entry_hooks": [], "pointers": [], "patches": [], "blank": []}
+    content_sql, content_files, content_links = [], [], []
     for f in order:
         content_sql += f.get("content_sql", [])
+        content_links += f.get("content_links", [])
         for cf in f.get("content_files", []):   # files added to the update (+ their SQL), feature-relative
             src = os.path.join(f["dir"], cf["from"])
             sql = cf.get("sql")
@@ -264,6 +280,8 @@ def compose(names, name, boot_text=None, out=None):
         proj["content_sql"] = content_sql
     if content_files:
         proj["content_files"] = content_files
+    if content_links:
+        proj["content_links"] = content_links
     proj["features"] = [f"{f['name']} {f.get('version', '')}".strip() for f in order]
     json.dump(proj, open(os.path.join(out, "project.json"), "w"), indent=2)
     return out, proj, shas

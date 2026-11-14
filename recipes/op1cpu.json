@@ -1,0 +1,28 @@
+{
+  "name": "op1cpu",
+  "boot_text": "op1sdk +",
+  "features": [
+    "chordplus",
+    "lofi",
+    "wheel",
+    "warp",
+    "trio",
+    "m1",
+    "party",
+    "mono",
+    "mallet",
+    "reso",
+    "shimmer",
+    "fxpack",
+    "drumroll",
+    "noteroll",
+    "requantize",
+    "acid",
+    "palette",
+    "engine_plus",
+    "drumtrim",
+    "cpuinfo",
+    "slotlink",
+    "nophysics"
+  ]
+}

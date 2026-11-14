@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "name": "cpuinfo",
+  "title": "Audio CPU load panel (debug)",
+  "version": "0.1.0",
+  "status": "device-verified",
+  "summary": "Debug: shift + speech opens a full-screen panel with the audio CPU load measured on the device: the CYCLES spent inside TE's audio block callback vs the time between blocks (average, peak per 0.25 s, worst since opening, ~37 s history graph), the share of our SDK engines (enginehost), the core clock implied by the block period (at 44.1 kHz) and the PLL / voltage registers as programmed. The first opening wraps TE's audio callback pointer and enables the cycle counter if it was off; nothing runs before that.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "sdk": 1,
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "prefix": "ci_",
+  "sources": [
+    "cpuinfo.c"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "ci_key",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "ci_frame",
+      "order": "last"
+    },
+    {
+      "point": "main_tick",
+      "fn": "ci_main"
+    }
+  ],
+  "hooks": {},
+  "claims": [
+    {
+      "input": "speech_press",
+      "shift": "yes",
+      "screen": "any"
+    }
+  ],
+  "controls": [
+    "shift + speech: panel on / off (the first opening starts the measurement)"
+  ],
+  "tests": [
+    "sim/run_citest.py"
+  ],
+  "depends": [
+    "enginehost"
+  ],
+  "conflicts": [
+    "meminfo",
+    "diskinfo"
+  ],
+  "evidence": [
+    {
+      "firmware": "R246",
+      "date": "2026-11-14",
+      "what": "device (op1cpu): CCLK 400.0 MHz at 44.1k, CLKIN 25.0 MHz, PLL_CTL 0x2000, VR_CTL 0x70b0, CCEN was on; audio load 25-30 % most synths, dsynth up to 60 %, peak about +5 %; SDK engines 10-15 %, MALLET 18.7 %"
+    }
+  ],
+  "docs": "README.md",
+  "status_note": "device 2026-11-14: CCLK 400 MHz (CLKIN 25 MHz, PLL_CTL 0x2000 = MSEL 16), CCEN already on; loads plausible"
+}

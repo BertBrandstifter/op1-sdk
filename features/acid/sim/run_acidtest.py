@@ -9,7 +9,7 @@ before fades within a block; slide on a legato key (kb note observers), none wit
 page 1..6; CUTOFF clamps with its fields kept, discrete fields one step, tag kept; bank (16 in range,
 every sound audible and below clipping, then P--); page 6 = FX knobs; "acid 3" -> "drwave"; cycles;
 TE's LFO on a slot does not touch the fields stored under it; screens; ACCENTS 2ND alternates; the
-sound's name for 1 s.
+sound's name until a key is played or a knob turned / pushed.
 HLT = exit 0 = pass, ABORT = exit 1 = fail (R7 = failed check bits, see driver.c)."""
 
 import json, os, sys

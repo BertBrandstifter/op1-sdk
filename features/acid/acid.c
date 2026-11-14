@@ -28,7 +28,6 @@
 #define TAG             8
 #define PAGES           6                       /* 5 parameter pages + FX */
 #define FX_PAGE         5
-#define TITLE_TIME      TE_SAMPLE_RATE          /* the sound's name on the display: 1 s */
 #define PAUSE_BLOCKS    1378                    /* 2 s of audio blocks: the accent count restarts */
 #define LAMPS           16
 #define FLASH           100                     /* audio blocks: a note without a key lit ~145 ms */
@@ -78,7 +77,7 @@ static volatile uint8_t bank_edited;
 static volatile int8_t bank_slot = -1;
 static int16_t own_knobs[8][8];                 /* per sound slot: P--, the sound before the bank */
 static volatile uint32_t now;                   /* samples, advanced by ac_tick */
-static volatile uint32_t title_until;
+static volatile uint8_t title_hold;             /* the sound's name on the display until a key / knob is used */
 volatile uint8_t ac_title_on;                   /* drawn in the last frame (bench reads) */
 static volatile uint8_t touched;                /* the page's knob turned last (the display shows it) */
 
@@ -305,6 +304,7 @@ static void note_on(const te_note *n, int midi)
     pend_note = (int8_t)k;
     pend_valid = 1;
     held[k >> 5] |= 1u << (k & 31);
+    title_hold = 0;                             /* a played note: the screen goes to the values */
 }
 
 static void note_off(const te_note *n)
@@ -355,6 +355,7 @@ int ac_key(int key, int down)
         return 0;
     ac_page = (uint8_t)(ac_page + 1 < PAGES ? ac_page + 1 : 0);
     touched = 0;
+    title_hold = 0;
     consumed |= (uint8_t)(1 << b);
     return 1;
 }
@@ -438,10 +439,11 @@ int ac_knob(int knob, int16_t *diff)
                 bank_slot = (int8_t)slot;
                 bank_edited = 0;
             }
-            title_until = now + TITLE_TIME;
+            title_hold = 1;
         }
         return 1;
     }
+    title_hold = 0;                             /* a turned knob: the screen goes to the values */
     if (ac_page == FX_PAGE)
         return eh_fx_knob(slot, knob, (int16_t)d);
     touched = (uint8_t)knob;
@@ -472,9 +474,10 @@ void ac_tick(void)
 
 /* ------------------------------------------------------------------ GUI thread */
 
-/* Screen (README.md "Screen"): a green (80s phosphor) LCD 16 x 2 (the knob turned last: name + value, over the
- * page and the note sounding; the sound's name for 1 s), a row of 16 step lamps (the last notes:
- * accent red, a slide a bar to the one before), the page's four knobs below (as MONO 3). */
+/* Screen (README.md "Screen"): a green (80s phosphor) LCD 16 x 2 (the knob turned last: name + value, over
+ * the page and the note sounding; the sound's name until a key is played or a knob turned / pushed), a row
+ * of 16 step lamps (the last notes: accent red, a slide a bar to the one before), the page's four knobs below
+ * (as MONO 3). */
 
 static const char *const labels[NP] = {
     "CUTOFF", "RESONANCE", "ENV MOD", "DECAY", "ACCENT", "ACC DECAY", "SWEEP", "SPEED",
@@ -639,7 +642,7 @@ static void display(int slot, int pg, const int *u)
     char t[20];
     int own = ac_bank >= 0 && bank_slot == slot, id, note;
 
-    ac_title_on = (int32_t)(title_until - now) > 0;
+    ac_title_on = title_hold;
     note = sounding();
     ac_note_shown = (int8_t)note;
     eh_lcd_blank(&lcd, 2);
@@ -713,7 +716,7 @@ void ac_frame(uint16_t *buf)
     k = current(&slot);
     if (slot != shown) {
         shown = (int8_t)slot;
-        title_until = now + TITLE_TIME;
+        title_hold = 1;
     }
     for (i = 0; i < NP; i++)
         u[i] = ac_param(k, i);

@@ -162,6 +162,11 @@ enum {                              /* MIDI status bytes the dispatcher routes *
 #define TE_FILE_CLOSE       ((int (*)(int fd))0x01a99908)
 #define TE_FILE_RDONLY      0
 #define TE_FILE_MODE        0x100
+/* write, as db2.cpp's content -> user copy (0x0196ea42) does: open(path, TE_FILE_CREATE, 0x180),
+ * write returns the bytes written (!= n: an error, e.g. the disk is full) */
+#define TE_FILE_WRITE       ((int (*)(int fd, const void *buf, uint32_t n))0x01a99f84)
+#define TE_FILE_CREATE      0x241               /* O_WRONLY | O_CREAT | O_TRUNC */
+#define TE_FILE_CREATE_MODE 0x180
 
 /* data cache: SDRAM is cached; DMA (screen, audio) only sees data after a flush */
 #define TE_DCACHE_FLUSH     ((void (*)(void *start, void *end, int invalidate))0x01aa185c)

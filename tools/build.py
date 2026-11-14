@@ -25,6 +25,10 @@ project.json:
   "patches": [                                  raw bytes to replace (e.g. an instruction's constant);
     {"addr": "0x019761e6", "expect": "41e10018", "bytes": "41e10010"}   same length, checked
   ],
+  "blank": [                                    TE code ranges nothing can reach any more, overwritten with
+    {"addr": "0x0191fe8c", "end": "0x0193bff0", RTS (a stray call returns; LZMA packs it to nothing);
+     "expect": "sha256:<hex of the stock bytes>"}   a FILL block inside gets RTS as its fill value.
+  ],                                            The feature that blanks must prove the range dead.
   "content_sql": [                              SQL run on a content database of the update (e.g. a row
     {"file": "content/op1_factory.db",          in TE's engine list); plain statements on the existing
      "sql": ["INSERT INTO synth_types ..."]}    file, so its SQLite format stays the one TE reads
@@ -32,8 +36,15 @@ project.json:
   "content_files": [                            files added to (or replaced in) the update, e.g. a factory
     {"file": "content/audio/factory_drum/x.raw", drum kit's audio (metadata from a file in the same
      "from": "/abs/path/x.raw"}                 directory); compose.py fills it from features' manifests
-  ]
-}
+  ],
+  "content_links": [                            slot files left out of the update because they are a copy
+    {"file": "content/audio/drum/drum_0.raw",   of a factory file in stock (checked byte for byte); runs
+     "same_as": "content/audio/factory_drum/peek.raw",   after content_files / content_sql. If those
+     "slot": ["content/op1.db", "drum_slots", 0],        changed the factory file, the slot's row must
+     "preset": ["content/op1_factory.db", "drum_presets", "peek"]}   equal the stock preset: it gets
+  ]                                             the final preset (audio and positions stay a pair); else
+}                                               the file is kept. Something must recreate the file on
+                                                the OP-1 (features/slotlink).
 Instead of "to" (your own assembly), a hook can name a C function with "c"; build.py then generates
 the trampoline (build/_sdk_hooks.S): it saves R0-R2/P0-P1/RETS, calls the C function with the same
 arguments the TE function gets, restores them and continues into TE. With "filter": true the C
@@ -61,6 +72,7 @@ LOAD, LOAD_END = (
 )  # free SDRAM between the stock image and 0x02000000
 STOCK_SHA256 = "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
 BOOT_TEXT, BOOT_TEXT_STOCK = 0x018F738A, b"R. 00246"
+BLANK_FILL = bytes.fromhex("1000")  # RTS
 CFLAGS = [
     "-mcpu=bf524",
     "-Os",
@@ -285,6 +297,17 @@ def patch_firmware(stock, cfg, code, syms):
             sys.exit(f"patch {addr:#x}: expected bytes {expect.hex()}, found {found.hex()}")
         p.write(addr, new)
         print(f"  patch {addr:#010x}: {found.hex()} -> {new.hex()}")
+    for bl in cfg.get("blank", []):                  # dead TE code -> RTS (checked against stock)
+        addr, end = int(bl["addr"], 0), int(bl["end"], 0)
+        if end <= addr or addr % 2 or end % 2:
+            sys.exit(f"blank {addr:#x}..{end:#x}: bad range")
+        want = bl["expect"].removeprefix("sha256:")
+        found = hashlib.sha256(p.read_span(addr, end - addr)).hexdigest()
+        if found != want:
+            sys.exit(f"blank {addr:#x}..{end:#x}: stock bytes differ (sha256 {found})")
+        kept = p.fill_span(addr, end - addr, BLANK_FILL)
+        print(f"  blank {addr:#010x}..{end:#010x}: {end - addr:,} bytes -> RTS"
+              + (f" ({kept} bytes of a FILL block reaching outside left as they are)" if kept else ""))
     p.add_block(LOAD, code)
     members[i] = (members[i][0], p.build())
     for cf in cfg.get("content_files", []):
@@ -299,7 +322,64 @@ def patch_firmware(stock, cfg, code, syms):
         members[j] = (members[j][0], run_sql(members[j][1], cs["sql"]))
         for q in cs["sql"]:
             print(f"  {cs['file']}: {q}")
+    if cfg.get("content_links"):
+        members = link_content(op1pack.read(stock), members, cfg["content_links"])
     return members
+
+
+def link_content(stock, members, links):
+    """leave out slot files that are a copy of a factory file (see "content_links" above)"""
+    orig = {m.name: d for m, d in stock if m.isfile()}
+    for ln in links:
+        name, kit = ln["file"], ln["same_as"]
+        if orig.get(name) is None or orig.get(name) != orig.get(kit):
+            sys.exit(f"content_links: {name} is not a copy of {kit} in this firmware")
+        now = {m.name: d for m, d in members if m.isfile()}
+        if now.get(name) != orig[name]:
+            print(f"  {name}: changed by another feature, kept")
+            continue
+        if now.get(kit) != orig[kit]:          # the kit was changed (e.g. drumtrim): the slot follows it
+            sdb, stab, sid = ln["slot"]
+            pdb, ptab, pname = ln["preset"]
+            stock_preset = preset_patch(orig[pdb], ptab, pname)
+            final_preset = preset_patch(now[pdb], ptab, pname)
+            slot = query_one(now[sdb], f"SELECT patch FROM {stab} WHERE id = ?", (sid,))
+            if stock_preset is None or final_preset is None or slot != stock_preset:
+                print(f"  {name}: {kit} changed and the slot's own patch differs, kept")
+                continue
+            j = next(k for k, (m, _) in enumerate(members) if m.name == sdb)
+            members[j] = (members[j][0], run_sql(members[j][1], [
+                f"UPDATE {stab} SET patch = '{final_preset.replace(chr(39), chr(39) * 2)}' WHERE id = {int(sid)}"]))
+            print(f"  {sdb}: {stab} {sid} = the final '{pname}' preset (its audio is {kit})")
+        members = [(m, d) for m, d in members if m.name != name]
+        print(f"  {name}: left out ({len(orig[name]):,} bytes, a copy of {kit})")
+    return members
+
+
+def query_one(db, sql, args=()):
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "x.db")
+        open(path, "wb").write(db)
+        con = sqlite3.connect(path)
+        try:
+            row = con.execute(sql, args).fetchone()
+        finally:
+            con.close()
+    return row[0] if row else None
+
+
+def preset_patch(db, table, name):
+    """the patch of the preset named `name` (the name lives in the patch JSON)"""
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "x.db")
+        open(path, "wb").write(db)
+        con = sqlite3.connect(path)
+        try:
+            rows = [p for (p,) in con.execute(f"SELECT patch FROM {table}")
+                    if json.loads(p).get("name") == name]
+        finally:
+            con.close()
+    return rows[0] if len(rows) == 1 else None
 
 
 def add_file(members, name, data):

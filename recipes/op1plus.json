@@ -20,6 +20,8 @@
     "acid",
     "palette",
     "engine_plus",
-    "drumtrim"
+    "drumtrim",
+    "slotlink",
+    "nophysics"
   ]
 }

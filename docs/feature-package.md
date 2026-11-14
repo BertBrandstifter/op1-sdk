@@ -57,7 +57,7 @@ against the user's stock image.
 | `sources` | ✓ | `.c` / `.S` files, package-relative |
 | `libs`, `cflags`, `init` |  | SDK libs (`gfx`), extra compiler flags, one-time init function |
 | `shared` |  | shared hook points used: `[{"point": "on_key", "fn": "rq_key", "mode": "filter"}]`; optional `"order": "first"` / `"last"` overrides recipe order for that handler |
-| `hooks` |  | exclusive hooks (`call_sites` / `entry_hooks` / `pointers`); each with `expect` + `what` |
+| `hooks` |  | exclusive hooks (`call_sites` / `entry_hooks` / `pointers` / `patches` / `blank`); each with `expect` + `what` |
 | `claims` | ✓ | physical inputs the feature takes over (section 5); `[]` if none |
 | `controls` |  | human-readable control list (README / catalog) |
 | `content_files` |  | `[{"file": "content/audio/factory_drum/<name>.raw", "from": "build/x.raw", "optional": true, "sql": {"file": "content/op1_factory.db", "from": "build/x.sql"}}]`: files added to the update (paths in the feature; e.g. a factory drum kit's audio), each with an optional SQL file (statements separated by `;` + newline) run like `content_sql`; an existing file of the update is replaced. A feature may be content only (no `sources`). `optional`: a missing file (local data, e.g. made from your own samples) leaves out the file and its SQL together |
@@ -94,6 +94,9 @@ against the user's stock image.
 - **Exclusive hooks** (an address only this feature patches) need `expect`. `build.py` refuses an
   address whose stock instruction does not match. Two features on the same address are an error
   that names both.
+- **`blank`** (`{"addr", "end", "expect": "sha256:..."}`) overwrites a range of TE code with RTS, after
+  checking the stock bytes' SHA-256. The feature must show that nothing can reach the range any more
+  (nophysics ships `prove.py` for its ranges). Any other hook inside a blanked range is an error.
 - **SDK API level** (`sdk`): the contract of the shared points (names, signatures, modes), the
   dispatch semantics, `op1/te246.h` and the SDK libs. This SDK is **API 1**. A package declaring a
   higher level is refused. The level is bumped only for incompatible changes, and the changes are

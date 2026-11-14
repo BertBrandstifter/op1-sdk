@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "name": "slotlink",
+  "title": "Default slot sounds without a second copy in the update",
+  "version": "0.1",
+  "status": "sim-verified",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "sl_"
+  ],
+  "summary": "TE's update carries some default slot sounds twice: the drum slot files drum_0, 2, 4, 5, 6 (peek, awa beef, neoprene, acetate, red maple) and synth_7 (suitcase) are byte-identical copies of factory sounds. slotlink leaves those copies out of the update (2.1 MB smaller) and recreates them from the factory files when TE fills the slots (first boot, after a factory reset). Existing slot files are never touched. If another feature changed a factory kit (drumtrim), the slot's default patch follows the kit, or the copy is kept when the slot has its own patch.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [
+    "slotlink.c"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "shared": [],
+  "hooks": {
+    "call_sites": [
+      {
+        "site": "0x0196f8b6",
+        "expect": "0x0196eb7e",
+        "c": "sl_after_copy",
+        "after": true,
+        "what": "db2 init: directory copy content -> user of audio/synth (first boot / reset only)"
+      },
+      {
+        "site": "0x0196f8ce",
+        "expect": "0x0196eb7e",
+        "c": "sl_after_copy",
+        "after": true,
+        "what": "db2 init: directory copy content -> user of audio/drum (first boot / reset only)"
+      }
+    ]
+  },
+  "content_links": [
+    {
+      "file": "content/audio/drum/drum_0.raw",
+      "same_as": "content/audio/factory_drum/peek.raw",
+      "slot": [
+        "content/op1.db",
+        "drum_slots",
+        0
+      ],
+      "preset": [
+        "content/op1_factory.db",
+        "drum_presets",
+        "peek"
+      ]
+    },
+    {
+      "file": "content/audio/drum/drum_2.raw",
+      "same_as": "content/audio/factory_drum/awa beef.raw",
+      "slot": [
+        "content/op1.db",
+        "drum_slots",
+        2
+      ],
+      "preset": [
+        "content/op1_factory.db",
+        "drum_presets",
+        "awa beef"
+      ]
+    },
+    {
+      "file": "content/audio/drum/drum_4.raw",
+      "same_as": "content/audio/factory_drum/neoprene.raw",
+      "slot": [
+        "content/op1.db",
+        "drum_slots",
+        4
+      ],
+      "preset": [
+        "content/op1_factory.db",
+        "drum_presets",
+        "neoprene"
+      ]
+    },
+    {
+      "file": "content/audio/drum/drum_5.raw",
+      "same_as": "content/audio/factory_drum/acetate.raw",
+      "slot": [
+        "content/op1.db",
+        "drum_slots",
+        5
+      ],
+      "preset": [
+        "content/op1_factory.db",
+        "drum_presets",
+        "acetate"
+      ]
+    },
+    {
+      "file": "content/audio/drum/drum_6.raw",
+      "same_as": "content/audio/factory_drum/red maple.raw",
+      "slot": [
+        "content/op1.db",
+        "drum_slots",
+        6
+      ],
+      "preset": [
+        "content/op1_factory.db",
+        "drum_presets",
+        "red maple"
+      ]
+    },
+    {
+      "file": "content/audio/synth/synth_7.raw",
+      "same_as": "content/audio/factory_synth/suitcase.raw",
+      "slot": [
+        "content/op1.db",
+        "synth_slots",
+        7
+      ],
+      "preset": [
+        "content/op1_factory.db",
+        "synth_presets",
+        "suitcase"
+      ]
+    }
+  ],
+  "controls": [
+    "nothing to operate"
+  ],
+  "tests": [
+    "sim/run_sltest.py"
+  ],
+  "depends": [],
+  "conflicts": [],
+  "claims": [],
+  "evidence": []
+}

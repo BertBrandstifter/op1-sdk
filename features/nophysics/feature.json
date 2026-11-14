@@ -1,0 +1,391 @@
+{
+  "schema": 1,
+  "name": "nophysics",
+  "title": "No Box2D: Tombola sequencer and hidden Lander game removed",
+  "version": "0.1",
+  "status": "sim-verified",
+  "status_note": "image-verified (bench checks every patched byte) + static reachability proof (prove.py); not yet run on the device",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "np_"
+  ],
+  "summary": "Takes TE's Box2D physics library out of the firmware together with its only two users: the Tombola sequencer and the hidden Lander game. Picking Tombola (or a saved Tombola setting) gives the pattern sequencer, the Lander key combination does nothing. Nothing builds a physics world at boot any more (TE built two, for Tombola and Lander, whether used or not), lander.svg (171 KB) and tombola.svg are no longer parsed at boot, and 145 KB of TE code (Box2D 115 KB + dead Lander / Tombola code) is overwritten with RTS: free for later SDK code. No C code: the 36 code pointers that led into the removed code now lead to the first RTS of the blanked Box2D range.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [],
+  "shared": [],
+  "hooks": {
+    "patches": [
+      {
+        "addr": "0x01000030",
+        "expect": "ae019201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 12) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000034",
+        "expect": "7c0b9201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 13) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000038",
+        "expect": "72209201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 14) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x0100003c",
+        "expect": "9a269201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 15) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000040",
+        "expect": "8c319201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 16) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000044",
+        "expect": "123e9201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 17) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000048",
+        "expect": "424f9201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 18) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x0100004c",
+        "expect": "c44f9201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 19) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000050",
+        "expect": "48549201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 20) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000054",
+        "expect": "885a9201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 21) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000058",
+        "expect": "747c9201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 22) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x0100005c",
+        "expect": "fa9f9201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 23) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000060",
+        "expect": "8eb59201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 24) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000064",
+        "expect": "64c69201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 25) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000068",
+        "expect": "c4d49201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 26) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x0100006c",
+        "expect": "c0d79201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 27) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000070",
+        "expect": "44dc9201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 28) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000074",
+        "expect": "e8ec9201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 29) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000078",
+        "expect": "7af49201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 30) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x0100007c",
+        "expect": "04fb9201",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 31) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000080",
+        "expect": "78019301",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 32) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000084",
+        "expect": "bc1d9301",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 33) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000088",
+        "expect": "4e479301",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 34) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x0100008c",
+        "expect": "646e9301",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 35) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000090",
+        "expect": "ce919301",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 36) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000094",
+        "expect": "08939301",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 37) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01000098",
+        "expect": "64979301",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 38) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x0100009c",
+        "expect": "2e999301",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 39) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x010000a0",
+        "expect": "74a09301",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 40) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x010000a4",
+        "expect": "6cbf9301",
+        "bytes": "8cfe9101",
+        "what": "boot: static initialiser of a Box2D source file (ctor table entry 41) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x019106a0",
+        "expect": "ec519c01",
+        "bytes": "8cfe9101",
+        "what": "Lander contact listener (called only by Box2D) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x019106d8",
+        "expect": "388d9c01",
+        "bytes": "8cfe9101",
+        "what": "Lander screen slot +0x1c (draw) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x019106e0",
+        "expect": "f05f9c01",
+        "bytes": "8cfe9101",
+        "what": "Lander screen slot +0x24 (after its SVG loads at boot: builds the Box2D world, finds lander.svg objects) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01911d10",
+        "expect": "503ea601",
+        "bytes": "8cfe9101",
+        "what": "Tombola knob handler (gravity / bounce / angle; takes the physics lock) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01911ee0",
+        "expect": "bc5ea601",
+        "bytes": "8cfe9101",
+        "what": "Tombola screen slot +0x1c (draw) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x01911ee8",
+        "expect": "4866a601",
+        "bytes": "8cfe9101",
+        "what": "Tombola screen slot +0x24 (after its SVG loads at boot: physics bodies from tombola.svg) -> RTS at 0x0191fe8c (start of the blanked Box2D range)"
+      },
+      {
+        "addr": "0x019b66aa",
+        "expect": "22e1a000",
+        "bytes": "22e10001",
+        "what": "hidden key combo for the Lander game (held-key mask 0xa0 -> mode 15): compare with 0x100, which an 8-key mask never reaches"
+      },
+      {
+        "addr": "0x018fa640",
+        "expect": "02000000",
+        "bytes": "00000000",
+        "what": "SeqIds table: name 'tombola' -> id 0 (pattern); the sequencer picker and a saved 'tombola' setting both resolve through it"
+      },
+      {
+        "addr": "0x018f2f00",
+        "expect": "20d1a001",
+        "bytes": "c0d0a001",
+        "what": "player factory switch, case 2 (tombola) -> case 0 (pattern player)"
+      },
+      {
+        "addr": "0x01a63fda",
+        "expect": "4664",
+        "bytes": "1720",
+        "what": "sequencer-settings init: JUMP.S over the Tombola physics setup (world, gravity, bounce), straight to 0x01a64008"
+      }
+    ],
+    "blank": [
+      {
+        "addr": "0x0191fe8c",
+        "end": "0x0193bff0",
+        "expect": "sha256:4cd7c90d2c227b533d65de3bc4193bc9eb4fe3ea733666f66ba5a0adeeedb77d",
+        "what": "Box2D (ext/Box2D: b2BlockAllocator .. b2World), 115,044 bytes"
+      },
+      {
+        "addr": "0x019c38a8",
+        "end": "0x019c3914",
+        "expect": "sha256:de927618987ed830f1b634be8467c883d3cfba3406205e36304e4f3dbdfcceb4",
+        "what": "Lander game code (LanderScreen.cpp), 108 bytes"
+      },
+      {
+        "addr": "0x019c3940",
+        "end": "0x019c484c",
+        "expect": "sha256:f317950d1239aa38da7d40be55044311f2beb5e79726d9b9c2b4e8bacabd3114",
+        "what": "Lander game code (LanderScreen.cpp), 3,852 bytes"
+      },
+      {
+        "addr": "0x019c49c4",
+        "end": "0x019c4abc",
+        "expect": "sha256:e6a18bb5d20c878fc6086266940f7c1e19179bd19455f434a338ded5be1dd954",
+        "what": "Lander game code (LanderScreen.cpp), 248 bytes"
+      },
+      {
+        "addr": "0x019c4ae8",
+        "end": "0x019c4ecc",
+        "expect": "sha256:8b50ad0dd6dd899a7717465179268646dfa239eb70846db2c0d58a17ce2431b2",
+        "what": "Lander game code (LanderScreen.cpp), 996 bytes"
+      },
+      {
+        "addr": "0x019c4ff0",
+        "end": "0x019c926c",
+        "expect": "sha256:3bb5efff5a7006fabbf81e06a05d3b73a6e53431dc9662165036ac783c3b59bc",
+        "what": "Lander game code (LanderScreen.cpp), 17,020 bytes"
+      },
+      {
+        "addr": "0x01a63e50",
+        "end": "0x01a63f44",
+        "expect": "sha256:fe41bf9335c61add87a56157fc4c8168a5ff56cce494138465e0ceefc90034ba",
+        "what": "Tombola code (TombolaPhysics / TombolaPlayer / TombolaScreen), 244 bytes"
+      },
+      {
+        "addr": "0x01a6406c",
+        "end": "0x01a640b0",
+        "expect": "sha256:2b4c9d523a1c3a3037d049a70b61e19fdef220be535c01ef1599c93e8e47877b",
+        "what": "Tombola code (TombolaPhysics / TombolaPlayer / TombolaScreen), 68 bytes"
+      },
+      {
+        "addr": "0x01a6425c",
+        "end": "0x01a64268",
+        "expect": "sha256:276c6420e10f5bfe924aae154a2ab044b8df752849409e71d7d28baaf3f0823f",
+        "what": "Tombola code (TombolaPhysics / TombolaPlayer / TombolaScreen), 12 bytes"
+      },
+      {
+        "addr": "0x01a642dc",
+        "end": "0x01a64348",
+        "expect": "sha256:4df225332564a89ef70f8edeb9da263573b90a95c1d45afc3d40eb8c1b6c6e2d",
+        "what": "Tombola code (TombolaPhysics / TombolaPlayer / TombolaScreen), 108 bytes"
+      },
+      {
+        "addr": "0x01a643a0",
+        "end": "0x01a646fe",
+        "expect": "sha256:0de3991f6c5e4002686fa30ebd506b247a7354b8622f81935312ce18d8d08fff",
+        "what": "Tombola code (TombolaPhysics / TombolaPlayer / TombolaScreen), 862 bytes"
+      },
+      {
+        "addr": "0x01a64740",
+        "end": "0x01a647f0",
+        "expect": "sha256:51d8bd636d730afca24c99ff7ac1335b939a991e6603da65447d6ba391b3c823",
+        "what": "Tombola code (TombolaPhysics / TombolaPlayer / TombolaScreen), 176 bytes"
+      },
+      {
+        "addr": "0x01a648f4",
+        "end": "0x01a65730",
+        "expect": "sha256:783b248c46be785298a3f7e00f34361fa420a458e11dc33c2456487fe13d4a8d",
+        "what": "Tombola code (TombolaPhysics / TombolaPlayer / TombolaScreen), 3,644 bytes"
+      },
+      {
+        "addr": "0x01a65854",
+        "end": "0x01a65872",
+        "expect": "sha256:e9db6f4d380107725f2d6079452f42709bfd67771fa5f0714184305f291dfbe0",
+        "what": "Tombola code (TombolaPhysics / TombolaPlayer / TombolaScreen), 30 bytes"
+      },
+      {
+        "addr": "0x01a658b8",
+        "end": "0x01a65d84",
+        "expect": "sha256:0a72fdc81154f3eb7c6a4a862cab7eb6e3f996f3a9370e6191a048e4e9b4f4e7",
+        "what": "Tombola code (TombolaPhysics / TombolaPlayer / TombolaScreen), 1,228 bytes"
+      },
+      {
+        "addr": "0x01a65ebc",
+        "end": "0x01a66264",
+        "expect": "sha256:f003180ca6e8155e0f90618c438db17d4fd96a6b48ac1365a2b1a30a0648efed",
+        "what": "Tombola code (TombolaPhysics / TombolaPlayer / TombolaScreen), 936 bytes"
+      },
+      {
+        "addr": "0x01a66648",
+        "end": "0x01a66780",
+        "expect": "sha256:b3831e8264c50d3ca0f0727cabed61e9177d9671b4b8afb9fe82ea0372539430",
+        "what": "Tombola code (TombolaPhysics / TombolaPlayer / TombolaScreen), 312 bytes"
+      }
+    ]
+  },
+  "claims": [],
+  "controls": [
+    "none: Tombola in the sequencer picker starts the pattern sequencer; the Lander combo does nothing"
+  ],
+  "tests": [
+    "sim/run_nptest.py"
+  ],
+  "depends": [],
+  "conflicts": [],
+  "content_files": [
+    {
+      "file": "content/display/lander.svg",
+      "from": "stub.svg"
+    },
+    {
+      "file": "content/display/tombola.svg",
+      "from": "stub.svg"
+    }
+  ],
+  "evidence": []
+}

@@ -19,6 +19,8 @@
 static eh_render_fn engines[EH_TAGS];
 static volatile uint8_t fresh[EH_VOICES];       /* note_on seen, render starts the note */
 static int last_voice = EH_VOICES;              /* new audio block when the index does not rise */
+volatile uint8_t eh_prof;                       /* set by cpuinfo: count the engines' cycles */
+volatile uint32_t eh_cycles;                    /* CYCLES spent in SDK engine renders (wraps) */
 
 void eh_register(int tag, eh_render_fn render)
 {
@@ -59,6 +61,15 @@ void eh_te_render(void *self, int16_t *out, int16_t *knobs)
     if (fresh[vi]) {
         fresh[vi] = 0;
         flags |= EH_FRESH;
+    }
+    if (eh_prof) {
+        uint32_t c0, c1;
+
+        __asm__ volatile("%0 = CYCLES;" : "=d"(c0));
+        engines[t](vi, out, knobs, EH_TE_VOICE_INC, flags);
+        __asm__ volatile("%0 = CYCLES;" : "=d"(c1));
+        eh_cycles += c1 - c0;
+        return;
     }
     engines[t](vi, out, knobs, EH_TE_VOICE_INC, flags);
 }

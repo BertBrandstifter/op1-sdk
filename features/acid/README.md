@@ -48,7 +48,7 @@ cycles pages.
   **SPEED** rc2 60 / 15 (stock) / 5 ms, **MUFFLER**.
 - **Envelope (MEG)**: starts at every non-slid note, decays exponentially with **DECAY** (normal
   notes) or **ACC DECAY** (accented notes). A slid note keeps the running envelope (no retrigger),
-  as the original.
+  as the original; the VCA reopens on it (a hand-played legato line does not die away).
 - **Accent**: an accented note opens the filter (ACCENT × 2.5 oct × envelope) and is louder (up to
   +6 dB at 10, following the envelope). **SWEEP** OFF = accent straight on the cutoff; NORM = through
   the sweep circuit (a capacitor: quick accents stack up, the "wow"); HIGH = more sweep and extra
@@ -58,8 +58,9 @@ cycles pages.
   button); VEL (MIDI notes with velocity ≥ 100; the OP-1's keys have no velocity); 2ND / 3RD / 4TH
   (every 2nd / 3rd / 4th note, counting from the first after a 2 s pause).
 - **Slide** (**SLIDES**): LEGATO = a note started while another key (or MIDI note) is still held
-  slides from the last pitch, without retriggering the envelopes; ALL = every note slides (for
-  the sequencers, whose notes carry no key); OFF. **SLIDE** = the slide time (RC, as the original:
+  slides from the last pitch, without retriggering the filter envelope; ALL = every note slides (for
+  the sequencers, whose notes carry no key; after a key-up the pitch still glides but the
+  envelopes start again, else the note would be silent); OFF. **SLIDE** = the slide time (RC, as the original:
   fast at first, settling).
 - **VCA (VEG)**: attack **SOFT ATK** on normal notes, 0.3 ms on accents; then held. TE's envelope
   (the preset sets full sustain, short release) ends the note. **MUFFLER** = soft clipping after the
@@ -91,7 +92,8 @@ cycles pages.
 Dot-matrix display look (`eh_dots.c`, as the other engines), param rows below unchanged:
 
 - A green (80s phosphor) LCD 16 × 2: the knob turned last (name + value) over the page name and
-  the note sounding. While a sound loads (1 s after a bank pick or when the screen opens): P03 (*
+  the note sounding. After a bank pick or when the screen opens, until a key / MIDI note is played
+  or a knob is turned / pushed: P03 (*
   = edited) over the sound's name on the left, the acid-house smiley drawn in display dots (15 × 15,
   outline, eyes and smile lit) on the right. The FX page shows the sound's number and name.
 - A row of 16 step lamps under it: the last 16 notes (newest right); lit = normal, bright red =

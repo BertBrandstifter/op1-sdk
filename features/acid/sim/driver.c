@@ -435,6 +435,8 @@ int main(void)
     *TE_SHIFT_HELD = 0;
     for (i = 0; i < 8; i++)
         knobs[i] = K(i);
+    hook_frame((uint16_t *)FB);                 /* the screen opens: the sound's name */
+    ok = ac_title_on;
     for (n = 0; n < 6; n++) {                   /* a short line for the lamps */
         kb(45 + (n * 5) % 12, 1);
         if (n & 1)
@@ -450,16 +452,17 @@ int main(void)
     ac_page = 0;
     turn(1, 1024);
     hook_frame((uint16_t *)FB);
-    ok = ac_note_shown >= 0;
+    ok &= !ac_title_on && ac_note_shown >= 0;   /* notes played: the values and the note */
     ac_page = 1;
     turn(0, 1024);
     hook_frame((uint16_t *)(FB + 0x40000));
     ac_page = 0;
     CHECK(12, ac_bank == 2 && ok);
 
-    /* 13: the sound's name: shown when a sound is picked, for 1 s, then gone */
+    /* 13: the sound's name: shown when a sound is picked, kept (past 1 s), gone at the next note;
+     * picked again, gone at a knob turn; picked again, gone at a knob push */
     {
-        int on_pick, on_late, off;
+        int on_pick, on_late, off, knob_off, push_off;
 
         *TE_SHIFT_HELD = 1;
         turn(0, 1024);
@@ -470,11 +473,28 @@ int main(void)
             ac_tick();
         hook_frame((uint16_t *)FB);
         on_late = ac_title_on;
-        for (n = 0; n < 10; n++)
-            ac_tick();
+        kb(57, 1);
         hook_frame((uint16_t *)FB);
         off = !ac_title_on;
-        CHECK(13, on_pick && on_late && off);
+        kb(57, 0);
+        *TE_SHIFT_HELD = 1;
+        turn(0, 1024);
+        *TE_SHIFT_HELD = 0;
+        hook_frame((uint16_t *)FB);
+        on_pick &= ac_title_on;
+        turn(2, 1024);
+        hook_frame((uint16_t *)FB);
+        knob_off = !ac_title_on;
+        *TE_SHIFT_HELD = 1;
+        turn(0, -1024);
+        *TE_SHIFT_HELD = 0;
+        hook_frame((uint16_t *)FB);
+        on_pick &= ac_title_on;
+        push(59, 0);                            /* blue push: the next page */
+        hook_frame((uint16_t *)FB);
+        push_off = !ac_title_on;
+        ac_page = 0;
+        CHECK(13, on_pick && on_late && off && knob_off && push_off);
     }
     kb(45 + 25 % 12, 0);
     return fails;

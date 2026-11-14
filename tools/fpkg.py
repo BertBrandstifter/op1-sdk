@@ -197,7 +197,7 @@ def validate(fdir, compile_check=True, package=None):
         if not any(s.get("fn", "").startswith(x) for x in prefixes):
             E.append(f"shared {s['point']}: fn '{s.get('fn')}' lacks the prefix")
     for kind, hs in f.get("hooks", {}).items():
-        if kind not in ("call_sites", "entry_hooks", "pointers", "patches"):
+        if kind not in ("call_sites", "entry_hooks", "pointers", "patches", "blank"):
             E.append(f"hooks: unknown kind '{kind}'")
             continue
         for h in hs:
