@@ -161,6 +161,7 @@ static void params(const volatile int16_t *te, const volatile int16_t *s, ac_par
     p->drive = (uint8_t)field(s, P_DRIVE);
     p->muff = (uint8_t)field(s, P_MUFF);
     p->level = (uint8_t)field(s, P_LEVEL);
+    p->half = 0;
 }
 
 /* the stored knobs of the sound a voice plays: slots 5-8 never carry TE's LFO, so they find it
@@ -220,12 +221,78 @@ static void new_note(int vi, const uint32_t *inc, const volatile int16_t *s)
     pend_valid = 0;
 }
 
+/* PLAY's instances (enginehost: vi = instance x 6 + voice, instance 1..3): the same mono voice
+ * per instance, without TE's keys: slides ALL / OFF (LEGATO: off), accents ALL / every 2nd-4th
+ * (VEL: off); the note ends by PLAY's envelope */
+typedef struct ac_inst {
+    ac_voice st, snap;
+    int8_t newest, prev;
+    uint32_t blocks, rendered, count;
+    int16_t blk[TE_VOICE_SAMPLES];
+    uint32_t ninc[TE_VOICE_SAMPLES];
+} ac_inst;
+static ac_inst insts[EH_INST - 1];
+
+static void inst_render(int vi, int16_t *out, const int16_t *knobs, const uint32_t *inc, int flags)
+{
+    ac_inst *a = &insts[vi / EH_VOICES - 1];
+    const volatile int16_t *s = stored(knobs);
+    ac_params p;
+    int i;
+
+    params(knobs, s, &p);
+    p.half = (flags & EH_HALF) != 0;            /* PLAY's ECO: 44.1 kHz, the increments per 44.1 kHz sample */
+    if (flags & EH_BLOCK)
+        a->blocks++;
+    if (flags & EH_FRESH) {
+        int slides = field(s, P_SLIDES), accs = field(s, P_ACCS), n;
+
+        n = accs == ACCS_2ND ? 2 : accs == ACCS_3RD ? 3 : accs == ACCS_4TH ? 4 : 0;
+        if (a->rendered == a->blocks) {         /* this block was the note before's: rewind */
+            a->st = a->snap;
+            a->rendered = 0xffffffffu;
+        }
+        if (a->newest >= 0 && a->newest != vi)
+            a->prev = a->newest;
+        a->newest = (int8_t)vi;
+        ac_note(&a->st, slides == SLIDES_ALL, accs == ACCS_ALL ? 1 : n ? a->count % n == 0 : 0);
+        a->count++;
+    }
+    if (vi == a->newest) {
+        a->ninc[0] = inc[0];
+        a->ninc[TE_VOICE_SAMPLES - 1] = inc[TE_VOICE_SAMPLES - 1];
+    }
+    if (vi != a->newest && vi != a->prev) {
+        for (i = 0; i < TE_VOICE_SAMPLES; i++)
+            out[i] = 0;
+        return;
+    }
+    if (a->rendered != a->blocks) {
+        a->snap = a->st;
+        ac_render(&a->st, a->blk, TE_VOICE_SAMPLES, a->ninc, &p);
+        a->rendered = a->blocks;
+    }
+    if (vi == a->newest) {
+        for (i = 0; i < TE_VOICE_SAMPLES; i++)
+            out[i] = a->blk[i];
+    } else {
+        for (i = 0; i < TE_VOICE_SAMPLES; i++)
+            out[i] = (int16_t)((a->blk[i] * (TE_VOICE_SAMPLES - 1 - i)) / TE_VOICE_SAMPLES);
+        a->prev = -1;
+    }
+}
+
 static void ac_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint32_t *inc, int flags)
 {
     ac_params p;
-    const volatile int16_t *s = stored(knobs);
+    const volatile int16_t *s;
     int i;
 
+    if (vi >= EH_VOICES) {
+        inst_render(vi, out, knobs, inc, flags);
+        return;
+    }
+    s = stored(knobs);
     params(knobs, s, &p);
     if (flags & EH_BLOCK)
         blocks++;
@@ -267,7 +334,12 @@ void ac_setup(void)
     ac_init(&st);
     for (i = 0; i < LAMPS; i++)
         lamp_note[i] = -1;
-    eh_register(TAG, ac_eh_render);
+    for (i = 0; i < EH_INST - 1; i++) {
+        ac_init(&insts[i].st);
+        insts[i].newest = insts[i].prev = -1;
+        insts[i].rendered = 0xffffffffu;
+    }
+    eh_register_multi(TAG, ac_eh_render);       /* PLAY instances: inst_render */
 }
 
 /* Engine browser row "acid 3" (content_sql) -> "drwave" (TE knows no such type: fatal) */

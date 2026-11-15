@@ -35,9 +35,9 @@
 #define TITLE_TIME      TE_SAMPLE_RATE          /* the sound's name over the instrument: 1 s */
 #define PAGES           3
 
-static ml_voice voices[VOICES];
-static uint32_t motor_ph;                       /* the vibraphone motor (render thread) */
-static int32_t motor_gain = 32768;
+static ml_voice voices[EH_SLOTS];               /* every instance (PLAY: vi 6..23) */
+static uint32_t motor_ph[EH_INST];              /* the vibraphone motor per instance (render thread) */
+static int32_t motor_gain[EH_INST] = { 32768, 32768, 32768, 32768 };
 volatile uint8_t ml_page;                       /* 0..2 = page 1..3 (bench reads) */
 static volatile uint8_t consumed;               /* pushes whose key-up we eat */
 volatile int8_t ml_bank = -1;                   /* last loaded bank entry (-1 none), bench reads */
@@ -106,10 +106,13 @@ static void ml_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint3
 
     unpack(knobs, p);
     if (flags & EH_BLOCK) {
-        motor_gain = ml_motor(&motor_ph, p, TE_VOICE_SAMPLES);
-        blocks++;
+        motor_gain[vi / EH_VOICES] = ml_motor(&motor_ph[vi / EH_VOICES], p, TE_VOICE_SAMPLES);
+        if (vi < EH_VOICES)
+            blocks++;                           /* the screen's clock: TE's voices only */
     }
-    if (flags & EH_FRESH) {                     /* a new note: pair it with its key (screen) */
+    if ((flags & EH_FRESH) && vi >= EH_VOICES) {
+        ml_note_on(&voices[vi]);                /* a PLAY instance: no keyboard display */
+    } else if (flags & EH_FRESH) {              /* a new note: pair it with its key (screen) */
         int key = inc_key(inc[0]);
 
         ml_note_on(&voices[vi]);
@@ -128,12 +131,12 @@ static void ml_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint3
             flash_until[vi] = blocks + FLASH;
         }
     }
-    ml_render(&voices[vi], out, TE_VOICE_SAMPLES, inc, p, motor_gain);
+    ml_render(&voices[vi], out, TE_VOICE_SAMPLES, inc, p, motor_gain[vi / EH_VOICES]);
 }
 
 void ml_init(void)
 {
-    eh_register(TAG, ml_eh_render);
+    eh_register_multi(TAG, ml_eh_render);       /* instances: voices[EH_SLOTS], a motor each */
 }
 
 /* Engine browser row "mallet" (content_sql adds it to TE's synth_types with MALLET's defaults as
@@ -841,7 +844,7 @@ void ml_frame(uint16_t *buf)
     }
     unpack(k, p);
     instr = ml_instr(p[ML_INSTR]);
-    motor = p[ML_MOTOR] < 300 ? 0 : (int32_t)motor_ph < 0 ? 1 : -1;
+    motor = p[ML_MOTOR] < 300 ? 0 : (int32_t)motor_ph[0] < 0 ? 1 : -1;
     newest = sounding(on, instr == ML_KALIMBA ? KEYS_MAX : 25);
     if (instr != drawn) {
         drawn = (int8_t)instr;

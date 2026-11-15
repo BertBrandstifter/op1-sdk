@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "name": "nodsynth",
+  "title": "dsynth taken out of the engine list and the preset browser",
+  "version": "0.1",
+  "status": "sim-verified",
+  "status_note": "content only; bench checks the SQL on synthetic and (with the firmware) the real databases; not yet on the device",
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "sdk": 1,
+  "prefix": [
+    "nd_"
+  ],
+  "summary": "Content only, no TE code changed: dsynth's row leaves the engine list (synth_types) and its 16 factory presets leave the preset browser (folder dsynth). The default sound of synth slot 5 (used on first boot / after a factory reset) was the dsynth preset 'legacy'; it becomes the string preset 'piano of love', copied from the factory database at build time. dsynth's code stays, so sounds already saved with dsynth still load and play.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "docs": "README.md",
+  "sources": [],
+  "shared": [],
+  "hooks": {},
+  "claims": [],
+  "controls": [
+    "none: dsynth is gone from the engine list and the preset browser"
+  ],
+  "tests": [
+    "run_ndtest.py"
+  ],
+  "depends": [],
+  "conflicts": [],
+  "content_sql": [
+    {
+      "file": "content/op1_factory.db",
+      "sql": [
+        "DELETE FROM synth_types WHERE type = 'dsynth'",
+        "DELETE FROM synth_presets WHERE folder = 'dsynth'"
+      ]
+    },
+    {
+      "file": "content/op1.db",
+      "attach": {
+        "f": "content/op1_factory.db"
+      },
+      "sql": [
+        "UPDATE synth_slots SET patch = (SELECT patch FROM f.synth_presets WHERE folder = 'string' AND json_extract(patch, '$.name') = 'piano of love') WHERE json_extract(patch, '$.type') = 'dsynth'"
+      ]
+    }
+  ],
+  "evidence": []
+}

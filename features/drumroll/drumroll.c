@@ -190,10 +190,21 @@ static int finger_screen(void)
     return *TE_PLAYMODE == 1 && *TE_EDIT_MODE == TE_EDIT_MODE_SEQ && finger();
 }
 
+/* opened from PLAY (shift + blue press on a track): shown over PLAY on the tape screen too */
+volatile uint8_t dr_via_play;
+/* PLAY's clock: while PLAY plays pattern dr_ext_pat (-1 none), its clock in samples */
+volatile int8_t dr_ext_pat = -1;
+volatile uint32_t dr_ext_clock;
+
+static int screen(void)
+{
+    return finger_screen() || (dr_via_play && *TE_EDIT_MODE == TE_EDIT_MODE_TAPE);
+}
+
 /* is the DRUM ROLL screen up (over the finger screen) */
 static int shown(void)
 {
-    return dr_open && finger_screen();
+    return dr_open && screen();
 }
 
 static int owned(int p)
@@ -1424,6 +1435,31 @@ static int rec_key(int key, int down)
     return 1;
 }
 
+/* PLAY: open the editor on pattern p (0..13) as soon as the finger screen is up (PLAY brings it
+ * up by pressing the playmode key and the sequencer key for the user); -1 = no request */
+volatile int8_t dr_req_open = -1;
+
+static void open_at(int p)
+{
+    int q;
+
+    (void)q;
+    dr_open = 1;
+    last_sel = (int8_t)(FS_PLAYER_BUILT ? FS_SELECTED : -1);   /* follow() keeps p until TE picks another */
+    show_pattern(p);
+    for (q = 0; q < DR_PATTERNS; q++)
+        summary(q);                             /* TE's copies up to date (after a restart too) */
+}
+
+/* PLAY (KeyHandler thread): open the editor on pattern p, shown over PLAY */
+void dr_open_from_play(int p)
+{
+    if (!inited || p < 0 || p >= DR_PATTERNS)
+        return;
+    dr_via_play = 1;
+    open_at(p);
+}
+
 int dr_key(int key, int down)
 {
     int k = key - KEY_PUSH, p, cleared = 0;
@@ -1431,10 +1467,18 @@ int dr_key(int key, int down)
 
     if (!inited)
         return 0;
+    if (!dr_open)
+        dr_via_play = 0;                     /* closed: back to the finger screen only */
+    if (dr_req_open >= 0 && finger_screen() && !dr_open) {
+        p = dr_req_open;
+        dr_req_open = -1;
+        if (p < DR_PATTERNS)
+            open_at(p);
+    }
     if (key == TE_KEY_BACK || key == TE_KEY_FORWARD) {    /* shift + BACK / FORWARD: undo / redo */
         int bit = key == TE_KEY_FORWARD;
 
-        if (down && *TE_SHIFT_HELD && finger_screen()) {
+        if (down && *TE_SHIFT_HELD && (finger_screen() || shown())) {
             hist_step(bit);
             undo_consumed |= (uint8_t)(1 << bit);
             return 1;
@@ -1460,7 +1504,7 @@ int dr_key(int key, int down)
         }
         return 0;
     }
-    if (!finger_screen())
+    if (!finger_screen() && !shown())
         return 0;
     if (!dr_open) {
         dr_ask = 0;
@@ -1648,6 +1692,8 @@ static int lane_playhead(const dr_lane *ln, uint64_t L)
 {
     int p = dr_cur % DR_PATTERNS, a, st, len = ln->len < 1 ? 1 : ln->len;
 
+    if (dr_ext_pat == p)                        /* PLAY plays it: PLAY's clock */
+        return dr_playhead(ln, dr_ext_clock, L);
     if (playing())
         return dr_playhead(ln, play_clock(), L);
     if (!te_playing())
@@ -2237,6 +2283,7 @@ void dr_frame(uint16_t *buf)
 static char row[DR_ROW_TEXT_MAX];               /* one row's text (load: a copy of the column) */
 static char sql[DR_ROW_TEXT_MAX + 96];
 static uint8_t loaded, pending;
+volatile uint8_t dr_loaded;                     /* dr_pat holds op1.db's patterns (PLAY reads) */
 static uint16_t quiet;
 static uint32_t saved_hash[DR_ROWS];
 
@@ -2390,6 +2437,7 @@ void dr_main(void)
     if (!loaded) {
         load_all(db);
         loaded = 1;
+        dr_loaded = 1;
         return;
     }
     if (dirty) {                                /* an edit: wait until it is quiet again */

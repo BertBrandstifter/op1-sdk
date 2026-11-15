@@ -18,7 +18,7 @@
  * wh_note_key     on_key observe: the keyboard's held keys (the screen names their notes)
  * wh_frame        WHEEL screen over drwave's on the engine screen (kept above y 140, where
  *                 engine_plus draws its knob row)
- * wh_tick         seq_tick: the clock of the sound's name on the lamps
+ * wh_tick         seq_tick: the clock of the lamps
  * TE's envelope, velocity, volume, FX and LFO apply as for any engine. */
 #include <op1/te246.h>
 #include <op1/gfx.h>
@@ -35,10 +35,9 @@
 #define P2_MAX          0x0fff
 #define HELD            8
 #define FLASH           100                     /* audio blocks: ~145 ms */
-#define TITLE_TIME      TE_SAMPLE_RATE          /* the sound's name over the organ: 1 s */
 
-static wh_voice voices[VOICES];
-static wh_rotor rotor;
+static wh_voice voices[EH_SLOTS];               /* every instance (PLAY: vi 6..23) */
+static wh_rotor rotors[EH_INST];                /* the rotary speaker per instance */
 volatile uint8_t wh_page;                       /* 0..2 = page 1..3 (bench reads) */
 #define PAGES           3
 static volatile uint8_t consumed;               /* pushes whose key-up we eat */
@@ -46,7 +45,7 @@ volatile int8_t wh_bank = -1;                   /* last loaded bank entry (-1 no
 static volatile uint8_t bank_edited;            /* knobs changed after loading it */
 static volatile int8_t bank_slot = -1;          /* sound it was loaded into */
 static volatile uint32_t now;                   /* samples, advanced by wh_tick */
-static volatile uint32_t title_until;           /* the sound's name shown while now < this */
+static volatile uint8_t title_hold;             /* the sound's name shown until a key goes down */
 volatile uint8_t wh_title_on;                   /* drawn in the last frame (bench reads) */
 volatile int8_t wh_note_shown = -1;             /* the lowest sounding note shown last frame (bench) */
 static volatile uint8_t touched;                /* the page's knob turned last (the lamps show it) */
@@ -111,10 +110,13 @@ static void wh_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint3
 
     unpack(knobs, p);
     if (flags & EH_BLOCK) {
-        wh_rotor_block(&rotor, p, TE_VOICE_SAMPLES);
-        blocks++;
+        wh_rotor_block(&rotors[vi / EH_VOICES], p, TE_VOICE_SAMPLES);
+        if (vi < EH_VOICES)
+            blocks++;                           /* the screen's clock: TE's voices only */
     }
-    if (flags & EH_FRESH) {                     /* a new note: pair it with its key (screen) */
+    if ((flags & EH_FRESH) && vi >= EH_VOICES) {
+        wh_note_on(&voices[vi]);                /* a PLAY instance: no keyboard display */
+    } else if (flags & EH_FRESH) {              /* a new note: pair it with its key (screen) */
         int key = inc_key(inc[0]);
 
         wh_note_on(&voices[vi]);
@@ -133,12 +135,12 @@ static void wh_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint3
             flash_until[vi] = blocks + FLASH;
         }
     }
-    wh_render(&voices[vi], &rotor, out, TE_VOICE_SAMPLES, inc, p);
+    wh_render(&voices[vi], &rotors[vi / EH_VOICES], out, TE_VOICE_SAMPLES, inc, p);
 }
 
 void wh_init(void)
 {
-    eh_register(TAG, wh_eh_render);
+    eh_register_multi(TAG, wh_eh_render);       /* instances: voices[EH_SLOTS], a rotor each */
 }
 
 /* Engine browser row "wheel" (content_sql adds it to TE's synth_types with WHEEL's defaults as its
@@ -192,6 +194,8 @@ void wh_note_key(int key, int down)
         if (!held_id[i] && free < 0)
             free = i;
     }
+    if (down)
+        title_hold = 0;                         /* a key played: the lamps go to the registration */
     if (down && free >= 0) {
         held_key[free] = -1;
         held_note[free] = (int8_t)note;
@@ -288,7 +292,7 @@ static void bank_load(volatile int16_t *k, int slot, int e)
     wh_bank = (int8_t)e;
     bank_slot = (int8_t)slot;
     bank_edited = 0;
-    title_until = now + TITLE_TIME;
+    title_hold = 1;
 }
 
 /* shift + blue turn: one bank entry per knob event (one detent), wrapping */
@@ -480,7 +484,7 @@ static int sounding(void)
     return k > 127 ? -1 : k;
 }
 
-/* the lamps: the sound's name while the title time runs (a word a line: SOUL / JAZZ, * = edited;
+/* the lamps: the sound's name until a key is played (a word a line: SOUL / JAZZ, * = edited;
  * P--), else the registration over the knob turned last (PERC 3RD, DRIVE 25, BASS +1; FX on page 3) */
 static void display(int slot, int pg, const int16_t *p)
 {
@@ -488,7 +492,7 @@ static void display(int slot, int pg, const int16_t *p)
     const char *s;
     int own = wh_bank >= 0 && bank_slot == slot, q = pg * 4 + touched, i;
 
-    wh_title_on = (int32_t)(title_until - now) > 0;
+    wh_title_on = title_hold;
     eh_lcd_blank(&lamps, 2);
     if (wh_title_on) {
         if (!own) {
@@ -563,7 +567,7 @@ void wh_frame(uint16_t *buf)
     k = current(&slot);
     if (slot != shown) {                        /* the screen opens or shows another sound: its name */
         shown = (int8_t)slot;
-        title_until = now + TITLE_TIME;
+        title_hold = 1;
     }
     unpack(k, p);
     perc = wh_perc(p[WH_PERC]);

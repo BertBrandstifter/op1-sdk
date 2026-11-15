@@ -35,9 +35,9 @@ enum { P_LEVEL = 0, P_WAVE = 4, P_PITCH = 8, P_CUT = 12, P_TIME = 16, NP = 20 };
 
 static const uint8_t pmax[5] = { PL_LEVELS - 1, PL_WAVES - 1, PL_PITCHES - 1, PL_CUTS - 1, PL_TIMES - 1 };
 
-static pl_voice voices[EH_VOICES];
-static uint32_t order[EH_VOICES], notes;
-static uint8_t gone;
+static pl_voice voices[EH_SLOTS];               /* every instance (PLAY: vi 6..23) */
+static uint32_t order[EH_SLOTS], notes[EH_INST];   /* note-on order, per instance */
+static uint32_t gone;                           /* bit per voice slot (all instances) */
 static volatile int8_t newest = -1;
 static volatile uint8_t req_release;            /* KeyHandler -> render, a bit per voice */
 static volatile uint32_t blocks;
@@ -180,9 +180,13 @@ static void pl_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint3
     int i;
 
     params(knobs, stored(knobs), &p);
-    if (flags & EH_BLOCK)
-        blocks++;
-    if (flags & EH_FRESH) {                     /* a new note: pair it with its key */
+    if ((flags & EH_BLOCK) && vi < EH_VOICES)
+        blocks++;                               /* the screen's clock: TE's voices only */
+    if ((flags & EH_FRESH) && vi >= EH_VOICES) {   /* a PLAY instance: no keys, no display */
+        pl_note(v, inc[0], &p);
+        order[vi] = ++notes[vi / EH_VOICES];
+        gone &= ~(1u << vi);
+    } else if (flags & EH_FRESH) {              /* a new note: pair it with its key */
         int oldest = -1;
 
         for (i = 0; i < HELD; i++)
@@ -205,10 +209,10 @@ static void pl_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint3
             flash_until[vi] = blocks + FLASH;
         }
         newest = (int8_t)vi;
-        order[vi] = ++notes;
-        gone &= (uint8_t)~(1 << vi);
+        order[vi] = ++notes[0];
+        gone &= ~(1u << vi);
     }
-    if (req_release & (1 << vi)) {
+    if (vi < EH_VOICES && (req_release & (1 << vi))) {
         req_release &= (uint8_t)~(1 << vi);
         pl_release(v, &p);
     }
@@ -219,14 +223,14 @@ static void pl_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint3
             tones += p.level[i] > 0;
         max_sounding = tones ? TONE_BUDGET / tones : EH_VOICES;
         max_sounding = max_sounding > EH_VOICES ? EH_VOICES : max_sounding;
-        for (i = 0; i < EH_VOICES; i++)
+        for (i = vi / EH_VOICES * EH_VOICES; i < (vi / EH_VOICES + 1) * EH_VOICES; i++)
             younger += order[i] > order[vi];
-        if (younger >= max_sounding || (gone & (1 << vi))) {
-            if (!(gone & (1 << vi))) {
+        if (younger >= max_sounding || (gone & (1u << vi))) {
+            if (!(gone & (1u << vi))) {
                 pl_render(v, out, TE_VOICE_SAMPLES, inc, &p);
                 for (i = 0; i < TE_VOICE_SAMPLES; i++)
                     out[i] = (int16_t)((out[i] * (TE_VOICE_SAMPLES - 1 - i)) / TE_VOICE_SAMPLES);
-                gone |= (uint8_t)(1 << vi);
+                gone |= 1u << vi;
                 v->on = 0;
             } else {
                 for (i = 0; i < TE_VOICE_SAMPLES; i++)
@@ -242,9 +246,9 @@ void pl_setup(void)
 {
     int i;
 
-    for (i = 0; i < EH_VOICES; i++)
+    for (i = 0; i < EH_SLOTS; i++)
         pl_voice_init(&voices[i]);
-    eh_register(TAG, pl_eh_render);
+    eh_register_multi(TAG, pl_eh_render);       /* instances: own order / budget per instance */
 }
 
 /* Engine browser row "palette" (content_sql) -> "drwave" (TE knows no such type: fatal) */

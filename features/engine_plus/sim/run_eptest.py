@@ -19,7 +19,7 @@ from simtest import asm_bin, c_bin, run_model, BIN, composed  # noqa: E402
 from build import compile_project  # noqa: E402
 
 FEATURES, APP = ["quantize", "engine_plus"], "op1plus"   # composed by tools/compose.py
-DRIVER_AT, STACK = 0x01F00000, 0x01F7FFFC
+DRIVER_AT, STACK = 0x01F40000, 0x01F7FFFC
 STUBS = {0x01A4F098: 0, 0x01A00D14: 1, 0x019B6C74: 2, 0x019B6C0C: 3, 0x019A23D4: 4}
 
 

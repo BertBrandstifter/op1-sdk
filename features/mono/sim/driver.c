@@ -201,7 +201,10 @@ int main(void)
     mo_param_set(&K(0), P_RELEASE, 0);
     CHECK(2, ok);
 
-    /* 3: knob push cycles 7 pages */
+    /* 3: the screen opens on the FX page; knob push cycles 7 pages */
+    CHECK(3, mo_page == 6);
+    push(59, 0);
+    CHECK(3, mo_page == 0);
     i = keys_seen;
     push(59, 0);
     CHECK(3, mo_page == 1 && keys_seen == i);
@@ -296,7 +299,8 @@ int main(void)
         engine_name(&a, 0, 0);
         engine_name(&b, 0, 0);
         engine_name(&c, 0, 0);
-        CHECK(7, a.size == 6 && a.bx.sso[0] == 'd' && b.size == 6 && c.size == 4 && c.bx.sso[0] == 'm');
+        CHECK(7, a.size == 6 && a.bx.sso[0] == 'd' && b.size == 6 && c.size == 4 && c.bx.sso[0] == 'm'
+                 && mo_page == 6);
     }
 
     /* 8: cost per voice block of the sounding voice: a saw, filter open; + three oscillators, pink

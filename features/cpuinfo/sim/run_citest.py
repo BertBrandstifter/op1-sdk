@@ -19,7 +19,7 @@ from simtest import asm_bin, c_bin, run_model, run_gdb, composed  # noqa: E402
 from build import compile_project  # noqa: E402
 
 RECIPE = json.load(open(os.path.join(SDK, "recipes", "op1cpu.json")))
-DRIVER_AT, STACK = 0x01F00000, 0x01F7FFFC
+DRIVER_AT, STACK = 0x01F40000, 0x01F7FFFC   # the composed image is past 1 MiB (0x01F00000)
 STUBS = {0x0197C870: 0, 0x0197A826: 1, 0x01A00D14: 2, 0x019B6C74: 3, 0x019B6C0C: 4, 0x019FF664: 5, 0x019B2674: 6}
 MMRS = [(0xffc00000, 0x100)]                   # PLL_CTL / PLL_DIV / VR_CTL (not in the sim's default map)
 TE_STUBS = os.path.join(SDK, "features", "acid", "sim", "te_stubs.S")    # same TE stand-ins

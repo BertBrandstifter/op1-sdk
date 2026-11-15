@@ -31,7 +31,7 @@ from simtest import c_bin, run_model, composed  # noqa: E402
 from build import compile_project, patch_firmware, STOCK_SHA256  # noqa: E402
 import compose, ldr, ldrpatch, op1pack  # noqa: E402
 
-DRIVER_AT, STACK = 0x01F00000, 0x01F7FFFC
+DRIVER_AT, STACK = 0x01F40000, 0x01F7FFFC
 STUB = 0x0191FE8C                                         # where the redirected pointers lead
 RTS = b"\x10\x00"
 fails = []

@@ -1,0 +1,416 @@
+{
+  "schema": 1,
+  "name": "play",
+  "title": "PLAY tape screen",
+  "version": "0.3.2",
+  "status": "experimental",
+  "summary": "The tape key opens PLAY, a second tape screen (TE's own 4-track tape: tape again): one list of up to 8 tracks, each AUDIO (a WAV / AIF from disk mode's play/ folder, looped or once, streamed from flash), SYNTH (NOTE ROLL patterns on its own instance of an SDK engine with one of the 8 synth sounds, TE's envelope, PLAY's decimator) or DRUM (DRUM ROLL patterns on PLAY's own sample player from TE's kits, in place), all sample-locked from bar 1, with level, mute, solo, master and a bar counter; the mix joins TE's master bus like the tape (master EQ, master FX, mixer drive and volume act on it). The track list lives in SONG.BIN (a tracker song: song rows x tracks, chains of patterns + transpose). When disk mode is left, a hook in TE's disk sync copies play/ into /yaffs2/user/play_a|play_b before TE clears the disk (the only writes, with SONG.BIN).",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "sdk": 1,
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "prefix": "py_",
+  "sources": [
+    "play.c",
+    "py_core.c",
+    "py_import.c",
+    "py_te.c",
+    "py_song.c",
+    "py_drum.c",
+    "py_synth.c",
+    "py_pattern.c"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "libs": [
+    "gfx",
+    "fat",
+    "audiofile"
+  ],
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "py_key_first",
+      "mode": "filter",
+      "order": "first"
+    },
+    {
+      "point": "on_key",
+      "fn": "py_key",
+      "mode": "filter",
+      "order": "last"
+    },
+    {
+      "point": "on_knob",
+      "fn": "py_knob",
+      "mode": "filter",
+      "order": "last"
+    },
+    {
+      "point": "frame",
+      "fn": "py_frame"
+    },
+    {
+      "point": "main_tick",
+      "fn": "py_main"
+    }
+  ],
+  "hooks": {
+    "entry_hooks": [
+      {
+        "func": "0x019de548",
+        "expect": "600509e1bcda",
+        "c": "py_bus_hook",
+        "after": true,
+        "what": "TE's metronome mix into the master bus (audio interrupt, every block, before master EQ / FX / drive / volume): after it, PLAY adds its sum into the int16 bus 0xff800d34 / 0xff800db4, so TE's master section acts on it like on the tape"
+      }
+    ],
+    "call_sites": [
+      {
+        "site": "0x01997584",
+        "expect": "0x01997de4",
+        "c": "py_cleanup_hook",
+        "what": "disk mode left without changes: before TE deletes the image's root entries, import play/"
+      },
+      {
+        "site": "0x01996986",
+        "expect": "0x01997de4",
+        "c": "py_cleanup_hook",
+        "what": "sync after a restart: before TE deletes the image's root entries, import play/"
+      },
+      {
+        "site": "0x01996f6a",
+        "expect": "0x01997de4",
+        "c": "py_cleanup_hook",
+        "what": "defragment check (every boot, and on the way out of disk mode): before its cleanup, import play/"
+      }
+    ]
+  },
+  "claims": [
+    {
+      "input": "cut_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "cut_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "insert_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "insert_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "join_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "join_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "sound1_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "sound1_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "sound2_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "sound2_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "sound3_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "sound3_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "sound4_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "sound4_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "sound5_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "sound5_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "sound6_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "sound6_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "sound7_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "sound7_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "sound8_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "sound8_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "rec_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "rec_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "play_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "play_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "stop_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "stop_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "back_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "back_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "forward_press",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "forward_press",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "t1_press",
+      "shift": "any",
+      "screen": "tape"
+    },
+    {
+      "input": "t2_press",
+      "shift": "any",
+      "screen": "tape"
+    },
+    {
+      "input": "t3_press",
+      "shift": "any",
+      "screen": "tape"
+    },
+    {
+      "input": "t4_press",
+      "shift": "any",
+      "screen": "tape"
+    },
+    {
+      "input": "tape_press",
+      "shift": "any",
+      "screen": "tape"
+    },
+    {
+      "input": "blue_turn",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "blue_turn",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "blue_push",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "blue_push",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "green_turn",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "green_turn",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "green_push",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "green_push",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "white_turn",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "white_turn",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "white_push",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "white_push",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "orange_turn",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "orange_turn",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    },
+    {
+      "input": "orange_push",
+      "shift": "no",
+      "screen": "tape"
+    },
+    {
+      "input": "orange_push",
+      "shift": "yes",
+      "screen": "tape",
+      "modal": true
+    }
+  ],
+  "controls": [
+    "tape key: PLAY (from another screen); tape again on the tape screen: PLAY <-> TE's tape",
+    "PLAY: a list of up to 8 tracks (AUDIO / SYNTH / DRUM); blue turn cursor, blue press mute, green turn level, green press solo",
+    "PLAY: white turn = the track's file (AUDIO) or pattern 1-14 (SYNTH: NOTE ROLL, DRUM: DRUM ROLL), white press = LOOP / ONCE (AUDIO) or voices 2 / 4 / 1 (SYNTH), shift + white press = ECO (SYNTH: the engine at 44.1 kHz, half the cost); orange turn = sound / kit slot (CUR, 1-8); shift + orange turn = master",
+    "PLAY: + ADD row: white turn the type, white press adds; insert twice = a new track before the cursor's; cut twice = remove the track",
+    "PLAY: play start / pause, stop pause / again back to bar 1, back / forward one bar, T1-T4 cursor (shift: mute), orange press re-read the set folder",
+    "disk mode: WAV / AIF files (+ set.txt with bpm) in a play/ folder are imported when disk mode is left",
+    "PLAY: shift + blue press on a SYNTH / DRUM track: its pattern in NOTE ROLL / DRUM ROLL over PLAY, the playhead follows PLAY; shift + blue press closes it",
+    "PLAY: while playing, CPU in the header = PLAY's share of the audio time, the number on a SYNTH / DRUM row = that track's share"
+  ],
+  "tests": [
+    "test_py_core.c",
+    "test_py_song.c",
+    "test_py_drum.c",
+    "test_py_synth.c",
+    "sim/run_playtest.py"
+  ],
+  "depends": [
+    "drumroll",
+    "noteroll",
+    "enginehost"
+  ],
+  "conflicts": [],
+  "evidence": [
+    {
+      "firmware": "R246",
+      "date": "2026-11-15",
+      "what": "device (op1play): boots; tape opens PLAY, tape again TE's tape; play/ (A1 wav 2:08 stereo + A2/A3 aif loops + set.txt) imported on leaving disk mode; plays in sync with LOOP, transport, mute/solo/level/master, volume knob and speaker act on PLAY, keeps playing on other screens"
+    }
+  ],
+  "docs": "README.md"
+}

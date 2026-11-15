@@ -18,7 +18,7 @@
 #define TAG             4
 #define PAGES           4
 
-static tr_voice voices[EH_VOICES];
+static tr_voice voices[EH_SLOTS];          /* every instance (PLAY: vi 6..23) */
 volatile uint8_t tr_page;                       /* 0..3 = page 1..4 (bench reads) */
 static volatile uint8_t consumed;
 volatile int8_t tr_bank = -1;                   /* bench reads */
@@ -70,7 +70,7 @@ static void tr_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint3
 
 void tr_init(void)
 {
-    eh_register(TAG, tr_eh_render);
+    eh_register_multi(TAG, tr_eh_render);  /* per-voice state only: instances OK */
 }
 
 /* Engine browser row "trio" (content_sql) -> "drwave" (TE knows no type "trio": fatal) */

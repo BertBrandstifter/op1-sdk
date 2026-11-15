@@ -142,7 +142,7 @@ static void sweep(const char *name, int lo, int hi, int steps, void (*set)(ac_pa
         m = note_meas(&p, hz, accent, a_ms, b_ms, f);
         if (i == 0)
             first = m;
-        else if ((m - prev) * dir < -1e-3 * fabs(prev) - 1e-9) {
+        else if ((m - prev) * dir < -3e-3 * fabs(prev) - 1e-9) {     /* 0.3 %: RESONANCE's plateau at 185 .. 208 */
             snprintf(what, sizeof(what), "%s: not monotonic at %d (%.4f after %.4f)", name, val, m, prev);
             check(0, what);
             ok = 0;
@@ -189,6 +189,102 @@ static double m_reso(const double *x, int a, int b)
 static double m_h3(const double *x, int a, int b) { return goertzel(x, a, b, 1320.0) / goertzel(x, a, b, 440.0); }
 static double m_h3abs(const double *x, int a, int b) { return goertzel(x, a, b, 1320.0); }
 
+/* the 3rd harmonic's level against the fundamental at rate sr */
+static double h3_rel(const double *x, int a, int b, double hz, double sr)
+{
+    double r[2];
+    int h;
+
+    for (h = 0; h < 2; h++) {
+        double w = 2 * M_PI * hz * (h ? 3 : 1) / sr, c = 2 * cos(w), s1 = 0, s2 = 0, s0;
+        int i;
+
+        for (i = a; i < b; i++) {
+            s0 = x[i] + c * s1 - s2;
+            s2 = s1;
+            s1 = s0;
+        }
+        r[h] = sqrt(s1 * s1 + s2 * s2 - c * s1 * s2) / (b - a);
+    }
+    return 20 * log10((r[1] + 1e-9) / (r[0] + 1e-9));
+}
+
+/* half rate (PLAY's ECO): output at 44.1 kHz with the same envelope times, brightness and pitch as
+ * at 88.2 kHz. Per 10 ms frame: level within 1.5 dB (median 0.5); the 3rd harmonic's level within
+ * 2 dB in the sustained part; the same slide time. Before the fix, ECO ran ACID's envelopes at half
+ * speed and its filter an octave low. */
+static void half_rate(void)
+{
+    static double full[88200], half[44100];
+    static const int cases[][5] = {     /* cutoff, res, envmod, decay, slide (legato second note) */
+        { 110, 150, 120, 110, 0 }, { 60, 220, 200, 40, 0 }, { 200, 80, 60, 200, 0 }, { 90, 180, 160, 80, 1 },
+    };
+    unsigned c;
+    char what[160];
+
+    for (c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        ac_params p = base();
+        ac_voice v;
+        uint32_t inc[N];
+        int16_t out[N];
+        int i, b, nf = 0, nh = 0, k, worst_i = 0;
+        double d[60], worst = 0, med, dh;
+
+        p.cutoff = cases[c][0]; p.res = cases[c][1]; p.envmod = cases[c][2]; p.decay = cases[c][3];
+        for (int pass = 0; pass < 2; pass++) {
+            p.half = (uint8_t)pass;
+            ac_init(&v);
+            ac_note(&v, 0, 0);
+            for (b = 0; b < (pass ? 344 : 689); b++) {      /* 1 s */
+                double hz = cases[c][4] && b >= (pass ? 172 : 344) ? 164.8 : 110.0;
+
+                if (cases[c][4] && b == (pass ? 172 : 344))
+                    ac_note(&v, 1, 0);                      /* a slide */
+                for (i = 0; i < N; i++)
+                    inc[i] = (uint32_t)(hz / (pass ? 44100.0 : 88200.0) * 4294967296.0);
+                ac_render(&v, out, N, inc, &p);
+                for (i = 0; i < N; i++) {
+                    if (pass && nh < 44100)
+                        half[nh++] = out[i];
+                    else if (!pass && nf < 88200)
+                        full[nf++] = out[i];
+                }
+            }
+        }
+        for (k = 0; k < 60; k++) {                          /* 10 ms frames over 600 ms */
+            double lf = 20 * log10(rms(full, k * 882, (k + 1) * 882) + 1e-3);
+            double lh = 20 * log10(rms(half, k * 441, (k + 1) * 441) + 1e-3);
+
+            d[k] = fabs(lf - lh);
+            if (d[k] > worst) {
+                worst = d[k];
+                worst_i = k;
+            }
+        }
+        for (i = 0; i < 60; i++)                            /* median (sort) */
+            for (k = i + 1; k < 60; k++)
+                if (d[k] < d[i]) {
+                    double t = d[i];
+                    d[i] = d[k];
+                    d[k] = t;
+                }
+        med = d[30];
+        dh = fabs(h3_rel(full, 8820, 26460, 110, 88200) - h3_rel(half, 4410, 13230, 110, 44100));
+        snprintf(what, sizeof(what), "half rate case %u: level per 10 ms median %.2f dB, worst %.2f dB (frame %d), "
+                 "3rd harmonic %.2f dB", c, med, worst, worst_i, dh);
+        check(med < 0.5 && worst < 1.5 && dh < 2.0, what);
+        printf("  %s\n", what);
+        if (cases[c][4]) {                                  /* the slide: pitch 40 ms after it */
+            double pf = pitch(full, 35280 + 3528, 35280 + 3528 + 2646);
+            double ph = pitch(half, 17640 + 1764, 17640 + 1764 + 1323) * 0.5;
+
+            snprintf(what, sizeof(what), "half rate slide: 40 ms after, %.1f Hz vs %.1f Hz", ph, pf);
+            check(fabs(ph - pf) < 0.04 * pf, what);
+            printf("  %s\n", what);
+        }
+    }
+}
+
 int main(void)
 {
     ac_params p;
@@ -196,6 +292,8 @@ int main(void)
     double f, a, b, c;
     int n, i;
 
+    printf("half rate (ECO):\n");
+    half_rate();
     printf("sweeps (110 Hz saw):\n");
     sweep("CUTOFF", 0, 255, 18, s_cutoff, 110, 0, 50, 150, bright, +1, 3.0);
     sweep("RESONANCE", 0, 255, 12, s_res, 110, 0, 100, 200, m_reso, +1, 3.0);

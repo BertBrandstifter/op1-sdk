@@ -34,8 +34,15 @@ cycles pages.
   levels. **TUNE** in semitones on top of TE's pitch (octave, bend, TE's LFO = vibrato).
 - **Sound = Open303's model** (v0.2): the 303 saw / tanh-shaped square (46.9 % high), a 44.5 Hz
   high-pass, the **TB-303 diode-ladder filter** (linear, coupled stages, its coefficient /
-  feedback / gain-compensation fits, 150 Hz high-pass in the feedback; 2 × oversampled at
-  176.4 kHz), a 24 Hz high-pass after; CUTOFF 314 .. 2394 Hz (the 303's range), resonance skewed
+  feedback / gain-compensation fits, 150 Hz high-pass in the feedback), a 24 Hz high-pass after.
+  Oscillator and filter run at TE's voice rate, 88.2 kHz, with coefficients fitted to the
+  176.4 kHz filter's response (v0.3: the filter is linear, so the rate only shifts its tuning,
+  and the fit takes that back: within 0.25 dB per third octave of v0.2 on resonant sounds, up to
+  1.2 dB darker with the filter wide open and no resonance); with FILTER FM on they run 2 ×
+  oversampled at 176.4 kHz as in v0.2 (the FM loop needs the rate). On a PLAY track with ECO
+  (render flag `EH_HALF`, v0.3.1) the voice renders at 44.1 kHz with its own fitted table and its
+  control coefficients squared: the same cutoffs, envelope times and slide (host test: level per
+  10 ms within 0.4 dB, 3rd harmonic within 0.1 dB of the 88.2 kHz voice); CUTOFF 314 .. 2394 Hz (the 303's range), resonance skewed
   as Open303, the **measured env-mod mapping** (env mod scales and offsets the envelope in
   octaves, as measured on a real 303); the filter envelope is the MEG through rc1 (SOFT ATK, stock
   3 ms), the accent through rc2 (the sweep circuit); the **amp**: instant attack, 1230 ms decay to 0
@@ -73,8 +80,8 @@ cycles pages.
   go back to the older note (TE ends the newest voice).
 - Page 1 lives in knob slots 1-4, so **TE's LFO can move cutoff, resonance, env mod, decay**.
 - **Cost** (simulator, cycles per 128-sample audio block, the whole engine since it is mono): a
-  saw with the filter open 34.5k, everything on (sub, overdrive, resonance, filter FM per sample,
-  tracking, HIGH accent, slide, muffler) 63k; MONO 3's four voices take ~147k.
+  saw with the filter open 45k (v0.2 at 176.4 kHz: 74k), everything on (sub, overdrive, resonance,
+  filter FM per sample at 176.4 kHz, tracking, HIGH accent, slide, muffler) 125k; MONO 3's four voices take ~147k.
 - **Recipe order**: ACID 3 must come before `engine_plus` (its page pushes claim every engine
   screen).
 

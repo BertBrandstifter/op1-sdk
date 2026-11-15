@@ -1,0 +1,7 @@
+{
+  "name": "op1dump",
+  "boot_text": "op1dump!",
+  "features": [
+    "l1dump"
+  ]
+}

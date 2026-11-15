@@ -102,6 +102,17 @@ fi
 # --- GDB + simulator (simulator MUST be -O0, clang miscompiles it at -O2) -----
 if [[ ! -x "$PREFIX/bin/bfin-elf-run" || ! -x "$PREFIX/bin/bfin-elf-gdb" ]]; then
   say "building gdb + simulator"
+  # the sim modules.c generator uses a GNU-sed-only expression; make it BSD-sed safe so the
+  # hardware tree (--environment operating, needed to boot TE's firmware) is linked in
+  python3 - "$TC/src/$GDB/sim/Makefile.in" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = "sed -n -e '/^sim_install_/{s/^\\(sim_install_[a-z_0-9A-Z]*\\).*/\\1/;p}'"
+new = "sed -n -e '/^sim_install_/s/^\\(sim_install_[a-z_0-9A-Z]*\\).*/\\1/p'"
+if old in s:
+    open(p, "w").write(s.replace(old, new))
+PY
   mkdir -p "$TC/build-gdb" && cd "$TC/build-gdb"
   [[ -f Makefile ]] || "../src/$GDB/configure" --target=bfin-elf --prefix="$PREFIX" --disable-nls --disable-werror \
     --with-system-zlib --without-zstd --with-gmp="$GMP" --with-mpfr="$MPFR" \

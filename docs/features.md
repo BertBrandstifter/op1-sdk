@@ -148,8 +148,23 @@ Performance:
 - `quantize` 1.10 — live input quantizer (shift + insert); **not in op1plus** since 2026-10-13 (user),
   kept in the library (conflicts with CHORD+'s shift + insert)
 
+- `play` 0.1 — PLAY tape screen (`new_pattern_tape.md`): the tape key opens it, tape again = TE's
+  tape. Plays a set from disk mode's `play/` folder (A1 arrangement + loops A2..A8, WAV / AIFF
+  16-bit 44.1 kHz), streamed from flash, sample-locked, level / mute / solo / master / bar
+  counter / LOOP; mixed in before TE's volume (entry hook 0x01a10de4); imported by a hook in TE's
+  disk sync (0x01997de4 call sites) into `/yaffs2/user/play_a|b`. Pattern tracks later.
+  **Not in op1plus yet** (device test pending): `recipes/op1play.json`. Libraries it brought:
+  `fat` (read-only FAT16/32) and `audiofile` (WAV / AIFF headers), `include/op1/`.
+
 Debug / examples (not in op1plus): `fxdiag` 0.1 (FX hosting overlay, `recipes/op1diag.json`),
-`key_probe` (input probe, device-verified), `midi_filter` (MIDI CC filter example).
+`key_probe` (input probe, device-verified), `midi_filter` (MIDI CC filter example),
+`playprobe` 0.1 (PLAY tape screen probe, shift + speech, `recipes/op1play.json`: test tone at the
+output mix point, read-only FAT reader for `play/` inside `tape_c.raw`, read speed, sample heap,
+8-stream mix cost, key log; not yet device-tested),
+`l1dump` 0.1.3 (firmware plaintext dumper: the running chip's decrypted L1 memories out via USB
+carrier file or audio FSK, `recipes/op1dump.json`, decode with `tools/l1dump_rx.py`; device-verified,
+L1I read via DTEST. The dump is also what lets `tools/op1sim.py` start a stock firmware in the
+simulator's operating environment).
 
 Recipe `recipes/op1plus.json` (boot text `op1sdk +`): chordplus, lofi, wheel, warp, trio, m1, party, mono, mallet, reso,
 shimmer, fxpack, drumroll, noteroll, requantize, engine_plus (+ enginehost, quantcore as dependencies). Factory synth

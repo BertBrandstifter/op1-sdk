@@ -22,10 +22,46 @@ static int last_voice = EH_VOICES;              /* new audio block when the inde
 volatile uint8_t eh_prof;                       /* set by cpuinfo: count the engines' cycles */
 volatile uint32_t eh_cycles;                    /* CYCLES spent in SDK engine renders (wraps) */
 
+static uint8_t multi[EH_TAGS];                  /* the engine takes vi 0..EH_SLOTS-1 */
+
 void eh_register(int tag, eh_render_fn render)
 {
     if (tag > 0 && tag < EH_TAGS)
         engines[tag] = render;
+}
+
+void eh_register_multi(int tag, eh_render_fn render)
+{
+    if (tag > 0 && tag < EH_TAGS) {
+        engines[tag] = render;
+        multi[tag] = 1;
+    }
+}
+
+int eh_multi_ok(const volatile int16_t *knobs)
+{
+    int t = eh_tag(knobs);
+
+    return t && multi[t] && engines[t];
+}
+
+int eh_render_inst(int inst, int v, int16_t *out, const int16_t *knobs, const uint32_t *inc, int flags)
+{
+    int t = eh_tag(knobs);
+
+    if (!t || !multi[t] || !engines[t] || inst < 1 || inst >= EH_INST || v < 0 || v >= EH_VOICES)
+        return 0;
+    if (eh_prof) {
+        uint32_t c0, c1;
+
+        __asm__ volatile("%0 = CYCLES;" : "=d"(c0));
+        engines[t](inst * EH_VOICES + v, out, knobs, inc, flags);
+        __asm__ volatile("%0 = CYCLES;" : "=d"(c1));
+        eh_cycles += c1 - c0;
+        return 1;
+    }
+    engines[t](inst * EH_VOICES + v, out, knobs, inc, flags);
+    return 1;
 }
 
 int eh_tag(const volatile int16_t *k)

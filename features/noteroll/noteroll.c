@@ -128,9 +128,20 @@ static int finger_screen(void)
     return *TE_PLAYMODE == 0 && *TE_EDIT_MODE == TE_EDIT_MODE_SEQ && finger();
 }
 
+/* opened from PLAY (shift + blue press on a track): shown over PLAY on the tape screen too */
+volatile uint8_t nr_via_play;
+/* PLAY's clock: while PLAY plays pattern nr_ext_pat (-1 none), its clock in samples */
+volatile int8_t nr_ext_pat = -1;
+volatile uint32_t nr_ext_clock;
+
+static int screen(void)
+{
+    return finger_screen() || (nr_via_play && *TE_EDIT_MODE == TE_EDIT_MODE_TAPE);
+}
+
 static int shown(void)
 {
-    return nr_open && finger_screen();
+    return nr_open && screen();
 }
 
 static uint32_t bpm_x100(void)
@@ -1078,6 +1089,30 @@ static int rec_key(int key, int down)
     return 1;
 }
 
+/* PLAY: open the editor on pattern p (0..13) as soon as the finger screen is up (PLAY brings it
+ * up by pressing the playmode key and the sequencer key for the user); -1 = no request */
+volatile int8_t nr_req_open = -1;
+
+static void open_at(int p)
+{
+    int q;
+
+    (void)q;
+    nr_open = 1;
+    last_sel = (int8_t)(FS_PLAYER_BUILT ? FS_SELECTED : -1);   /* follow() keeps p until TE picks another */
+    show_pattern(p);
+    want_summary |= nr_owned;                   /* TE's copies up to date (after a restart too) */
+}
+
+/* PLAY (KeyHandler thread): open the editor on pattern p, shown over PLAY */
+void nr_open_from_play(int p)
+{
+    if (!inited || p < 0 || p >= NR_PATTERNS)
+        return;
+    nr_via_play = 1;
+    open_at(p);
+}
+
 int nr_key(int key, int down)
 {
     int k = key - KEY_PUSH, p, cleared = 0;
@@ -1085,10 +1120,18 @@ int nr_key(int key, int down)
 
     if (!inited)
         return 0;
+    if (!nr_open)
+        nr_via_play = 0;                     /* closed: back to the finger screen only */
+    if (nr_req_open >= 0 && finger_screen() && !nr_open) {
+        p = nr_req_open;
+        nr_req_open = -1;
+        if (p < NR_PATTERNS)
+            open_at(p);
+    }
     if (key == TE_KEY_BACK || key == TE_KEY_FORWARD) {    /* shift + BACK / FORWARD: undo / redo */
         int bit = key == TE_KEY_FORWARD;
 
-        if (down && *TE_SHIFT_HELD && finger_screen()) {
+        if (down && *TE_SHIFT_HELD && (finger_screen() || shown())) {
             hist_step(bit);
             undo_consumed |= (uint8_t)(1 << bit);
             return 1;
@@ -1114,7 +1157,7 @@ int nr_key(int key, int down)
         }
         return 0;
     }
-    if (!finger_screen())
+    if (!finger_screen() && !shown())
         return 0;
     if (!nr_open) {
         nr_ask = 0;
@@ -1427,6 +1470,8 @@ static int playhead(void)
 {
     int p = nr_cur % NR_PATTERNS, a, st;
 
+    if (nr_ext_pat == p)                        /* PLAY plays it: PLAY's clock */
+        return nr_playhead(pat(), nr_ext_clock, st16 ? st16 : nr_step_q16(12000));
     if (playing()) {
         uint32_t t = nr_play[p].next;
 
@@ -1889,6 +1934,7 @@ void nr_frame(uint16_t *buf)
 static char row[NR_ROW_TEXT_MAX];
 static char sql[NR_ROW_TEXT_MAX + 96];
 static uint8_t loaded, pending;
+volatile uint8_t nr_loaded;                     /* nr_pat holds op1.db's patterns (PLAY reads) */
 static uint16_t quiet;
 static uint32_t saved_hash[NR_ROWS];
 
@@ -2032,6 +2078,7 @@ void nr_main(void)
     if (!loaded) {
         load_all(db);
         loaded = 1;
+        nr_loaded = 1;
         return;
     }
     if (dirty) {                                /* an edit: wait until it is quiet again */

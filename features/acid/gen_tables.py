@@ -2,15 +2,18 @@
 """Generate ac_tables.h: ACID 3's tables. The voice model follows Open303 (Robin Schmidt, MIT, see
 NOTICE): the TB-303 filter ("TB_303" mode of rosic::TeeBeeFilter: a linear diode-ladder model after
 mystran & kunn, its coefficient / feedback / gain fits), the measured cutoff / env-mod mapping and
-the envelope / RC time constants. Here: per-semitone filter coefficients for the filter's rate
-(176.4 kHz = 2 x TE's 88.2 kHz), control-rate coefficients (one update per 8 output samples),
-resonance skew, tanh, exp2 / log2. Also checks the filter's stability at full resonance.
-Run: python3 gen_tables.py"""
+the envelope / RC time constants. Here: per-semitone filter coefficients for both filter rates
+(2 x: 176.4 kHz, Open303's own fits, used while FILTER FM is on; 1 x: 88.2 kHz, half the cost;
+half: 44.1 kHz for PLAY's ECO tracks;
+b0 and k fitted so that the filter's response matches the 2 x one, weighted to high resonance),
+control-rate coefficients (one update per 8 output samples), resonance skew, tanh, exp2 / log2.
+Also checks the filter's stability at full resonance at both rates.
+Run: python3 gen_tables.py (needs numpy; the fit takes a minute)"""
 import math, os
+import numpy as np
 
 SR = 88200                      # TE's voice rate
-OS = int(os.environ.get("AC_OS", "2"))  # oversampling of oscillator + filter
-FS = OS * SR                    # oscillator + filter rate
+FS = 2 * SR                     # the 2 x rate (Open303's fits are made for it)
 CTL = SR / 8                    # control updates per second (one per 8 output samples)
 TOP = 140                       # semitones above 20 Hz in the filter table (capped at 14 kHz)
 
@@ -39,11 +42,11 @@ def hp_coeff(fc, fs):
     return math.exp(-2 * math.pi * fc / fs)
 
 
-def run_filter(fc, r, n=FS // 4, fhp=150.0):
+def run_filter(b0, kr, r, fs, fhp=150.0):
     """float model of the filter (impulse): the last quarter's peak / the first quarter's"""
-    b0, kr = tb303(fc)
+    n = fs // 4
     k = kr * r
-    a = hp_coeff(fhp, FS)
+    a = hp_coeff(fhp, fs)
     y1 = y2 = y3 = y4 = 0.0
     hx = hy = 0.0
     pk0 = pk1 = 0.0
@@ -64,17 +67,102 @@ def run_filter(fc, r, n=FS // 4, fhp=150.0):
     return pk1 / pk0 if pk0 else 0
 
 
-# stability: full resonance must ring down at every cutoff the engine can reach
-for fc in (30, 60, 120, 250, 500, 1000, 2000, 4000, 8000, 14000):
-    q = run_filter(fc, 1.0)
-    assert q < 0.5, f"filter unstable at {fc} Hz, r = 1: {q}"
+def step(s, x, b0, k, a):
+    """one sample of the filter (as ac_core.c), state y1..y4, hx, hy"""
+    y1, y2, y3, y4, hx, hy = s
+    f = k * y4
+    hy = a * (hy + f - hx)
+    hx = f
+    y0 = x - hy
+    y1 += 2 * b0 * (y0 - y1 + y2)
+    y2 += b0 * (y1 - 2 * y2 + y3)
+    y3 += b0 * (y2 - 2 * y3 + y4)
+    y4 += b0 * (y3 - 2 * y4)
+    return np.array([y1, y2, y3, y4, hx, hy])
 
-b0q, kq = [], []
+
+FIT_F = 20 * 2 ** np.linspace(0, math.log2(900), 120)     # 20 Hz .. 18 kHz
+FIT_R = ((0.0, 0.3), (0.5, 0.6), (0.9, 3.0), (1.0, 3.0))   # resonance, weight (the 303 lives up there)
+
+
+def resp(b0, k, fs):
+    """|H| of the (linear) filter at FIT_F from its state matrices"""
+    a = hp_coeff(150.0, fs)
+    A = np.array([step(np.eye(6)[i], 0, b0, k, a) for i in range(6)]).T
+    B = step(np.zeros(6), 1, b0, k, a)
+    z = np.exp(2j * np.pi * FIT_F / fs)
+    return np.abs(np.linalg.solve(z[:, None, None] * np.eye(6) - A, np.broadcast_to(B, (len(z), 6))[..., None])[:, 3, 0])
+
+
+def gain(kr, r):                # Open303's gain compensation (ac_core.c coeffs)
+    return ((kr / 17 - 1) * r + 1) * (1 + r)
+
+
+def golden(fn, lo, hi, n=36):
+    g = (math.sqrt(5) - 1) / 2
+    c, d = hi - g * (hi - lo), lo + g * (hi - lo)
+    fc, fd = fn(c), fn(d)
+    for _ in range(n):
+        if fc < fd:
+            hi, d, fd = d, c, fc
+            c = hi - g * (hi - lo)
+            fc = fn(c)
+        else:
+            lo, c, fc = c, d, fd
+            d = lo + g * (hi - lo)
+            fd = fn(d)
+    return (lo + hi) / 2
+
+
+def fit_rate(fc, fs_to):
+    """b0, k at fs_to (88.2 or 44.1 kHz) whose response (with the gain compensation) is closest to the 2 x filter's
+    (weighted mean square dB over FIT_F down to -60 dB, at the resonances FIT_R); returns b0, k and
+    the rms dB at r = 0.9"""
+    b2, k2 = tb303(fc, FS)
+    refs = [(r, w, resp(b2, k2 * r, FS) * gain(k2, r)) for r, w in FIT_R]
+
+    def err(b0, kr, only=None):
+        e = 0.0
+        for r, w, ref in refs:
+            h = resp(b0, kr * r, fs_to) * gain(kr, r)
+            m = ref > ref.max() * 1e-3
+            d = np.mean((20 * np.log10(h[m] / ref[m])) ** 2)
+            if only == r:
+                return d
+            e += w * d
+        return e
+
+    b, k = tb303(fc, fs_to)
+    b = min(b, 0.45)
+    for _ in range(6):          # alternate the two (the error is smooth and single-minimum in each)
+        b = golden(lambda x: err(x, k), b * 0.8, min(b * 1.5, 0.499))
+        k = golden(lambda x: err(b, x), k * 0.75, k * 1.25)
+    return b, k, math.sqrt(err(b, k, 0.9))
+
+
+b0q, kq, b0q1, kq1, b0qh, kqh, fit_worst, fit_worst_h = [], [], [], [], [], [], 0.0, 0.0
 for st in range(TOP + 1):
     fc = min(20 * 2 ** (st / 12), 14000)
     b0, k = tb303(fc)
     b0q.append(q31(b0))
     kq.append(round(k * (1 << 25)))
+    b0, k, e = fit_rate(fc, SR)
+    fit_worst = max(fit_worst, e)
+    b0q1.append(q31(b0))
+    kq1.append(round(k * (1 << 25)))
+    b0, k, e = fit_rate(fc, SR // 2)
+    fit_worst_h = max(fit_worst_h, e) if fc <= 8000 else fit_worst_h   # above: near Nyquist, best effort
+    b0qh.append(q31(b0))
+    kqh.append(round(k * (1 << 25)))
+assert fit_worst < 0.3, f"1 x fit at r = 0.9: {fit_worst} dB rms"
+assert fit_worst_h < 1.0, f"half-rate fit at r = 0.9: {fit_worst_h} dB rms"
+
+# stability: full resonance must ring down at every cutoff the engine can reach, at both rates
+for fc in (30, 60, 120, 250, 500, 1000, 2000, 4000, 8000, 14000):
+    st = min(TOP, round(12 * math.log2(fc / 20)))
+    for fs, b0t, krt in ((FS, b0q, kq), (SR, b0q1, kq1), (SR // 2, b0qh, kqh)):
+        q = run_filter(b0t[st] / 2 ** 31, krt[st] / 2 ** 25, 1.0, fs)
+        assert q < 0.5, f"filter unstable at {fc} Hz, r = 1, {fs} Hz: {q}"
 
 tnh = [round(math.tanh(-4 + i / 64) * 16384) for i in range(513)]
 tnh[-1] = tnh[-2]
@@ -95,17 +183,26 @@ SLIDE = [10 * 36 ** (n / 31) for n in range(32)]        # SLIDE 10 .. 360 ms (st
 SPEED = [60.0, 15.0, 5.0]                               # rc2: SLOW, NORM (Open303: 15 ms), FAST
 out = ["/* generated by gen_tables.py - do not edit. Model constants from Open303 (MIT, see NOTICE). */",
        "#ifndef AC_TABLES_H", "#define AC_TABLES_H", "", "#include <stdint.h>", "",
-       f"#define AC_TOP {TOP}", f"#define AC_OS {OS} /* oscillator + filter at {OS} x 88.2 kHz */",
-       f"#define AC_HP_FB {q31(hp_coeff(150.0, FS))} /* feedback high-pass 150 Hz at the filter rate, Q31 */",
-       f"#define AC_HP_PRE {q31(hp_coeff(44.486, FS))} /* pre-filter high-pass 44.5 Hz, Q31 */",
+       f"#define AC_TOP {TOP}",
+       f"#define AC_HP_FB {q31(hp_coeff(150.0, FS))} /* feedback high-pass 150 Hz at 176.4 kHz (2 x), Q31 */",
+       f"#define AC_HP_PRE {q31(hp_coeff(44.486, FS))} /* pre-filter high-pass 44.5 Hz at 176.4 kHz, Q31 */",
+       f"#define AC_HP_FB1 {q31(hp_coeff(150.0, SR))} /* feedback high-pass 150 Hz at 88.2 kHz (1 x), Q31 */",
+       f"#define AC_HP_PRE1 {q31(hp_coeff(44.486, SR))} /* pre-filter high-pass 44.5 Hz at 88.2 kHz, Q31 */",
+       f"#define AC_HP_FBH {q31(hp_coeff(150.0, SR / 2))} /* feedback high-pass 150 Hz at 44.1 kHz (ECO), Q31 */",
+       f"#define AC_HP_PREH {q31(hp_coeff(44.486, SR / 2))} /* pre-filter high-pass 44.5 Hz at 44.1 kHz, Q31 */",
+       f"#define AC_HP_POSTH {q31(hp_coeff(24.167, SR / 2))} /* post-filter high-pass 24.2 Hz at 44.1 kHz, Q31 */",
        f"#define AC_HP_POST {q31(hp_coeff(24.167, SR))} /* post-filter high-pass 24.2 Hz at 88.2 kHz, Q31 */",
        f"#define AC_AMP_DEC {c_of(1230.0)} /* amp envelope decay 1230 ms (to 0) */",
        f"#define AC_AMP_REL {c_of(0.5)} /* amp release, normal notes 0.5 ms */",
        f"#define AC_AMP_REL_ACC {c_of(50.0)} /* amp release, accented notes 50 ms */",
        f"#define AC_DECLICK {q31(math.exp(-2 * math.pi * 200 / CTL))} /* amp de-click: 2 x one-pole 200 Hz */",
        f"#define AC_RC_FAST {c_of(0.5)} /* SWEEP OFF: the accent without the sweep circuit */", ""]
-out += arr("ac_b0", "uint32_t", b0q, "filter stage coefficient b0, Q31, per semitone above 20 Hz (capped 14 kHz)")
-out += arr("ac_kr", "uint32_t", kq, "filter feedback k at full resonance, Q25, per semitone")
+out += arr("ac_b0", "uint32_t", b0q, "2 x: filter stage coefficient b0, Q31, per semitone above 20 Hz (capped 14 kHz)")
+out += arr("ac_kr", "uint32_t", kq, "2 x: filter feedback k at full resonance, Q25, per semitone")
+out += arr("ac_b0_1", "uint32_t", b0q1, "1 x (88.2 kHz, fitted to the 2 x response): b0, Q31, per semitone")
+out += arr("ac_kr_1", "uint32_t", kq1, "1 x: k at full resonance, Q25, per semitone")
+out += arr("ac_b0_h", "uint32_t", b0qh, "half rate (44.1 kHz, PLAY's ECO; fitted to the 2 x response): b0, Q31")
+out += arr("ac_kr_h", "uint32_t", kqh, "half rate: k at full resonance, Q25, per semitone")
 out += arr("ac_tanh", "int16_t", tnh, "tanh(x), Q14, x = -4 .. 4 in 512 steps of 1/64 (+ guard)", 12)
 out += arr("ac_texp2", "uint32_t", ex2, "2^(i/256), Q16")
 out += arr("ac_tlog2", "uint32_t", lg2, "log2(1 + i/256), Q16")
@@ -123,4 +220,11 @@ out += arr("ac_drive", "uint16_t", [round(2 ** (3 * n / 31) * 256) for n in rang
 out += ["#endif", ""]
 open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ac_tables.h"), "w").write("\n".join(out))
 print("b0", b0q[0], b0q[70], b0q[-1], "k", round(kq[0] / 2 ** 25, 2), round(kq[70] / 2 ** 25, 2), round(kq[-1] / 2 ** 25, 2))
-print("stable; r=1 ring-down at 1 kHz:", round(run_filter(1000, 1.0), 4), "r=1.3:", round(run_filter(1000, 1.3), 4))
+print("1 x: b0", b0q1[0], b0q1[70], b0q1[-1], "k", round(kq1[0] / 2 ** 25, 2), round(kq1[70] / 2 ** 25, 2),
+      round(kq1[-1] / 2 ** 25, 2), f"worst fit at r = 0.9 {fit_worst:.2f} dB rms")
+print("half: b0", b0qh[0], b0qh[70], b0qh[-1], "k", round(kqh[0] / 2 ** 25, 2), round(kqh[70] / 2 ** 25, 2),
+      round(kqh[-1] / 2 ** 25, 2), f"worst fit (to 8 kHz) at r = 0.9 {fit_worst_h:.2f} dB rms")
+st = round(12 * math.log2(1000 / 20))
+for fs, b0t, krt in ((FS, b0q, kq), (SR, b0q1, kq1), (SR // 2, b0qh, kqh)):
+    print(f"stable; {fs} Hz, r=1 ring-down at 1 kHz:", round(run_filter(b0t[st] / 2 ** 31, krt[st] / 2 ** 25, 1.0, fs), 4),
+          "r=1.3:", round(run_filter(b0t[st] / 2 ** 31, krt[st] / 2 ** 25, 1.3, fs), 4))

@@ -50,6 +50,8 @@ tools/
   op1r_edits.py          op1r manifest edits -> memory addresses
   verify_op1r_rebuild.py proof: stock + op1r blob + hooks.json == op1r's OP1_vdk.ldr
   ldr2elf.py             LDR / memory dumps -> ELF the simulator and gdb can load
+  op1sim.py              start a stock firmware in the simulator (LDR SDRAM + l1dump L1 plaintext)
+  l1dump_rx.py           l1dump carrier/audio decoder -> CRC-checked L1 images (features/l1dump)
   midi_send.swift        CoreMIDI sender: `swift midi_send.swift OP-1 note 60 100` (device tests)
   sdk.ld                 linker script: one contiguous image at SDK_LOAD
 include/op1/te246.h      TE R246 API: strings, tables, enums, MIDI, keys/knobs, audio/FX vtables,
@@ -121,34 +123,75 @@ flag, `RBT` a reboot flag, the rest of the name is free. The normal disk mode
 reads it, and an update copied there is silently dropped. Restoring stock works the same way with
 the original `op1_246.op1` (te-boot itself is never modified).
 
-## Booting TE's firmware in the simulator (blocked)
+## Booting TE's firmware in the simulator
 
 The image's L1 blocks (flags `CALLBACK|INDIRECT`: L1 instruction `0xffa00000` 48 KB, plus most L1
 data blocks) are **encrypted**. In every 24 bytes, the first 8 bytes (one 64-bit block) are
 scrambled; SDRAM code is plaintext. The reset/startup code lives in L1, so the firmware cannot
-start in the simulator without decrypting it first.
+start in the simulator without the decrypted L1 first.
 
 - te-boot contains XTEA (`0xffa0bee6` in its L1, 32 rounds), used to decrypt a hex key file with a
   key built from two tables (`key[i] = A[i] ^ B[15-i]`). It also reads and writes the chip's OTP
   memory (boot ROM `0xEF000018/1A/1C`) and prints "Signature Key programming succeeded!". So the L1
   key is probably stored in each OP-1's OTP, not in the update files.
 - Not yet found: te-boot's loader code that applies the CALLBACK to OP1_vdk.ldr blocks.
+- The plaintext does not have to come from the file, though: te-boot decrypts the L1 blocks into
+  the chip's L1 SRAM while loading, so a booted device holds the plaintext. `features/l1dump`
+  (`recipes/op1dump.json`) copies L1 instruction SRAM, L1 data A/B and the scratchpad into a
+  CRC-framed image and sends it back to the Mac — passively through USB disk mode (an after-hook
+  on the usb_ms_yaffs.cpp sector read `0x01a7153c` replaces the blocks of a pre-placed carrier
+  file in the read buffer; RAM only) or as an FSK stream on the audio out. `tools/l1dump_rx.py`
+  decodes both. Device-verified end to end: the L1 instruction SRAM half of the capture goes
+  through the core's DTEST data-array interface (a normal load from `0xffa00000` faults), the
+  sequence from the kernel's `arch/blackfin/mm/isram-driver.c`.
+
+That plaintext unlocks the simulator: `tools/op1sim.py OP1_246.op1 analysis/l1dump/` merges the
+dump with the LDR's plaintext SDRAM image and runs it from reset (`0xffa00000`) in the operating
+environment (the one with the hardware tree: timers, DMA, GPIO, MMU/EVT, ...). `--l1data initial`
+uses the dump only where the LDR has encrypted L1 data blocks (the rest would be zero at boot);
+`dump` takes the whole runtime L1 A/B snapshot. `--fb out.png` saves TE's framebuffer at the stop
+point. Everything stays local (TE-derived).
+
+Status: the firmware starts from reset, sets up CPLBs/EVT/SIC, enables interrupts, runs the
+plaintext SDRAM code and paints an early screen, then hits an unaligned access on a VDK stack
+sentinel (`0x81818185`) and panics into the idle loop — so the UI does not come up yet. The
+remaining gap is the interrupt/context frame handling in the simulator (the same run is fine on a
+device). `sim/simhw/run_simhw.py` covers the simulator side that is needed for this path.
+
+### Simulator build prerequisites
+
+Two toolchain-build defects blocked the operating environment; both are fixed in
+`docs/toolchain.md`:
+
+- the `sim/bfin/modules.c` generator used a GNU-sed-only expression; on macOS (BSD sed) it wrote
+  an **empty module list**, so GDB aborted in `sim_hw_parse` (`STATE_HW` NULL) whenever
+  `--environment operating` was used. The portable expression now emits the hw/engine/trace/mmu
+  modules.
+- the simulator must be compiled at `-O0`: at `-O2` clang miscompiles instruction decode (16-bit
+  immediates become no-ops, in addition to the `JUMP.L`/`CALL` loop bug).
+
 
 ## Simulator and benches
 
 GDB's Blackfin simulator has a `bf524` model: core, L1 memory, interrupt controllers, DMA, timers,
 GPIO, PPI, SPI, TWI, UART, NAND controller, SDRAM controller. Its SPORT (audio) and MUSB (USB) are
-only empty memory stubs. TE's own firmware cannot boot in it (encrypted L1, above), so the benches
-run your code against drivers and stubs that emulate the TE side. Run them all:
-`python3 tools/test_all.py`.
+only empty memory stubs. The benches normally run your code against drivers and stubs that emulate
+the TE side; `tools/op1sim.py` starts TE's own firmware from reset when a `features/l1dump` L1
+plaintext is available (above). Run them all: `python3 tools/test_all.py`.
 
 - **Hook test bench:** `sim/hooktest/run_hooktest.py` loads the hello hook, a driver and a check
   stub (at the TE target address) into `bfin-elf-run --model bf524`. It checks R0/P0 are kept, RETS
   points back to the caller, SP is restored and the counter is 1. `HLT` = exit 0 = pass, `ABORT` =
   exit 1. Use `HLT`/`ABORT` to end tests: the libgloss exit syscall (`EXCPT 0`) faults in this
-  model. `--environment operating` crashes GDB when it loads a program; use the default
-  environment. The default environment maps only SDRAM + scratchpad; `sim/simtest.py` adds L1
-  data A/B with `--memory-region` (SDK code reads TE state there).
+  model. The default environment maps only SDRAM + scratchpad; `sim/simtest.py` adds L1 data A/B
+  with `--memory-region` (SDK code reads TE state there). `--environment operating` also works now
+  (it is what TE's boot needs); see the build prerequisites above.
+- **Simulator operating-env bench:** `sim/simhw/run_simhw.py` checks the fixes above from inside
+  the operating environment: 16-bit immediates survive (`-O0`), the core devices are mapped
+  (EVT, GPTIMER1) and GDB does not abort (`modules.c`). Run it after any toolchain rebuild.
+- **TE boot smoke bench:** `sim/te_boot/run_te_boot.py` runs `tools/op1sim.py` for 5M cycles when
+  `OP1_FIRMWARE` points at `op1_246.op1` and `analysis/l1dump` exists (else it skips). It asserts
+  the image executes past the reset vector and that the run has no bus/double fault.
 - **C hook test bench:** `sim/ctest/run_ctest.py` builds `examples/counter_c`, then its driver
   constructs a real `te_string` ("pattern", SSO form) in free SDRAM and calls the hook through the
   C trampoline. The check stub additionally verifies the C code read the string: `last_name` must

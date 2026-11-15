@@ -83,19 +83,22 @@ void ac_init(ac_voice *v)
 
 void ac_note(ac_voice *v, int slide, int accent)
 {
-    if (!v->on)
-        slide = 0;
+    int was_gated = v->on && v->gate;
+
     v->accent = (uint8_t)(accent != 0);
     v->gate = 1;
-    if (!slide) {                               /* triggerNote */
+    if (!v->on)
+        slide = 0;
+    if (!slide)                                 /* the pitch jumps there */
+        v->snap = 1;
+    if (!slide || !was_gated) {                 /* triggerNote (a slide after a key-up glides, retriggered) */
         if (v->dc2 < (1 << 16)) {               /* silent: phase and filters start clean */
             v->ph = v->sph = 0;
             reset_filter(v);
         }
-        v->snap = 1;                            /* the pitch jumps there */
         v->meg = ONE30;
-        v->amp = ONE30;                         /* attack 0 */
     }
+    v->amp = ONE30;                             /* attack 0; a legato slide reopens the VCA (no MEG retrigger) */
     v->on = 1;
 }
 
@@ -131,36 +134,30 @@ static inline __attribute__((always_inline)) int32_t blep(int32_t t, int32_t dt,
     return 0;
 }
 
-static int32_t lerp_b0(int s)
+static int32_t lerp_t(const uint32_t *t, int s)
 {
     int i = s >> 8, f = s & 255;
 
-    return (int32_t)ac_b0[i] + ((((int32_t)ac_b0[i + 1] - (int32_t)ac_b0[i]) >> 8) * f);
+    return (int32_t)t[i] + ((((int32_t)t[i + 1] - (int32_t)t[i]) >> 8) * f);
 }
 
-static int32_t lerp_kr(int s)
-{
-    int i = s >> 8, f = s & 255;
-
-    return (int32_t)ac_kr[i] + ((((int32_t)ac_kr[i + 1] - (int32_t)ac_kr[i]) >> 8) * f);
-}
-
-/* filter coefficients for a cutoff (octaves above 20 Hz, Q16) and resonance r (Q15): b0 Q31, k
- * Q25 and 2g Q27 (Open303 TB_303: k = kr r, g = ((kr / 17 - 1) r + 1)(1 + r)) */
-static void coeffs(int32_t oct, int32_t r, int32_t *b0, int32_t *k, int32_t *g2)
+/* filter coefficients for a cutoff (octaves above 20 Hz, Q16) and resonance r (Q15) at the filter
+ * rate fr (0: 44.1 kHz, 1: 88.2 kHz, 2: 176.4 kHz): b0 Q31, k Q25 and 2g Q27 (Open303 TB_303:
+ * k = kr r, g = ((kr / 17 - 1) r + 1)(1 + r)) */
+static void coeffs(int fr, int32_t oct, int32_t r, int32_t *b0, int32_t *k, int32_t *g2)
 {
     int s = (oct * 12) >> 8;
     int32_t kr, t, r31 = r << 16;
 
     s = s < 0 ? 0 : s > AC_TOP * 256 - 1 ? AC_TOP * 256 - 1 : s;
-    *b0 = lerp_b0(s);
-    kr = lerp_kr(s);
+    *b0 = lerp_t(fr == 2 ? ac_b0 : fr == 1 ? ac_b0_1 : ac_b0_h, s);
+    kr = lerp_t(fr == 2 ? ac_kr : fr == 1 ? ac_kr_1 : ac_kr_h, s);
     *k = mulfr(kr, r31);
     t = mulfr(mulfr(kr, 126322568) - (1 << 25), r31) + (1 << 25);           /* (kr / 17 - 1) r + 1, Q25 */
     *g2 = mulfr(t, (r + 32768) << 15) << 4;                                  /* x (1 + r): Q24 -> 2g Q27 */
 }
 
-/* one sample of the oscillator (+ sub), Q20, at 176.4 kHz; q = the phase (the step at 0) */
+/* one sample of the oscillator (+ sub), Q20, at the filter rate; q = the phase (the step at 0) */
 static inline __attribute__((always_inline)) int32_t osc(uint32_t q, uint32_t sq, int wave, int32_t dt, int32_t rdt,
                                                          int32_t sdt, int32_t srdt, int32_t sl)
 {
@@ -181,8 +178,18 @@ static inline __attribute__((always_inline)) int32_t osc(uint32_t q, uint32_t sq
     return -y;                                  /* Open303: the oscillator inverted */
 }
 
-void ac_render(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_params *p)
+/* the voice: output at 88.2 kHz (half = 0) or 44.1 kHz (half = 1: PLAY's ECO, the increments are
+ * per 44.1 kHz sample), oscillator + filter at os x the output rate (constants in each caller).
+ * Half rate: per-control-update coefficients squared (two 88.2 kHz updates in one), the 44.1 kHz
+ * filter table and high-passes: the same envelope times, cutoffs and pitch as at 88.2 kHz. */
+static inline __attribute__((always_inline)) void render(ac_voice *v, int16_t *out, int n, const uint32_t *inc,
+                                                         const ac_params *p, const int os, const int half)
 {
+    const int fr = half ? os - 1 : os;          /* filter rate: 0 44.1, 1 88.2, 2 176.4 kHz */
+    const int32_t hp_pre = fr == 2 ? AC_HP_PRE : fr == 1 ? AC_HP_PRE1 : AC_HP_PREH;
+    const int32_t hp_fb = fr == 2 ? AC_HP_FB : fr == 1 ? AC_HP_FB1 : AC_HP_FBH;
+    const int32_t hp_post = half ? AC_HP_POSTH : AC_HP_POST;
+    int32_t amp_dec = AC_AMP_DEC, declick = AC_DECLICK;
     static const int16_t sub_lv[4] = { 0, 11469, 19661, 27853 };   /* 0.35 0.6 0.85, Q15 */
     int32_t c = clampi(p->cutoff, 0, 255), e = clampi(p->envmod, 0, 255);
     int32_t slo, shi, scaler, offset, base, accg, r0, trackk, fmk, drv, lev, sl;
@@ -218,6 +225,15 @@ void ac_render(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_p
     c1 = ac_soft[clampi(p->soft, 0, 31)];
     c2 = sweep == AC_SWEEP_OFF ? AC_RC_FAST : ac_speed[p->speed > 2 ? 2 : p->speed];
     crel = v->accent ? AC_AMP_REL_ACC : AC_AMP_REL;
+    if (half) {                                 /* one control update = two at 88.2 kHz: c^2 */
+        csl = (uint32_t)mulfr((int32_t)csl, (int32_t)csl);
+        cdec = (uint32_t)mulfr((int32_t)cdec, (int32_t)cdec);
+        c1 = (uint32_t)mulfr((int32_t)c1, (int32_t)c1);
+        c2 = (uint32_t)mulfr((int32_t)c2, (int32_t)c2);
+        crel = (uint32_t)mulfr((int32_t)crel, (int32_t)crel);
+        amp_dec = mulfr(amp_dec, amp_dec);
+        declick = mulfr(declick, declick);
+    }
 
     target = (inc[0] >> 1) + (inc[n - 1] >> 1);
     if (p->tune)
@@ -228,9 +244,9 @@ void ac_render(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_p
     }
 
     /* the key (tracking, screen) and the polyBLEP steps from the pitch at the block's start */
-    v->key = (69 << 16) + (ac_log2(v->cur ? v->cur : target) - LOG69) * 12;
+    v->key = (69 << 16) + (ac_log2((v->cur ? v->cur : target) >> half) - LOG69) * 12;   /* 88.2 kHz units */
     {
-        uint32_t q = (v->cur ? v->cur : target) / AC_OS;
+        uint32_t q = (v->cur ? v->cur : target) / (uint32_t)os;
 
         dt = (int32_t)(q >> 16);
         dt = dt < 1 ? 1 : dt;
@@ -248,7 +264,7 @@ void ac_render(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_p
 
         /* pitch slew (slide) on the frequency, as Open303 */
         v->cur = target + (uint32_t)mulfr((int32_t)(v->cur - target), (int32_t)csl);
-        q_inc = v->cur / AC_OS;                 /* at the filter rate */
+        q_inc = v->cur / (uint32_t)os;          /* at the filter rate */
         q_inc = q_inc > 0x30000000u ? 0x30000000u : q_inc;
         s_inc = q_inc >> 1;
 
@@ -273,16 +289,16 @@ void ac_render(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_p
         if (sweep == AC_SWEEP_HIGH && v->accent)    /* HIGH: the sweep adds resonance (up to 1) */
             r += (((32767 - r0) * (v->rc2 >> 15)) >> 15) * 2 / 5;
         r = r > 32767 ? 32767 : r;
-        coeffs(oct, r, &b0, &k, &g2);
+        coeffs(fr, oct, r, &b0, &k, &g2);
 
         /* amp: envelope (decay to 0 / release) + MEG x (0.45 + 4 accent) while the gate is on,
          * through the de-click (2 x one-pole 200 Hz), Q26 */
-        v->amp = mulfr(v->amp, v->gate ? AC_AMP_DEC : (int32_t)crel);
+        v->amp = mulfr(v->amp, v->gate ? amp_dec : (int32_t)crel);
         amp_in = v->amp >> 4;
         if (v->gate)                            /* MEG x (0.45 + 4 accent): Q30 x Q28 -> Q27 */
             amp_in += mulfr(v->meg, (29491 + (v->accent ? accg * 4 : 0)) << 12) >> 1;
-        v->dc1 = amp_in + mulfr(v->dc1 - amp_in, AC_DECLICK);
-        v->dc2 = v->dc1 + mulfr(v->dc2 - v->dc1, AC_DECLICK);
+        v->dc1 = amp_in + mulfr(v->dc1 - amp_in, declick);
+        v->dc2 = v->dc1 + mulfr(v->dc2 - v->dc1, declick);
         g1 = v->dc2;
         g0 = v->gain;
         dg = m == CTL ? (g1 - g0) >> 3 : (g1 - g0) / m;
@@ -293,20 +309,20 @@ void ac_render(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_p
             if (fmk) {                          /* filter FM: the output moves the cutoff */
                 int32_t fo = fy > 16384 ? 16384 : fy < -16384 ? -16384 : fy;
 
-                coeffs(oct + ((fo * fmk) >> 8), r, &b0, &k, &g2);
+                coeffs(fr, oct + ((fo * fmk) >> 8), r, &b0, &k, &g2);
             }
-            for (j = 0; j < AC_OS; j++) {       /* (oversampled:) oscillator, high-pass, filter */
+            for (j = 0; j < os; j++) {          /* (oversampled:) oscillator, high-pass, filter */
                 int32_t x = osc(ph + 0x80000000u, sph, wave, dt, rdt, sdt, srdt, sl), f, y0;
 
                 ph += q_inc;
                 sph += s_inc;
-                py = mulfr(py + x - px, AC_HP_PRE);         /* pre-filter high-pass 44.5 Hz */
+                py = mulfr(py + x - px, hp_pre);            /* pre-filter high-pass 44.5 Hz */
                 px = x;
                 x = py;
                 if (drv)                        /* overdrive: into a tanh (the MO's level into the filter) */
                     x = tnh(((x >> 6) * drv) >> 8) << 6;
                 f = mulfr(k, y4) << 6;                      /* Q25 x Q20 -> Q14 -> Q20 */
-                hy = mulfr(hy + f - hx, AC_HP_FB);          /* feedback high-pass 150 Hz */
+                hy = mulfr(hy + f - hx, hp_fb);             /* feedback high-pass 150 Hz */
                 hx = f;
                 y0 = x - hy;
                 y1 += mulfr(b0, y0 - y1 + y2) << 1;
@@ -315,9 +331,9 @@ void ac_render(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_p
                 y4 += mulfr(b0, y3 - 2 * y4);
                 y1 = y1 > LIM ? LIM : y1 < -LIM ? -LIM : y1;
                 y4 = y4 > LIM ? LIM : y4 < -LIM ? -LIM : y4;
-                acc += mulfr(g2, y4) << (4 - (AC_OS >> 1));  /* 2 g y4 (Q27 x Q20 -> Q16), averaged */
+                acc += mulfr(g2, y4) << (4 - (os >> 1));    /* 2 g y4 (Q27 x Q20 -> Q16), averaged */
             }
-            qy = mulfr(qy + acc - qx, AC_HP_POST);          /* post-filter high-pass 24 Hz */
+            qy = mulfr(qy + acc - qx, hp_post);          /* post-filter high-pass 24 Hz */
             qx = acc;
             g0 += dg;
             y = mulfr(qy, g0) >> 1;                         /* Q20 x Q26 -> Q14 */
@@ -338,4 +354,35 @@ void ac_render(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_p
     v->y[0] = y1; v->y[1] = y2; v->y[2] = y3; v->y[3] = y4;
     v->hx = hx; v->hy = hy; v->px = px; v->py = py; v->qx = qx; v->qy = qy; v->fy = fy;
     v->ph = ph; v->sph = sph;
+}
+
+static __attribute__((noinline)) void render1(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_params *p)
+{
+    render(v, out, n, inc, p, 1, 0);
+}
+
+static __attribute__((noinline)) void render2(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_params *p)
+{
+    render(v, out, n, inc, p, 2, 0);
+}
+
+static __attribute__((noinline)) void render1h(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_params *p)
+{
+    render(v, out, n, inc, p, 1, 1);
+}
+
+static __attribute__((noinline)) void render2h(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_params *p)
+{
+    render(v, out, n, inc, p, 2, 1);
+}
+
+/* Oscillator + filter at the output rate (the filter is linear; its coefficients are fitted to the
+ * 176.4 kHz response, gen_tables.py); with FILTER FM on at twice the output rate (the FM loop's
+ * one-sample delay and its sidebands need the rate). p->half: output at 44.1 kHz (PLAY's ECO). */
+void ac_render(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_params *p)
+{
+    if (p->half)
+        (p->fm ? render2h : render1h)(v, out, n, inc, p);
+    else
+        (p->fm ? render2 : render1)(v, out, n, inc, p);
 }

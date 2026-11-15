@@ -68,6 +68,10 @@ def composed(features, name):
 def run_model(out_elf, segs, entry_addr, timeout=30, regions=()):
     """write segs [(addr, bytes)] as one ELF and run it on the bf524 model; regions: extra
     (addr, size) memory to attach (e.g. L1 instruction SRAM for a stub of a TE function there)"""
+    spans = sorted((a, a + len(b)) for a, b in segs if len(b))
+    for (a0, e0), (a1, e1) in zip(spans, spans[1:]):
+        if a1 < e0:                             # e.g. a composed image grown into the bench driver
+            raise RuntimeError(f"bench segments overlap: {a0:#x}..{e0:#x} and {a1:#x}..{e1:#x}")
     ldr2elf.write_elf(out_elf, segs, entry_addr)
     # the default (non-OS) environment only attaches SDRAM + scratchpad; map L1 data A/B too so
     # SDK code that reads TE state there (e.g. gfx's canvas size) runs like on the device

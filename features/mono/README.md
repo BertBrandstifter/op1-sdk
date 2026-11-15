@@ -70,7 +70,8 @@ After "MONO · display overview": the screen is built around a red **LED 12×2**
 whole instrument. No header line: the display sits at the top.
 
 - **Pages** down the left: FILTER, OSC 1, OSC 2, OSC 3, F.CONT, L.CONT, FX; the current one red with
-  a dashed line to the display.
+  a dashed line to the display. The engine opens on FX (its display shows the sound picked); a
+  knob push goes on to FILTER.
 - **Display** (12 × 2 cells of 5 × 7 dots, unlit dots shown): line 1 = the knob turned last on this
   page (knob push starts at the blue one): its name and value on the panel's scale (`CUTOFF  7.5`,
   `RANGE  16'`, `FREQ  +7.0` semitones, `ATTACK  250MS`, `KEYBOARD  2/3`, `NOISE  P 4.7`); line 2 =

@@ -49,6 +49,34 @@ Not yet read separately: MONO 3, ACID 3 under a held chord / fast notes.
   cache latency). The earlier simulator estimate for MONO 3 (~25 %) is above anything measured on
   the device so far: re-measure MONO 3 before trusting either.
 
+## Simulator cost per engine and what the 2026-11-15 review changed
+
+Cycles per voice block (128 samples at 88.2 kHz) on the Blackfin simulator, lightest .. heaviest
+sound of each engine; one block has about 580 K cycles.
+
+| engine | cycles per voice block | voices |
+|---|---|---|
+| LOFI | 6.5 .. 11.6 K | 6 |
+| STATION 1 | 7.7 .. 20.6 K | 6 |
+| WARP | 8 .. 18 K | 6 |
+| PARTY | 8.4 .. 22 K | 6 |
+| MALLET | 10.8 .. 24 K | 6 |
+| TRIO | 12.8 .. 25 K | 6 |
+| WHEEL | 13 .. 25.5 K | 6 |
+| PALETTE | 11.3 K per tone, 46 K for four | 12 tones |
+| MONO 3 | 23 .. 37 K | 4 |
+| ACID 3 | 45 K (was 74 K), with FILTER FM 125 K | 1 |
+
+Changed in the review (the first three bit for bit the same output):
+
+- **PLAY's decimator**: 1024 64-bit multiply calls per block -> a 14-instruction loop.
+- **PLAY's drum voices**: 2 64-bit multiplies per sample -> 32-bit.
+- **fxpack**: WAH 19.2 K -> 13.1 K per block, DJ and LADDER without their 64-bit divide.
+- **ACID 3**: oscillator and filter at 88.2 kHz with fitted coefficients (176.4 kHz only while
+  FILTER FM is on): 74 K -> 45 K.
+
+Not worth it (measured): -O3 (2-7 %), constant divisions per block.
+
 ## Where TE spends flash and code space (static analysis, 2026-11-14)
 
 ### The update file (stock 13.04 MB, LZMA)

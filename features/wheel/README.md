@@ -82,7 +82,7 @@ and sequencers apply as for any stock engine (use a full-sustain envelope for or
   TRIO, SOUL JAZZ, BLUES BAR, GOSPEL, CATHEDRAL, BALLAD, FLUTE, SOFT PAD, ROCK, OVERDRIVE, SHRILL,
   REED, CLARINET, THEATRE, SPARKLE, ORGAN BASS, SMOOTH, BRIGHT, HIGH, SKA, GRIT, DREAMY, TOY,
   FULL ON), one per knob event, wrapping. Loading writes all 8 values (saved like a knob edit);
-  envelope and FX stay as they are. The entry's name shows over the organ for 1 s (`P02 SOUL
+  envelope and FX stay as they are. The entry's name shows over the organ until a key is played (`P02 SOUL
   JAZZ`, `*` once edited; see **Screen**). No TE
   preset rows: TE's factory list is capped at 176. LOFI got the same (its 14 factory presets).
 - No on/off gesture: shift + white push is LOFI's (non-modal claim) and claims cannot be scoped to
@@ -101,9 +101,8 @@ amber **8×2 lamp display**, not the whole organ. No header line: the display si
 - **Lamps** (gold frame, 8 × 2 cells of 5 × 7 round amber lamps, unlit ones shown): line 1 = the
   registration (`JAZZ`, `GOSPEL`, `CLARINET`); line 2 = the knob turned last on this page (knob push
   starts at the blue one): `REG 5`, `PERC 3RD`, `2ND SOFT`, `DRIVE 25`, `ROT SLOW`, `BASS +1`,
-  `CLICK 40`; `FX` on page 3. For 1 s when a sound is picked (shift + blue) or the screen opens: its
-  name, a word a line (`SOUL` / `JAZZ`, `*` = edited), or `P--`. Its clock is the Seq tick
-  (`wh_tick`, 64 samples).
+  `CLICK 40`; `FX` on page 3. When a sound is picked (shift + blue) or the screen opens: its
+  name, a word a line (`SOUL` / `JAZZ`, `*` = edited), or `P--`, until a keyboard key is played.
 - **Fan** (left) = the rotary speaker: turns at the horn's speed, eased like the rotor (SLOW → FAST
   speeds up, OFF stops it); its setting under it (orange on page 1), then the **sounding note**
   (red LED + `A4`, the lowest): a held key names its own note (the octave from its voice, rounded,

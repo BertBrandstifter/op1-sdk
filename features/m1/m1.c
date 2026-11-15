@@ -24,7 +24,7 @@
 #define PAGES           4
 #define OFF             (-1)
 
-static m1_voice voices[EH_VOICES];
+static m1_voice voices[EH_SLOTS];         /* every instance (PLAY: vi 6..23) */
 /* the sounding notes (the LCD names them): a key held on the OP-1 (m1_note_key) is its note (TE
  * plays note index + 53 + 12 x octave); the next new voice tells the octave (its pitch rounded to the nearest octave of the
  * note: glide / LFO / bend at the start move it by less than 6 semitones). New voices no held key
@@ -86,9 +86,11 @@ static void m1_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint3
     int16_t p[M1_PARAMS];
 
     unpack(knobs, p);
-    if (flags & EH_BLOCK)
-        blocks++;
-    if (flags & EH_FRESH) {
+    if ((flags & EH_BLOCK) && vi < EH_VOICES)
+        blocks++;                               /* the screen's clock: TE's voices only */
+    if ((flags & EH_FRESH) && vi >= EH_VOICES) {
+        m1_note_on(&voices[vi], inc[0], p);     /* a PLAY instance: no keyboard display */
+    } else if (flags & EH_FRESH) {
         int i, oldest = -1;
 
         m1_note_on(&voices[vi], inc[0], p);
@@ -112,7 +114,7 @@ static void m1_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint3
 
 void m1_init(void)
 {
-    eh_register(TAG, m1_eh_render);
+    eh_register_multi(TAG, m1_eh_render);  /* instances: voices[EH_SLOTS], display for TE only */
 }
 
 /* Engine browser row "station 1" (content_sql) -> "drwave" (TE knows no such type: fatal) */

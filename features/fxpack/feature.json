@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "fxpack",
   "title": "FXPACK: 15 effects in one FX slot (modulation, distortion, filters, transient, texture)",
-  "version": "0.7",
+  "version": "0.8",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"

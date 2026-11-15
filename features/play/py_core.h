@@ -1,0 +1,128 @@
+/* py_core: PLAY's logic without TE calls (README.md, new_pattern_tape.md), host-tested.
+ *
+ *   set.txt      py_setfile_parse: the tempo
+ *   audio        py_set_assign: an audio track plays one file of the set folder, looped or once;
+ *                a file that cannot play only affects its own track (with the reason)
+ *   positions    one global frame counter from bar 1; every track maps it to its own file frame
+ *                (a looped file modulo its length, a once file straight until its end), so all
+ *                tracks stay sample-locked by construction
+ *   streaming    one ring per track: py_fill (main thread) reads the files ahead of the play
+ *                position through a read function (yaffs pread on the device); py_mix (audio
+ *                interrupt) consumes 64 frames per block, mixes, adds to TE's master buffers.
+ *                A late ring is an underrun: silence for that track, its position still advances.
+ * Threads: py_mix only touches the rings' read side and published counters; everything else is
+ * main thread. 32-bit counters, single writer each. */
+#ifndef PY_CORE_H
+#define PY_CORE_H
+
+#include <stdint.h>
+#include <op1/audiofile.h>
+
+#define PY_TRACKS       8
+#define PY_RATE         44100
+#define PY_BLOCK        64                      /* frames per audio block */
+#define PY_NAME         12                      /* display name incl. NUL */
+#define PY_BAR_SLACK    64                      /* frames a loop may be off a whole bar */
+
+/* ------------------------------------------------------------------ set.txt */
+
+typedef struct py_setfile {
+    uint32_t bpm_x100;                          /* 0 = no bpm line */
+    uint16_t bad_line;                          /* first line not understood (1-based), 0 = none */
+} py_setfile;
+
+/* lines: "bpm 120" / "bpm 98.5", "# comment", empty; the lines of earlier versions ("audio ...",
+ * "pattern ...", "loop ...") are accepted and ignored */
+void py_setfile_parse(const char *txt, uint32_t n, py_setfile *s);
+
+/* ------------------------------------------------------------------ audio tracks */
+
+typedef struct py_file {                        /* an audio file in the set folder */
+    char name[13];                              /* short name, e.g. "SONG.WAV" */
+    uint32_t size;
+    aud_info a;                                 /* its parsed header */
+} py_file;
+
+typedef struct py_track {                       /* what audio track k plays */
+    uint8_t used, channels, big_endian, loop;
+    int8_t file;                                /* index into the files */
+    uint32_t data_off, frames;                  /* PCM inside the file */
+    char err[24];                               /* why it does not play ("" = it does) */
+} py_track;
+
+typedef struct py_set {
+    uint32_t bpm_x100, bar_frames;              /* the clock: set.txt's tempo, else TE's */
+    py_track t[PY_TRACKS];
+} py_set;
+
+/* tempo from set.txt (sf may be 0) or TE; every track unused */
+void py_set_init(py_set *s, const py_setfile *sf, uint32_t te_bpm_x100);
+
+/* audio track k plays file `name` of files (case-insensitive), looped or once; returns 1 if it
+ * plays, else 0 with t[k].err set ("NO FILE", "SONG.WAV: NOT 44.1 KHZ", ...) */
+int py_set_assign(py_set *s, int k, const py_file *files, int n, const char *name, int loop);
+
+/* frames per 4/4 bar at bpm x 100 (rounded) */
+uint32_t py_bar_frames(uint32_t bpm_x100);
+
+/* the file frame track k plays at global frame g, and how many frames from there are contiguous;
+ * -1 = silent from here (a once track past its end, an unused track) */
+int32_t py_map(const py_set *s, int k, uint32_t g, uint32_t *run);
+
+/* ------------------------------------------------------------------ streaming + mix */
+
+typedef struct py_ring {
+    int16_t *buf;                               /* size frames x channels, native int16 */
+    uint32_t size;                              /* frames, a power of two */
+    volatile uint32_t wr;                       /* global frame up to which buf is filled */
+    uint8_t ch;
+} py_ring;
+
+typedef struct py_mixer {
+    const py_set *set;
+    py_ring ring[PY_TRACKS];
+    volatile uint32_t pos;                      /* global frame of the next block (audio thread) */
+    volatile uint8_t playing;                   /* audio thread consumes while set */
+    volatile uint8_t ended;                     /* unused since v0.2 (no set end any more) */
+    volatile int16_t gain[PY_TRACKS];           /* Q15 after mute / solo, per track (any type) */
+    volatile int16_t master;                    /* Q15 */
+    volatile int16_t te_volume;                 /* Q15 on our sum (32767: TE applies its volume after) */
+    volatile uint16_t peak[PY_TRACKS];          /* per-track peak since the GUI last cleared it */
+    volatile uint16_t peak_out;
+    volatile uint32_t underruns[PY_TRACKS];
+    volatile uint32_t clips;
+    /* pattern tracks (SYNTH / DRUM): mono blocks their voices rendered (int16 scale) at the
+     * track's index, mixed in py_mix with the track's gain into both channels, cleared there */
+    int32_t pin[PY_TRACKS][PY_BLOCK];
+    volatile uint8_t pin_used;                  /* bit k: pin[k] holds this block */
+    /* SYNTH tracks: their sum after each track's gain (one shared decimator), mono at unity */
+    int32_t ext[PY_BLOCK];
+    volatile uint8_t ext_used;
+    uint32_t chunk;                             /* frames per read (main thread) */
+    uint8_t next;                               /* round-robin start for py_fill */
+    uint32_t read_errors;
+} py_mixer;
+
+/* read n bytes at off of track k's file into buf: returns n, anything else = error */
+typedef int (*py_read_fn)(void *ctx, int k, uint32_t off, void *buf, uint32_t n);
+
+/* main thread: (re)start every ring at global frame g (playing must be 0) */
+void py_seek(py_mixer *m, uint32_t g);
+
+/* main thread: read ahead until every ring is full or budget bytes were read; scratch holds one
+ * chunk (chunk x 2 channels x 2 bytes). Returns bytes read. */
+uint32_t py_fill(py_mixer *m, py_read_fn rd, void *ctx, uint32_t budget, uint8_t *scratch);
+
+/* frames ring k holds ahead of the play position */
+uint32_t py_ahead(const py_mixer *m, int k);
+
+/* audio interrupt: one block (64 frames) added into TE's 32-bit words l[i * stride], r[i * stride]
+ * (sample in the top bits), saturating; advances pos. Nothing when not playing. TE's master
+ * buffers before its volume (0xff800e34 / 0xff800f34): stride 1; interleaved tx: l = tx, r = tx + 1,
+ * stride 2. */
+void py_mix(py_mixer *m, int32_t *l, int32_t *r, int stride);
+
+/* Q15 gain of dB x 10 (-600 .. 0; above 0 = unity, below -60 dB = 0) */
+int16_t py_db_q15(int db10);
+
+#endif

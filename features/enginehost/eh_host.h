@@ -24,7 +24,13 @@
 #define EH_P2_MAX       0x0fff          /* page 2 in slots 5-8, below the tag */
 #define EH_FRESH        0x01            /* render flag: first block of a new note on this voice */
 #define EH_BLOCK        0x02            /* render flag: first voice rendered in this audio block */
+#define EH_HALF         0x04            /* render flag (PLAY's ECO): the 128 samples are output at 44.1 kHz
+                                         * (two audio blocks), inc is per 44.1 kHz sample; an engine that
+                                         * knows it keeps its time constants and cutoffs, others run as if
+                                         * at 88.2 kHz (their own times at half speed) */
 #define EH_VOICES       6
+#define EH_INST         4               /* instances: 0 = TE's voices, 1..3 = PLAY's synth tracks */
+#define EH_SLOTS        (EH_INST * EH_VOICES)   /* voice index vi = instance x EH_VOICES + voice */
 
 /* render one voice: vi = voice 0..5, out = 128 samples at 88.2 kHz, knobs = the sound's 8 stored
  * values (+ TE's LFO on slots 1-4), inc = TE's per-sample pitch increments, flags = EH_* */
@@ -32,6 +38,18 @@ typedef void (*eh_render_fn)(int vi, int16_t *out, const int16_t *knobs, const u
                              int flags);
 
 void eh_register(int tag, eh_render_fn render);
+
+/* an engine whose render takes every vi 0..EH_SLOTS-1 (its voice state sized EH_SLOTS, nothing
+ * per engine that two instances would share): PLAY may run it as extra instances */
+void eh_register_multi(int tag, eh_render_fn render);
+
+/* PLAY (audio interrupt): render voice v (0..5) of instance inst (1..EH_INST-1) for a sound with
+ * knob block `knobs` (its stored values); 128 samples at 88.2 kHz into out. Returns 0 (out
+ * untouched) if the sound is no SDK engine or its engine cannot run as an instance. */
+int eh_render_inst(int inst, int v, int16_t *out, const int16_t *knobs, const uint32_t *inc, int flags);
+
+/* the sound's engine can run as a PLAY instance */
+int eh_multi_ok(const volatile int16_t *knobs);
 
 /* tag of a sound's knob block (1..13), 0 = not an SDK engine (plain drwave) */
 int eh_tag(const volatile int16_t *k);

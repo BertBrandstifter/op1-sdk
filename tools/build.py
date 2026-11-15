@@ -31,8 +31,9 @@ project.json:
   ],                                            The feature that blanks must prove the range dead.
   "content_sql": [                              SQL run on a content database of the update (e.g. a row
     {"file": "content/op1_factory.db",          in TE's engine list); plain statements on the existing
-     "sql": ["INSERT INTO synth_types ..."]}    file, so its SQLite format stays the one TE reads
-  ],
+     "sql": ["INSERT INTO synth_types ..."]}    file, so its SQLite format stays the one TE reads.
+  ],                                            "attach": {"f": "content/op1_factory.db"} also opens
+                                                another database of the update as f (a copy).
   "content_files": [                            files added to (or replaced in) the update, e.g. a factory
     {"file": "content/audio/factory_drum/x.raw", drum kit's audio (metadata from a file in the same
      "from": "/abs/path/x.raw"}                 directory); compose.py fills it from features' manifests
@@ -319,7 +320,13 @@ def patch_firmware(stock, cfg, code, syms):
         j = next((k for k, (m, _) in enumerate(members) if m.name == cs["file"]), None)
         if j is None:
             sys.exit(f"content_sql: {cs['file']} is not in the update")
-        members[j] = (members[j][0], run_sql(members[j][1], cs["sql"]))
+        att = {}
+        for alias, name in cs.get("attach", {}).items():
+            raw = next((d for m, d in members if m.name == name), None)
+            if raw is None:
+                sys.exit(f"content_sql attach: {name} is not in the update")
+            att[alias] = raw
+        members[j] = (members[j][0], run_sql(members[j][1], cs["sql"], att))
         for q in cs["sql"]:
             print(f"  {cs['file']}: {q}")
     if cfg.get("content_links"):
@@ -399,14 +406,19 @@ def add_file(members, name, data):
     return members[:sib[-1] + 1] + [(info, data)] + members[sib[-1] + 1:]
 
 
-def run_sql(db, statements):
+def run_sql(db, statements, attach=None):
     """run SQL statements on a copy of an SQLite file; returns the new file bytes. No VACUUM, no
-    journal mode change: the file keeps the format TE's SQLite reads."""
+    journal mode change: the file keeps the format TE's SQLite reads. attach = {alias: file bytes}:
+    other databases of the update, attached under that alias (copies: changes to them are dropped)."""
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "x.db")
         open(path, "wb").write(db)
         con = sqlite3.connect(path)
         try:
+            for k, (alias, raw) in enumerate((attach or {}).items()):
+                other = os.path.join(d, f"a{k}.db")
+                open(other, "wb").write(raw)
+                con.execute(f"ATTACH DATABASE '{other}' AS {alias}")   # a temporary copy: writes are lost
             for q in statements:
                 con.execute(q)
             con.commit()

@@ -21,7 +21,7 @@ from simtest import asm_bin, c_bin, run_model, run_gdb, composed  # noqa: E402
 from build import compile_project  # noqa: E402
 
 RECIPE = json.load(open(os.path.join(SDK, "recipes", "op1plus.json")))
-DRIVER_AT, STACK = 0x01F00000, 0x01F7FFFC
+DRIVER_AT, STACK = 0x01F40000, 0x01F7FFFC
 STUBS = {0x01A997F4: 0, 0x01A99C90: 1, 0x01A99908: 2, 0x01A99F84: 3, 0x0196EB7E: 4}
 
 

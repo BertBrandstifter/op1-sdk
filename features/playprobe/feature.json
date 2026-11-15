@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "name": "playprobe",
+  "title": "PLAY tape probe (debug)",
+  "version": "0.2.0",
+  "status": "experimental",
+  "summary": "Debug: shift + speech opens a full-screen panel that measures on the device what the PLAY tape screen (new_pattern_tape.md) needs: a test tone added to TE's audio output after TE's render (is that a usable mix point; channel order; does the volume knob act on it), the audio load of TE, of the probe and of the SDK engines, the cost of mixing 0..8 stereo streams from the sample heap every block, a read-only scan of disk mode's FAT volume inside user/tape_c.raw (play/ folder, each file's WAV / AIFF header), a read-speed test from the main loop (KB/s, average and worst read), TE's sample heap (free list and the largest blocks heap_malloc gives) and a key log (key, down/up, shift, edit mode). The first opening wraps TE's audio callback; nothing runs before that. Nothing is written to disk.",
+  "license": "MIT",
+  "authors": [
+    "unknown"
+  ],
+  "sdk": 1,
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "prefix": "pp_",
+  "sources": [
+    "playprobe.c"
+  ],
+  "cflags": [
+    "-O2"
+  ],
+  "libs": [
+    "gfx",
+    "fat",
+    "audiofile"
+  ],
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "pp_key",
+      "mode": "filter",
+      "order": "first"
+    },
+    {
+      "point": "on_knob",
+      "fn": "pp_knob",
+      "mode": "filter",
+      "order": "first"
+    },
+    {
+      "point": "frame",
+      "fn": "pp_frame",
+      "order": "last"
+    },
+    {
+      "point": "main_tick",
+      "fn": "pp_main"
+    }
+  ],
+  "hooks": {},
+  "claims": [
+    {
+      "input": "speech_press",
+      "shift": "yes",
+      "screen": "any"
+    }
+  ],
+  "controls": [
+    "shift + speech: panel on / off (the first opening wraps TE's audio callback)",
+    "panel open: blue press test tone off / both / word 0 / word 1, blue turn its level (-60..-12 dB)",
+    "panel open: green press scan play/ on the disk, green turn scroll the file list",
+    "panel open: white press read-speed test on / off, white turn read size 4 / 16 / 64 / 128 KB",
+    "panel open: orange turn mix-cost streams 0..8, orange press sample-heap test"
+  ],
+  "tests": [
+    "sim/run_pptest.py"
+  ],
+  "depends": [
+    "enginehost"
+  ],
+  "conflicts": [
+    "cpuinfo",
+    "meminfo",
+    "diskinfo"
+  ],
+  "evidence": [],
+  "docs": "README.md"
+}

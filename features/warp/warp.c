@@ -23,7 +23,7 @@
 #define TAG             6
 #define PAGES           3
 
-static wp_voice voices[EH_VOICES];
+static wp_voice voices[EH_SLOTS];          /* every instance (PLAY: vi 6..23) */
 volatile uint8_t wp_page;                       /* 0..2 = page 1..3 (bench reads) */
 static volatile uint8_t consumed;               /* pushes whose key-up we eat */
 volatile int8_t wp_bank = -1;                   /* last loaded bank entry (-1 none), bench reads */
@@ -57,7 +57,7 @@ static void wp_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint3
 
 void wp_init(void)
 {
-    eh_register(TAG, wp_eh_render);
+    eh_register_multi(TAG, wp_eh_render);  /* per-voice state only: instances OK */
 }
 
 /* Engine browser row "warp" (content_sql): right after TE reads the picked row's type name,

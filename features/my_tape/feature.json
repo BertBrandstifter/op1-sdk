@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "name": "my_tape",
+  "title": "Tape overlay",
+  "version": "0.1.0",
+  "status": "experimental",
+  "summary": "Independent overlay on the tape screen: shift + insert toggles a panel drawn over TE's frame. Starting point for own tape-screen logic driven by keys, knobs and the sequencer tick.",
+  "license": "MIT",
+  "authors": [
+    "OP1 SDK user"
+  ],
+  "repository": "",
+  "sdk": 1,
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "prefix": "mt_",
+  "sources": [
+    "my_tape.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "mt_key",
+      "mode": "filter"
+    },
+    {
+      "point": "on_knob",
+      "fn": "mt_knob",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "mt_frame"
+    },
+    {
+      "point": "seq_tick",
+      "fn": "mt_tick"
+    }
+  ],
+  "hooks": {},
+  "claims": [
+    {
+      "input": "insert_press",
+      "shift": "yes",
+      "screen": "any"
+    }
+  ],
+  "controls": [
+    "shift + insert: show / hide the tape overlay"
+  ],
+  "tests": [],
+  "depends": [],
+  "conflicts": [],
+  "evidence": []
+}

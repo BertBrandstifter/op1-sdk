@@ -26,7 +26,7 @@
 #define OFF             (-1)
 #define TITLE_TIME      TE_SAMPLE_RATE          /* the sound's name over the voice list: 1 s */
 
-static pss_voice voices[EH_VOICES];
+static pss_voice voices[EH_SLOTS];         /* every instance (PLAY: vi 6..23) */
 /* the sounding notes (the lamps under the LCD): a key held on the OP-1 (pss_note_key) is its note
  * (TE plays note index + 53 + 12 x octave); the next new voice tells the octave (its pitch rounded to the nearest octave of the
  * note: glide / LFO / bend at the start move it by less than 6 semitones). New voices no held key
@@ -92,9 +92,11 @@ static void pss_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint
     int16_t p[PSS_PARAMS];
 
     unpack(knobs, p);
-    if (flags & EH_BLOCK)
-        blocks++;
-    if (flags & EH_FRESH) {
+    if ((flags & EH_BLOCK) && vi < EH_VOICES)
+        blocks++;                               /* the screen's clock: TE's voices only */
+    if ((flags & EH_FRESH) && vi >= EH_VOICES) {
+        pss_note_on(&voices[vi], inc[0], p);     /* a PLAY instance: no keyboard display */
+    } else if (flags & EH_FRESH) {
         int i, oldest = -1;
 
         pss_note_on(&voices[vi], inc[0], p);
@@ -118,7 +120,7 @@ static void pss_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint
 
 void pss_init(void)
 {
-    eh_register(TAG, pss_eh_render);
+    eh_register_multi(TAG, pss_eh_render);  /* instances: voices[EH_SLOTS], display for TE only */
 }
 
 /* Engine browser row "party" (content_sql) -> "drwave" (TE knows no such type: fatal) */

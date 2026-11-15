@@ -378,8 +378,8 @@ int main(void)
         CHECK(17, shown_held == 69 && shown_after == -1);
     }
 
-    /* 18: the sound's name on the lamps: shown when a sound is picked, for 1 s (Seq ticks of 64
-     * samples), then gone */
+    /* 18: the sound's name on the lamps: shown when a sound is picked, kept past 1 s (Seq ticks of
+     * 64 samples), gone when a keyboard key goes down */
     {
         int on_pick, on_late, off;
 
@@ -392,10 +392,14 @@ int main(void)
             wh_tick();
         hook_frame((uint16_t *)FB);
         on_late = wh_title_on;
-        for (n = 0; n < 10; n++)                /* 1.004 s */
+        for (n = 0; n < 10; n++)                /* 1.004 s: still there */
             wh_tick();
         hook_frame((uint16_t *)FB);
+        on_late &= wh_title_on;
+        hook_key(41, 1);
+        hook_frame((uint16_t *)FB);
         off = !wh_title_on;
+        hook_key(41, 0);
         CHECK(18, on_pick && on_late && off);
     }
 

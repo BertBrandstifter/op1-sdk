@@ -8,7 +8,9 @@
  * accent sweep circuit) for the accent, the measured cutoff / env-mod mapping, the amp envelope
  * (instant attack, 1230 ms decay to 0, 0.5 / 50 ms release) plus MEG x (0.45 + 4 x accent) while the
  * gate is on, a 200 Hz de-click on the amp, the pitch slew (slide), a 24 Hz high-pass after.
- * Oscillator + filter run at 176.4 kHz (2 x TE's 88.2 kHz, averaged down); controls every 4 samples.
+ * Oscillator + filter run at 88.2 kHz (TE's voice rate; coefficients fitted to the 176.4 kHz
+ * response), with FILTER FM on at 176.4 kHz (averaged down); controls every 8 samples. Half rate
+ * (PLAY's ECO): output at 44.1 kHz with the same envelope times, cutoffs and pitch.
  *
  * Mods: SUB (square an octave down), OVERDRIVE (tanh before the filter), TRACKING, FILTER FM (the
  * output on the cutoff, audio rate), SWEEP OFF / NORM / HIGH (no sweep circuit / Open303 / more
@@ -43,10 +45,11 @@ typedef struct ac_params {
     uint8_t drive;              /* 0..31: overdrive, input gain 1 .. 8 into a tanh (0 = linear) */
     uint8_t muff;               /* AC_MUFF_* */
     uint8_t level;              /* 0..15: output, 10 = unity */
+    uint8_t half;               /* 1: output at 44.1 kHz (PLAY's ECO), inc per 44.1 kHz sample */
 } ac_params;
 
 typedef struct ac_voice {
-    uint32_t ph, sph;           /* oscillator, sub phases (176.4 kHz) */
+    uint32_t ph, sph;           /* oscillator, sub phases (filter rate) */
     uint32_t cur;               /* pitch now: TE increment (88.2 kHz) after the slew, tune included */
     int32_t y[4];               /* filter stages, Q20 */
     int32_t hx, hy;             /* feedback high-pass state */

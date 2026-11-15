@@ -68,14 +68,14 @@ static const struct { uint8_t c, sh, bits; } fields[NP + 1] = {
     [P_RANGE3] = { 7, 0, 3 }, [P_WAVE1] = { 7, 3, 3 }, [P_WAVE2] = { 7, 6, 3 }, [P_WAVE3] = { 7, 9, 3 },
 };
 
-static mo_voice voices[EH_VOICES];
+static mo_voice voices[EH_SLOTS];               /* every instance (PLAY: vi 6..23) */
 static uint32_t order[EH_VOICES], notes;        /* note-on order per voice (render thread) */
 static uint8_t gone;                            /* voices past the newest 4: faded out (a bit each) */
 static int32_t last_pitch;                      /* the newest note's pitch now (log2, Q16): glides start there */
 static volatile int8_t newest = -1;             /* the TE voice of the newest note */
 static volatile uint8_t req_release;            /* KeyHandler -> render: contour release, a bit per voice */
 static volatile uint32_t blocks;                /* audio blocks (render thread) */
-volatile uint8_t mo_page;                       /* 0..6 = page 1..7 (bench reads) */
+volatile uint8_t mo_page = FX_PAGE;             /* 0..6 = page 1..7 (bench reads); opens on FX (the sound) */
 static volatile uint8_t consumed;
 volatile int8_t mo_bank = -1;                   /* bench reads; -1 = P-- */
 static volatile uint8_t bank_edited;
@@ -209,12 +209,58 @@ static const volatile int16_t *stored(const int16_t *k)
 
 /* ------------------------------------------------------------------ render thread */
 
+/* PLAY's instances (enginehost: vi = instance x 6 + voice, instance 1..3): the same voice per
+ * instance without TE's keys (glide from the instance's last note, the newest MAX_SOUNDING
+ * voices of the instance sound); a note ends by PLAY's envelope */
+static uint32_t i_order[EH_SLOTS], i_notes[EH_INST], i_gone;
+static int32_t i_last_pitch[EH_INST];
+static int8_t i_newest[EH_INST] = { -1, -1, -1, -1 };
+
+static void inst_render(int vi, int16_t *out, const int16_t *knobs, const uint32_t *inc, int flags)
+{
+    int in = vi / EH_VOICES, base = in * EH_VOICES, i, younger = 0;
+    mo_voice *v = &voices[vi];
+    mo_params p;
+
+    params(knobs, stored(knobs), &p);
+    if (flags & EH_FRESH) {
+        v->cur = i_last_pitch[in];
+        v->sounding = i_newest[in] >= 0;
+        mo_note(v, inc[0], &p);
+        i_newest[in] = (int8_t)vi;
+        i_order[vi] = ++i_notes[in];
+        i_gone &= ~(1u << vi);
+    }
+    for (i = base; i < base + EH_VOICES; i++)
+        younger += i_order[i] > i_order[vi];
+    if (younger >= MAX_SOUNDING || (i_gone & (1u << vi))) {
+        if (!(i_gone & (1u << vi))) {
+            mo_render(v, out, TE_VOICE_SAMPLES, inc, &p);
+            for (i = 0; i < TE_VOICE_SAMPLES; i++)
+                out[i] = (int16_t)((out[i] * (TE_VOICE_SAMPLES - 1 - i)) / TE_VOICE_SAMPLES);
+            i_gone |= 1u << vi;
+        } else {
+            for (i = 0; i < TE_VOICE_SAMPLES; i++)
+                out[i] = 0;
+        }
+        return;
+    }
+    mo_render(v, out, TE_VOICE_SAMPLES, inc, &p);
+    if (vi == i_newest[in])
+        i_last_pitch[in] = v->cur;
+}
+
 static void mo_eh_render(int vi, int16_t *out, const int16_t *knobs, const uint32_t *inc, int flags)
 {
     mo_params p;
-    mo_voice *v = &voices[vi];
+    mo_voice *v;
     int i;
 
+    if (vi >= EH_VOICES) {
+        inst_render(vi, out, knobs, inc, flags);
+        return;
+    }
+    v = &voices[vi];
     params(knobs, stored(knobs), &p);
     if (flags & EH_BLOCK)
         blocks++;
@@ -275,9 +321,9 @@ void mo_setup(void)
 {
     int i;
 
-    for (i = 0; i < EH_VOICES; i++)
+    for (i = 0; i < EH_SLOTS; i++)
         mo_voice_init(&voices[i]);
-    eh_register(TAG, mo_eh_render);
+    eh_register_multi(TAG, mo_eh_render);       /* PLAY instances: inst_render */
 }
 
 /* Engine browser row "mono 3" (content_sql) -> "drwave" (TE knows no such type: fatal) */
@@ -294,7 +340,7 @@ void mo_engine_name(te_string *out, void *db, const char *sql)
     if (out->size == sizeof(name) - 1 && i == out->size) {
         d[0] = 'd'; d[1] = 'r'; d[2] = 'w'; d[3] = 'a'; d[4] = 'v'; d[5] = 'e'; d[6] = 0; /* cap >= 15 */
         out->size = 6;
-        mo_page = 0;
+        mo_page = FX_PAGE;
         bank_slot = -1;
     }
 }

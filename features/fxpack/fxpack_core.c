@@ -517,7 +517,7 @@ static void dj(fp_state *s, int16_t *b, int m, const int16_t *p)
     idx = hp ? ((pos - 16384) * 200) >> 14 : 72 + (((pos) * 183) >> 14);   /* LP 150 Hz..19 kHz, HP 20 Hz..4.6 kHz */
     idx = clampi(idx + ((sin32(s->lfo) * wob) >> 15), 0, 255);
     g = fp_svf_g[idx];                                                   /* Q16 */
-    a1 = (int32_t)(((int64_t)1 << 28) / ((1 << 14) + (int32_t)(((int64_t)g * (g + (int64_t)k * 4)) >> 18)));
+    a1 = (1 << 28) / ((1 << 14) + (int32_t)(((int64_t)g * (g + (int64_t)k * 4)) >> 18));  /* a 32-bit divide */
     a2 = (int32_t)(((int64_t)g * a1) >> 16);
     a3 = (int32_t)(((int64_t)g * a2) >> 16);
     for (i = 0; i < m; i++) {
@@ -545,7 +545,9 @@ static void ladder(fp_state *s, int16_t *b, int m, const int16_t *p)
     idx = 40 + ((knob(p, 0) * 215) >> 15) + (((env >> 4) * ((knob(p, 5) * 128) >> 15)) >> 15)
           + ((sin32(s->lfo) * ((knob(p, 7) * 64) >> 15)) >> 15);
     g = fp_svf_g[clampi(idx, 0, 250)];
-    G = (int32_t)(((int64_t)g << 14) / (65536 + g));                  /* g / (1 + g), Q14 */
+    /* g / (1 + g), Q14 = (g << 14) / (65536 + g), without the 64-bit divide (a slow library call
+     * on the Blackfin): 16384 - ceil(2^30 / (65536 + g)), the same value */
+    G = 16384 - (int32_t)(((1u << 30) + 65535u + (uint32_t)g) / (65536u + (uint32_t)g));
     k = clampi(k - ((k * ((G * 22938) >> 14)) >> 14), 0, 14336);      /* k (1 - 1.4 G) */
     for (i = 0; i < m; i++) {
         int32_t x = b[i], ax = x < 0 ? -x : x, v = dr > 256 ? curve(0, (((x * dr) >> 8) * 101) >> 8) : x, y;
@@ -565,6 +567,15 @@ static void ladder(fp_state *s, int16_t *b, int m, const int16_t *p)
     s->envs = env;
 }
 
+/* (a b) >> sh for a 16-bit b (|b| <= 32767) and 0 <= sh <= 16, as the 64-bit product gives it, from
+ * two 32-bit multiplies (a 64-bit multiply is a library call on the Blackfin): a = 65536 ah + al */
+static inline __attribute__((always_inline)) int32_t mul_sh(int32_t a, int32_t b, int sh)
+{
+    int32_t ah = a >> 16, al = (int32_t)(a & 0xffff);
+
+    return ah * b * (1 << (16 - sh)) + ((al * b) >> sh);
+}
+
 /* envelope filter: the input's level (SENS) sweeps a Chamberlin SVF (40 Hz .. 6.4 kHz, states 8
  * bits finer: no stuck offset at the bottom) up or down 5 octaves from FREQ; SPEED = follower
  * attack / release; MODE LP / BP (peak 2: a narrow band is quiet) / HP */
@@ -582,11 +593,11 @@ static void wah(fp_state *s, int16_t *b, int m, const int16_t *p)
     for (i = 0; i < m; i++) {
         int32_t x = b[i], ax = (x < 0 ? -x : x) << 4, hi, v;
 
-        env += (int32_t)(((int64_t)(ax - env) * (ax > env ? ca : cr)) >> 15);
-        hi = x * 256 - lo - (int32_t)(((int64_t)q * bd) >> 14);
-        bd = clampi(bd + (int32_t)(((int64_t)f * hi) >> 14), -(90000 << 8), 90000 << 8);
-        lo = clampi(lo + (int32_t)(((int64_t)f * bd) >> 14), -(90000 << 8), 90000 << 8);
-        v = mode == 0 ? lo : mode == 1 ? (int32_t)(((int64_t)q * bd) >> 13) : hi;   /* BP x2 */
+        env += mul_sh(ax - env, ax > env ? ca : cr, 15);
+        hi = x * 256 - lo - mul_sh(bd, q, 14);
+        bd = clampi(bd + mul_sh(hi, f, 14), -(90000 << 8), 90000 << 8);
+        lo = clampi(lo + mul_sh(bd, f, 14), -(90000 << 8), 90000 << 8);
+        v = mode == 0 ? lo : mode == 1 ? mul_sh(bd, q, 13) : hi;        /* BP x2 */
         b[i] = sat16(x + (((sat16(v >> 8) - x) * mix) >> 15));
     }
     s->envs = env;

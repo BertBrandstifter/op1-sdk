@@ -21,7 +21,7 @@ from simtest import asm_bin, c_bin, run_model, run_gdb, composed  # noqa: E402
 from build import compile_project  # noqa: E402
 
 FEATURES, APP = ["chordplus", "requantize"], "cptest"
-DRIVER_AT, STACK = 0x01F00000, 0x01F7FFFC
+DRIVER_AT, STACK = 0x01F40000, 0x01F7FFFC
 STUBS = {0x01A85750: 0, 0x01A85840: 1, 0x01A0D2C0: 2, 0x019B6C74: 3, 0x019B2674: 4, 0x019B6C0C: 5}
 FB = 0x03000000
 

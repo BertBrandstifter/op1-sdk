@@ -23,6 +23,7 @@
     "drumtrim",
     "cpuinfo",
     "slotlink",
-    "nophysics"
+    "nophysics",
+    "nodsynth"
   ]
 }

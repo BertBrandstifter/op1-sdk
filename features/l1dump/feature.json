@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "name": "l1dump",
+  "title": "firmware plaintext dumper (L1 SRAM out over USB / audio)",
+  "version": "0.1.3",
+  "status": "experimental",
+  "summary": "Copies the decrypted on-chip memories (L1 instruction SRAM, L1 data A/B, scratchpad - plaintext only exists in the running chip, te-boot decrypts them while loading) into a CRC-framed static image (L1 instruction SRAM is read through the core's DTEST data-array interface: a normal load there faults) and sends it back to the Mac two ways: passively via USB disk mode (an after-hook on the usb_ms_yaffs sector read replaces blocks of a pre-placed carrier file; RAM only, nothing written to NAND) and audibly as an FSK stream on the audio out. Nothing runs at boot (a boot-time fault would hang the device before the UI): the first shift + speech captures and arms both paths; it also toggles the modem sound. Decode both with tools/l1dump_rx.py. Debug/preservation tool: the dumps are TE's firmware, keep them local (analysis/ is gitignored).",
+  "license": "MIT",
+  "authors": [
+    "op1-sdk"
+  ],
+  "sdk": 1,
+  "firmware": {
+    "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
+  },
+  "prefix": "ld_",
+  "sources": [
+    "l1dump.c"
+  ],
+  "libs": [
+    "gfx"
+  ],
+  "shared": [
+    {
+      "point": "on_key",
+      "fn": "ld_key",
+      "mode": "filter"
+    },
+    {
+      "point": "frame",
+      "fn": "ld_frame",
+      "order": "last"
+    }
+  ],
+  "hooks": {
+    "entry_hooks": [
+      {
+        "func": "0x01a7153c",
+        "expect": "00e80000",
+        "c": "ld_msc_after",
+        "after": true,
+        "what": "usb_ms_yaffs.cpp sector read read(buf, sector, nsectors): after TE fills buf from the backing file, replace pre-placed carrier blocks (OP1DMPY1 + index + 0xA5 fill) with dump slices"
+      }
+    ]
+  },
+  "claims": [
+    {
+      "input": "speech_press",
+      "shift": "yes",
+      "screen": "any"
+    }
+  ],
+  "controls": [
+    "shift + speech: audio modem on / off (the USB carrier patching is always armed)"
+  ],
+  "tests": [],
+  "depends": [],
+  "conflicts": [
+    "meminfo",
+    "diskinfo"
+  ],
+  "evidence": [],
+  "docs": "README.md"
+}
