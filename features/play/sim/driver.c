@@ -10,8 +10,9 @@
  *  5 a second import (image 2: A1.WAV mono only): the tracks stay (SONG.BIN carried over), track 1
  *    plays the new A1, track 2 shows "A2.AIF: GONE"
  *  6 image 3 (A2.AIF only): track 1 "A1.WAV: GONE", track 2 plays
- *  7 keys: tape again toggles PLAY / TE's tape; keys go to TE when TE's tape is shown; a release
- *    whose press PLAY took is taken; shift + tape on PLAY does not reach TE; knobs
+ *  7 keys: PLAY is the tape screen: tape again and shift + tape stay PLAY's (no TE tape screen,
+ *    no erase screen); from another screen the tape key is TE's; a release whose press PLAY took
+ *    is taken; knobs
  *  8 a DRUM track (DRUM ROLL pattern 1, hits on steps 1 and 9) on TE's kit, soloed: exactly the
  *    expected samples, the second hit inside a block; the pattern loops
  *  9 a SYNTH track (NOTE ROLL pattern 1, one note A4 for one step) on a test engine registered as
@@ -27,9 +28,35 @@
  *    (also with TE's keyboard in synth mode), its playhead follows PLAY, shift + blue press closes it
  * 16 TE's own finger patterns: not loaded before op1.db is open; then PLAY loads them once (TE's
  *    getter), and a DRUM track on a pattern DRUM ROLL never edited plays TE's hit
+ * 17 the list's knobs hold at the ends; an empty column given its pattern while playing joins
+ *    at the next bar
  * 15 white turn = sound, orange turn = pattern; SYNTH cost options: white press cycles the voices (2 -> 4 -> 1), shift + white press ECO: the
  *    engine renders every other block at twice the step; muted: nothing renders; PLAY's CPU
  *    numbers (total, per track) appear while playing and clear on stop
+ * 21 song view (join): white press on an empty cell = a new chain, white turn its number, shift +
+ *    white press clones, cut / insert move a cell (a chain is not pasted into an AUDIO column),
+ *    shift + insert / shift + cut twice insert / delete a song row; back on the list, a track with
+ *    more than one song row no longer changes its pattern on orange turn
+ * 18 play in the song view starts every column at the cursor row from bar 1; play again pauses;
+ *    stop on a pause: bar 1 and song row 00 again
+ * 19 chain view (white press on a chain cell): pattern, transpose (shift: octaves), last pattern,
+ *    row clipboard, row insert / delete; play auditions the chain alone (the other tracks at
+ *    gain 0, the head walks that chain, the drum hit plays); stop ends it; orange press: song view
+ * 20 AUDIO cells ON / OF: the track follows the song (ON = the file once, OF = a bar of silence,
+ *    then again): exactly the expected samples over two circles; without cells it plays free again
+ * 22 speech: the help page of the view (drawn), blue turn pages, the next key only closes it;
+ *    shift + speech is not PLAY's
+ * 23 live: shift + play in the song view cues the cursor row: the column jumps there when its
+ *    chain ends and loops back there; rec = live mode: white turn edits nothing, white press cues
+ *    (shift + rec) the cursor cell (it does not open the chain), T1 mutes; an AUDIO column cued to another row
+ *    changes at the end of its segment, sample by sample
+ * 24 render (rec, white turn = bars, rec): the soloed AUDIO track for one bar into
+ *    play_r/REND01.AIF: an AIFF header, stereo, exactly the expected samples (the master fader
+ *    does not act), the file is then in the tracks' file pool; stop cancels a render and deletes
+ *    its file; a soloed DRUM track renders to a mono file; keys do nothing while it renders
+ * 25 a rest cell (OF, white turn below 00) in a DRUM column: one silent bar, then the column goes on
+ * 26 keys 1-8 = the cursor track's sound / kit (list, song view); a chain row's SND column is the
+ *    track's slot while the row plays; a key pressed meanwhile wins until the row ends
  * Returns failed-check bits (0 = pass). */
 #include <stdarg.h>
 #include <op1/te246.h>
@@ -44,7 +71,13 @@ extern void hook_cleanup(const char *dir, int depth);  /* call site 0x01997584 *
 extern void py_main(void);
 extern py_mixer py_mx;
 extern volatile uint32_t py_blocks, py_import_files, py_import_errors, py_import_runs;
-extern char FB[], FB2[], FB3[];
+extern char FB[], FB2[], FB3[], FB4[], FB5[], FB6[], FB7[];
+extern int py_help_on(void), py_pat_cued(int t), py_rd_busy(void);
+extern char FB8[];
+extern int py_pat_slot(int t);
+extern volatile uint8_t py_view;                /* 0 list, 1 song view, 2 chain view */
+extern const ps_head *py_pat_head(int t);
+extern int py_pat_start_row(void), py_pat_audition_track(void);
 extern uint8_t dr_pat[];                        /* DRUM ROLL: dr_pattern[14], 3648 bytes each */
 extern volatile uint16_t dr_owned;
 extern volatile uint8_t dr_loaded;
@@ -453,6 +486,13 @@ static void press(int key)
     hook_key(key, 0);
 }
 
+static void shift_press(int key)
+{
+    *TE_SHIFT_HELD = 1;
+    press(key);
+    *TE_SHIFT_HELD = 0;
+}
+
 static void set_image(uint8_t *b, uint8_t *e)
 {
     mcpy(fs[image].data, b, (uint32_t)(e - b));  /* tape_c.raw: its own 3 MB at 0x02200000 */
@@ -530,6 +570,15 @@ static void mains(int n)
 {
     while (n--)
         py_main();
+}
+
+static int py_song_used0(void)                  /* column 1 has a cell */
+{
+    int r, n = 0;
+
+    for (r = 0; r < PS_ROWS; r++)
+        n += py_song.cell[r][0] != PS_EMPTY;
+    return n;
 }
 
 static int streq0(const char *a, const char *b)
@@ -637,20 +686,19 @@ int main(void)
     press(TE_KEY_INSERT);                       /* PLAY shown: kept from TE */
     CHECK(7, keys_to_te == 0);
     hook_key(TE_KEY_PLAY, 1);                   /* press on PLAY ... */
-    press(TE_KEY_TAPE);                         /* tape again: TE's tape */
-    hook_key(TE_KEY_PLAY, 0);                   /* ... release on TE's tape: still taken */
+    press(TE_KEY_TAPE);                         /* tape again: still PLAY (TE's tape screen is gone) */
+    hook_key(TE_KEY_PLAY, 0);                   /* ... and its release: taken */
     CHECK(7, keys_to_te == 0);
-    press(TE_KEY_INSERT);                       /* TE's tape shown: goes to TE */
+    press(TE_KEY_INSERT);                       /* PLAY's, not TE's */
+    CHECK(7, keys_to_te == 0);
+    *TE_SHIFT_HELD = 1;
+    press(TE_KEY_TAPE);                         /* shift + tape: not to TE (its erase screen) */
+    *TE_SHIFT_HELD = 0;
+    CHECK(7, keys_to_te == 0);
+    *TE_EDIT_MODE = 0;                          /* another screen: the tape key is TE's (it opens tape mode) */
+    press(TE_KEY_TAPE);
+    *TE_EDIT_MODE = TE_EDIT_MODE_TAPE;
     CHECK(7, keys_to_te == 2);
-    *TE_SHIFT_HELD = 1;
-    press(TE_KEY_TAPE);                         /* shift + tape on TE's tape: TE's erase screen */
-    *TE_SHIFT_HELD = 0;
-    CHECK(7, keys_to_te == 4);
-    press(TE_KEY_TAPE);                         /* tape again: PLAY */
-    *TE_SHIFT_HELD = 1;
-    press(TE_KEY_TAPE);                         /* shift + tape on PLAY: not to TE */
-    *TE_SHIFT_HELD = 0;
-    CHECK(7, keys_to_te == 4);
     py_main();                                  /* the play press above */
     if (py_mx.playing) {
         press(TE_KEY_STOP);
@@ -713,7 +761,7 @@ int main(void)
         turn(0, 5);                                                 /* the ADD row */
         turn(2, 2);                                                 /* AUDIO -> SYNTH -> DRUM */
         press(TE_KEY_WHITE_PUSH);                                   /* track 3 = DRUM */
-        turn(3, 1);                                                 /* orange: pattern 1 */
+                                                                    /* a new track starts on pattern 1 */
         press(TE_KEY_GREEN_PUSH);                                   /* solo */
         mains(30);                                                  /* published; tracks reopened */
         CHECK(8, ntracks() == 3 && py_song.trk[2].type == PS_DRUM && py_song.cell[0][2] < PS_CHAINS
@@ -782,7 +830,7 @@ int main(void)
         turn(0, 5);                                                 /* the ADD row */
         turn(2, -1);                                                /* DRUM -> SYNTH */
         press(TE_KEY_WHITE_PUSH);                                   /* track 4 = SYNTH */
-        turn(3, 1);                                                 /* orange: pattern 1 */
+                                                                    /* a new track starts on pattern 1 */
         press(TE_KEY_GREEN_PUSH);                                   /* solo */
         mains(30);
         CHECK(9, ntracks() == 4 && py_song.trk[3].type == PS_SYNTH && py_song.cell[0][3] < PS_CHAINS
@@ -997,6 +1045,604 @@ int main(void)
         press(TE_KEY_STOP);
         py_main();
         dbg[6] = fs_gets;
+    }
+
+    /* 17: the list's knobs hold at the ends (pattern 1..14, sound 1..8, no "--" / CUR); a column
+     * that is empty at play (an older song) and gets its pattern while playing joins at the next
+     * bar (TE's drum pattern 4 from check 16: one hit per bar) */
+    {
+        int t, c;
+        uint32_t hits;
+
+        for (t = 0; t < PS_TRACKS && py_song.trk[t].type != PS_DRUM; t++)
+            ;
+        turn(0, -9);
+        turn(0, t);
+        c = py_song.cell[0][t];
+        turn(3, -20);
+        CHECK(17, py_song.cell[0][t] == c && py_song.chain[c][0].pat == 0);
+        turn(3, 30);
+        CHECK(17, py_song.chain[c][0].pat == 13);
+        turn(3, -10);                                               /* back to pattern 4 */
+        turn(2, -20);
+        CHECK(17, py_song.trk[t].sound == 0);
+        turn(2, 20);
+        CHECK(17, py_song.trk[t].sound == 7);
+        turn(2, -7);
+        CHECK(17, py_song.chain[c][0].pat == 3 && py_song.trk[t].sound == 0);
+        press(TE_KEY_STOP);
+        py_main();
+        press(TE_KEY_STOP);
+        py_main();
+        py_song.cell[0][t] = PS_EMPTY;                              /* an empty column, as at play */
+        press(TE_KEY_PLAY);
+        py_main();
+        hits = py_drum_hits;
+        for (b = 0; b < 700; b++)
+            hook_volume();
+        py_song.cell[0][t] = (uint8_t)c;                            /* its pattern, while playing */
+        for (b = 0; b < 700; b++)                                   /* to just past bar 2 (1378 blocks) */
+            hook_volume();
+        CHECK(17, py_drum_hits == hits + 1);
+        press(TE_KEY_STOP);
+        py_main();
+    }
+
+    /* 21: the song view */
+    {
+        int k, dc, nc, cl, pat;
+
+        for (k = 0; k < PS_TRACKS; k++)
+            py_song.trk[k].solo = py_song.trk[k].mute = 0;
+        press(TE_KEY_STOP);
+        py_main();
+        press(TE_KEY_STOP);
+        py_main();
+        press(TE_KEY_JOIN);
+        CHECK(21, py_view == 1 && py_song.trk[2].type == PS_DRUM && py_song.trk[0].type == PS_AUDIO);
+        turn(1, 2);                                                 /* column 3: the DRUM track */
+        dc = py_song.cell[0][2];
+        turn(0, 1);                                                 /* row 01 */
+        press(TE_KEY_WHITE_PUSH);                                   /* empty, no last chain: a new one */
+        nc = py_song.cell[1][2];
+        CHECK(21, dc < PS_CHAINS && nc < PS_CHAINS - 1 && nc != dc && py_view == 1);
+        turn(2, 1);
+        CHECK(21, py_song.cell[1][2] == nc + 1);
+        turn(2, -1);
+        CHECK(21, py_song.cell[1][2] == nc);
+        turn(0, -1);
+        *TE_SHIFT_HELD = 1;
+        press(TE_KEY_WHITE_PUSH);                                   /* row 00: clone its chain */
+        *TE_SHIFT_HELD = 0;
+        cl = py_song.cell[0][2];
+        CHECK(21, cl < PS_CHAINS && cl != dc && cl != nc && py_song.chain[cl][0].pat == py_song.chain[dc][0].pat
+              && py_view == 1);
+        turn(0, 1);
+        press(TE_KEY_CUT);
+        CHECK(21, py_song.cell[1][2] == PS_EMPTY);
+        turn(0, 1);
+        press(TE_KEY_INSERT);
+        CHECK(21, py_song.cell[2][2] == nc);
+        turn(1, -2);
+        press(TE_KEY_INSERT);                                       /* a chain into an AUDIO column: no */
+        CHECK(21, py_song.cell[2][0] == PS_EMPTY);
+        turn(1, 2);
+        turn(0, -2);
+        *TE_SHIFT_HELD = 1;
+        press(TE_KEY_INSERT);                                       /* a new song row 00 */
+        CHECK(21, py_song.cell[0][2] == PS_EMPTY && py_song.cell[1][2] == cl && py_song.cell[3][2] == nc);
+        press(TE_KEY_CUT);                                          /* armed */
+        CHECK(21, py_song.cell[1][2] == cl);
+        press(TE_KEY_CUT);                                          /* deleted */
+        *TE_SHIFT_HELD = 0;
+        CHECK(21, py_song.cell[0][2] == cl && py_song.cell[2][2] == nc && py_song.cell[3][2] == PS_EMPTY);
+        press(TE_KEY_JOIN);                                         /* the list: rows 00 + 02: no quick edit */
+        pat = py_song.chain[cl][0].pat;
+        turn(0, -9);
+        turn(0, 2);
+        turn(3, 1);
+        turn(3, -2);
+        CHECK(21, py_view == 0 && py_song.chain[cl][0].pat == pat && py_song.cell[0][2] == cl);
+        press(TE_KEY_JOIN);
+
+        /* 18: play from the cursor row */
+        turn(0, 1);                                                 /* row 01 */
+        press(TE_KEY_WHITE_PUSH);                                   /* the last chain here (nc) ... */
+        turn(2, dc - nc);                                           /* ... made dc: 00 cl, 01 dc, 02 nc (no rows) */
+        CHECK(18, py_song.cell[1][2] == dc);
+        press(TE_KEY_PLAY);
+        py_main();
+        CHECK(18, py_mx.playing && py_mx.pos == 0 && py_pat_start_row() == 1);
+        for (b = 0; b < 10; b++)
+            hook_volume();
+        CHECK(18, py_pat_head(2)->active && py_pat_head(2)->row == 1 && py_pat_head(2)->solo == PS_EMPTY);
+        press(TE_KEY_PLAY);                                         /* pause */
+        py_main();
+        CHECK(18, !py_mx.playing && py_mx.pos == 640);
+        press(TE_KEY_STOP);                                         /* bar 1, row 00 */
+        py_main();
+        CHECK(18, py_mx.pos == 0 && py_pat_start_row() == 0);
+
+        /* 19: the chain view */
+        {
+            ps_crow *cr = py_song.chain[dc];
+            uint32_t hits;
+
+            press(TE_KEY_WHITE_PUSH);                               /* row 01's chain dc */
+            CHECK(19, py_view == 2);
+            turn(2, -20);
+            CHECK(19, cr[0].pat == PS_EMPTY);
+            turn(2, 1);                                             /* pattern 1 (DRUM ROLL's own) */
+            turn(1, 1);
+            turn(2, 2);
+            CHECK(19, cr[0].pat == 0 && cr[0].tsp == 2);
+            *TE_SHIFT_HELD = 1;
+            turn(2, 1);
+            CHECK(19, cr[0].tsp == 14);
+            turn(2, -1);
+            *TE_SHIFT_HELD = 0;
+            turn(1, -1);
+            turn(0, 1);
+            press(TE_KEY_WHITE_PUSH);                               /* row 1: the last pattern */
+            CHECK(19, cr[1].pat == 0 && cr[0].tsp == 2);
+            press(TE_KEY_CUT);
+            turn(0, 1);
+            press(TE_KEY_INSERT);
+            CHECK(19, cr[1].pat == PS_EMPTY && cr[2].pat == 0);
+            *TE_SHIFT_HELD = 1;
+            press(TE_KEY_INSERT);
+            CHECK(19, cr[2].pat == PS_EMPTY && cr[3].pat == 0);
+            press(TE_KEY_CUT);
+            press(TE_KEY_CUT);
+            *TE_SHIFT_HELD = 0;
+            CHECK(19, cr[2].pat == 0 && cr[3].pat == PS_EMPTY);
+            press(TE_KEY_CUT);                                      /* the chain: one row, pattern 1 +2 */
+            CHECK(19, cr[2].pat == PS_EMPTY && cr[0].pat == 0);
+            mains(30);
+            hits = py_drum_hits;
+            press(TE_KEY_PLAY);                                     /* audition */
+            py_main();
+            CHECK(19, py_mx.playing && py_pat_audition_track() == 2 && py_mx.gain[2] && !py_mx.gain[0]
+                  && !py_mx.gain[1] && !py_mx.gain[3]);
+            for (b = 0; b < 10; b++)
+                hook_volume();
+            CHECK(19, py_drum_hits == hits + 1 && py_pat_head(2)->active && py_pat_head(2)->solo == dc);
+            hook_frame((uint16_t *)FB5);
+            press(TE_KEY_STOP);
+            py_main();
+            CHECK(19, !py_mx.playing && py_mx.pos == 0 && py_pat_audition_track() < 0 && py_mx.gain[0]);
+            press(TE_KEY_ORANGE_PUSH);
+            CHECK(19, py_view == 1);
+        }
+
+        /* 20: AUDIO cells: track 1 (A2.AIF, mono, one bar) ON, OF, then again */
+        {
+            int32_t mv;
+            uint32_t under, rerr;
+
+            turn(1, -2);                                            /* column 1 */
+            turn(0, -1);
+            press(TE_KEY_WHITE_PUSH);                               /* row 00: ON */
+            turn(0, 1);
+            turn(2, 2);                                             /* row 01: empty -> ON -> OF */
+            turn(0, -1);
+            press(TE_KEY_GREEN_PUSH);                               /* solo */
+            py_main();
+            CHECK(20, py_song.cell[0][0] == PS_ON && py_song.cell[1][0] == PS_OF && py_mx.set->t[0].song
+                  && py_mx.set->t[0].cur.n == 2 && py_mx.set->t[0].cur.period == 176400u && !py_mx.set->t[1].song);
+            press(TE_KEY_PLAY);
+            py_main();
+            under = py_mx.underruns[0];
+            rerr = py_mx.read_errors;
+            mv = (py_mx.master * py_mx.te_volume) >> 15;
+            bad = 0;
+            for (b = 0; b < 4200; b++) {                            /* into the second circle's OF */
+                uint32_t g0 = py_mx.pos, p0 = g0 % 176400u;
+
+                clear_master();
+                hook_volume();
+                if (b < 4 || (p0 <= 88200 && p0 + 64 > 88200) || p0 + 64 > 176400 || p0 < 64 || b == 4199)
+                    for (i = 0; i < 64; i++) {
+                        uint32_t p = (g0 + (uint32_t)i) % 176400u;
+                        int32_t acc = p < 88200u ? (a2s(p) * py_mx.gain[0]) >> 15 : 0;
+                        int16_t want = bus_of((int32_t)((uint32_t)soft((acc * mv) >> 15) << 16));
+
+                        if (E34[i] != want || F34[i] != want) {
+                            if (!bad) {
+                                dbg[0] = b; dbg[1] = i; dbg[2] = E34[i]; dbg[3] = want; dbg[6] = (int32_t)g0;
+                            }
+                            bad = 1;
+                        }
+                    }
+                if (b == 100)
+                    hook_frame((uint16_t *)FB4);
+                if (!(b % 4))
+                    py_main();
+            }
+            CHECK(20, !bad && py_mx.playing && py_mx.gain[0] && py_mx.underruns[0] == under && py_mx.read_errors == rerr);
+            press(TE_KEY_STOP);
+            py_main();
+            press(TE_KEY_STOP);
+            py_main();
+            press(TE_KEY_CUT);                                      /* no cells: free again */
+            turn(0, 1);
+            press(TE_KEY_CUT);
+            press(TE_KEY_GREEN_PUSH);
+            py_main();
+            CHECK(20, py_song.cell[0][0] == PS_EMPTY && py_song.cell[1][0] == PS_EMPTY && !py_mx.set->t[0].song);
+            press(TE_KEY_JOIN);
+            CHECK(20, py_view == 0);
+        }
+
+        /* 22: the help page */
+        {
+            int8_t lvl = py_song.trk[0].level;
+            int te = keys_to_te;
+
+            press(TE_KEY_SPEECH);
+            CHECK(22, py_help_on() && keys_to_te == te);
+            turn(1, 1);                                             /* not the level */
+            turn(0, 1);                                             /* page 2 */
+            hook_frame((uint16_t *)FB6);
+            press(TE_KEY_JOIN);                                     /* closes it, nothing else */
+            CHECK(22, !py_help_on() && py_view == 0 && py_song.trk[0].level == lvl);
+            *TE_SHIFT_HELD = 1;
+            press(TE_KEY_SPEECH);                                   /* shift + speech: not PLAY's */
+            *TE_SHIFT_HELD = 0;
+            CHECK(22, !py_help_on() && keys_to_te == te + 2);
+            press(TE_KEY_JOIN);
+            press(TE_KEY_SPEECH);                                   /* the song view's page, closed by speech */
+            CHECK(22, py_view == 1 && py_help_on());
+            press(TE_KEY_SPEECH);
+            CHECK(22, py_view == 1 && !py_help_on());
+        }
+
+        /* 23: live. Column 3 (DRUM): row 00 chain cl, row 01 chain dc, both pattern 1 (one bar) */
+        {
+            uint32_t under, rerr, sw;
+            int32_t mv;
+            int reached = 0;
+
+            py_song.chain[cl][0].pat = 0;
+            mains(30);
+            turn(1, 2);                                             /* column 3 */
+            turn(0, -1);                                            /* row 00 */
+            press(TE_KEY_PLAY);
+            py_main();
+            for (b = 0; b < 10; b++)
+                hook_volume();
+            CHECK(23, py_mx.playing && py_pat_head(2)->active && py_pat_head(2)->row == 0 && py_pat_cued(2) < 0);
+            turn(0, 1);
+            *TE_SHIFT_HELD = 1;
+            press(TE_KEY_PLAY);                                     /* cue row 01 on every column */
+            *TE_SHIFT_HELD = 0;
+            CHECK(23, py_mx.playing && py_pat_cued(2) == 1 && py_pat_cued(3) == 1);
+            hook_volume();
+            CHECK(23, py_pat_head(2)->cue == 1 && py_pat_head(2)->row == 0 && py_pat_cued(2) == 1);
+            for (b = 0; b < 1500 && !reached; b++) {                /* the chain (one bar) ends */
+                hook_volume();
+                reached = py_pat_head(2)->row == 1;
+                if (!(b % 4))
+                    py_main();
+            }
+            CHECK(23, reached && py_mx.pos >= 88200u && py_mx.pos < 88200u + 128 && py_pat_head(2)->start == 88200u
+                  && py_pat_head(2)->start_row == 1 && py_pat_head(2)->cue == PS_EMPTY && py_pat_cued(2) < 0);
+            shift_press(TE_KEY_REC);                                /* live mode */
+            turn(2, 1);
+            CHECK(23, py_song.cell[1][2] == dc);                    /* white turn: no edit */
+            turn(0, -1);
+            press(TE_KEY_WHITE_PUSH);                               /* cue the cell: not the chain view */
+            CHECK(23, py_view == 1 && py_pat_cued(2) == 0 && py_pat_cued(3) < 0);
+            press(TE_KEY_CUT);                                      /* no edit either */
+            CHECK(23, py_song.cell[0][2] == cl);
+            press(TE_KEY_T1);
+            CHECK(23, py_song.trk[0].mute);
+            press(TE_KEY_T1);
+            CHECK(23, !py_song.trk[0].mute);
+            hook_volume();
+            hook_frame((uint16_t *)FB7);
+            press(TE_KEY_STOP);
+            py_main();
+            press(TE_KEY_STOP);
+            py_main();
+            CHECK(23, !py_mx.playing && py_mx.pos == 0 && py_pat_cued(2) < 0);
+            shift_press(TE_KEY_REC);                                /* editing again */
+
+            /* AUDIO column 1: rows 00 ON, 01 ON, 03 OF; playing from 00, cued to 03 */
+            turn(1, -2);
+            press(TE_KEY_WHITE_PUSH);
+            turn(0, 1);
+            press(TE_KEY_WHITE_PUSH);
+            turn(0, 2);
+            press(TE_KEY_WHITE_PUSH);
+            press(TE_KEY_WHITE_PUSH);
+            press(TE_KEY_GREEN_PUSH);                               /* solo */
+            turn(0, -3);
+            CHECK(23, py_song.cell[0][0] == PS_ON && py_song.cell[1][0] == PS_ON && py_song.cell[2][0] == PS_EMPTY
+                  && py_song.cell[3][0] == PS_OF);
+            press(TE_KEY_PLAY);
+            py_main();
+            under = py_mx.underruns[0];
+            rerr = py_mx.read_errors;
+            CHECK(23, py_mx.playing && py_mx.set->t[0].cur.n == 2 && !py_mx.set->t[0].pending);
+            shift_press(TE_KEY_REC);
+            turn(0, 3);
+            press(TE_KEY_WHITE_PUSH);                               /* cue row 03 */
+            py_main();
+            sw = py_mx.set->t[0].sw;
+            CHECK(23, py_mx.set->t[0].pending && sw == 88200u && py_mx.set->t[0].nxt.row0 == 3
+                  && py_mx.set->t[0].nxt.n == 1);
+            mv = (py_mx.master * py_mx.te_volume) >> 15;
+            bad = 0;
+            for (b = 0; b < 1500; b++) {                            /* through the switch at 88200 */
+                uint32_t g0 = py_mx.pos;
+
+                clear_master();
+                hook_volume();
+                if (b < 4 || (g0 + 256 > 88200u && g0 < 88200u + 256) || b == 1499)
+                    for (i = 0; i < 64; i++) {
+                        uint32_t g = g0 + (uint32_t)i;
+                        int32_t acc = g < 88200u ? (a2s(g) * py_mx.gain[0]) >> 15 : 0;
+                        int16_t want = bus_of((int32_t)((uint32_t)soft((acc * mv) >> 15) << 16));
+
+                        if (E34[i] != want || F34[i] != want) {
+                            if (!bad) {
+                                dbg[0] = b; dbg[1] = i; dbg[2] = E34[i]; dbg[3] = want; dbg[6] = (int32_t)g0;
+                            }
+                            bad = 1;
+                        }
+                    }
+                if (!(b % 4))
+                    py_main();
+            }
+            CHECK(23, !bad && py_mx.gain[0] && py_mx.underruns[0] == under && py_mx.read_errors == rerr);
+            press(TE_KEY_STOP);
+            py_main();
+            press(TE_KEY_STOP);
+            py_main();
+            CHECK(23, !py_mx.set->t[0].pending && py_mx.set->t[0].cur.n == 2);    /* the song again */
+            shift_press(TE_KEY_REC);
+            press(TE_KEY_CUT);                                      /* row 03 */
+            turn(0, -2);
+            press(TE_KEY_CUT);
+            turn(0, -1);
+            press(TE_KEY_CUT);
+            press(TE_KEY_GREEN_PUSH);
+            py_main();
+            CHECK(23, !py_song_used0());
+            press(TE_KEY_JOIN);
+            CHECK(23, py_view == 0);
+        }
+
+        /* 24: render */
+        {
+            static uint8_t rb[64 * 4] __attribute__((aligned(4)));
+            static const uint32_t at[3] = { 0, 1000, 88200 - 64 };
+            int32_t mv = (32767 * 32767) >> 15;
+            int fd, n, a, lvl;
+
+            press(TE_KEY_JOIN);                                     /* the song view, row 00 */
+            turn(0, -9);
+            turn(1, -9);
+            turn(1, 1);                                             /* column 2: A2.AIF, free, looped */
+            press(TE_KEY_GREEN_PUSH);                               /* solo */
+            *TE_SHIFT_HELD = 1;
+            turn(3, -3);                                            /* the master: not in a render */
+            *TE_SHIFT_HELD = 0;
+            press(TE_KEY_REC);                                      /* asks */
+            CHECK(24, !py_rd_busy());
+            turn(2, -20);                                           /* 1 bar */
+            press(TE_KEY_REC);
+            CHECK(24, py_rd_busy());
+            lvl = py_song.trk[1].level;
+            for (n = 0; n < 30000 && py_rd_busy(); n++) {
+                py_main();
+                hook_volume();
+                if (n == 40) {
+                    hook_frame((uint16_t *)FB8);
+                    press(TE_KEY_BLUE_PUSH);                        /* keys: nothing while it renders */
+                    turn(1, 3);
+                }
+            }
+            py_main();
+            py_main();
+            CHECK(24, !py_rd_busy() && !py_mx.playing && py_mx.pos == 0 && py_song.trk[1].level == lvl
+                  && !py_song.trk[1].mute);
+            CHECK(24, file_stat("/yaffs2/user/play_r/REND01.AIF", st) == 0 && st[7] == 54u + 88200u * 4u);
+            fd = file_open("/yaffs2/user/play_r/REND01.AIF", 0, 0x100);
+            CHECK(24, fd >= 0 && file_pread(fd, rb, 54, 0) == 54 && rb[0] == 'F' && rb[8] == 'A' && rb[11] == 'F'
+                  && rb[21] == 2 && rb[22] == 0 && rb[23] == 1 && rb[24] == 0x58 && rb[25] == 0x88 && rb[27] == 16
+                  && rb[28] == 0x40 && rb[29] == 0x0e && rb[30] == 0xac && rb[31] == 0x44 && rb[38] == 'S');
+            bad = 0;
+            for (a = 0; a < 3 && fd >= 0; a++) {
+                file_pread(fd, rb, 256, (int32_t)(54u + at[a] * 4u));
+                for (i = 0; i < 64; i++) {
+                    int32_t acc = (a2s(at[a] + (uint32_t)i) * py_mx.gain[1]) >> 15;
+                    int16_t want = (int16_t)soft((acc * mv) >> 15);
+                    int16_t gl = (int16_t)(rb[4 * i] << 8 | rb[4 * i + 1]), gr = (int16_t)(rb[4 * i + 2] << 8 | rb[4 * i + 3]);
+
+                    if (gl != want || gr != want) {
+                        if (!bad) {
+                            dbg[0] = a; dbg[1] = i; dbg[2] = gl; dbg[3] = want;
+                        }
+                        bad = 1;
+                    }
+                }
+            }
+            if (fd >= 0)
+                file_close(fd);
+            CHECK(24, !bad && py_mx.gain[1]);
+            press(TE_KEY_JOIN);                                     /* the list: the file is in the pool */
+            turn(0, -9);
+            for (n = 0; n < 4 && !streq0(py_song.trk[0].file, "REND01.AIF"); n++)
+                turn(2, 1);
+            py_main();
+            CHECK(24, streq0(py_song.trk[0].file, "REND01.AIF") && py_mx.set->t[0].used
+                  && py_mx.set->t[0].frames == 88200u && py_mx.set->t[0].channels == 2);
+            for (n = 0; n < 4 && !streq0(py_song.trk[0].file, "A2.AIF"); n++)
+                turn(2, 1);
+            py_main();
+            press(TE_KEY_JOIN);
+
+            press(TE_KEY_REC);                                      /* a render cancelled with stop */
+            press(TE_KEY_REC);
+            py_main();
+            for (n = 0; n < 5; n++) {
+                hook_volume();
+                py_main();
+            }
+            CHECK(24, py_rd_busy() && file_stat("/yaffs2/user/play_r/REND02.AIF", st) == 0);
+            press(TE_KEY_STOP);
+            py_main();
+            CHECK(24, !py_rd_busy() && !py_mx.playing && file_stat("/yaffs2/user/play_r/REND02.AIF", st) < 0);
+            press(TE_KEY_REC);                                      /* asked, then another key: nothing */
+            press(TE_KEY_PLAY);
+            py_main();
+            CHECK(24, !py_rd_busy() && !py_mx.playing);
+
+            py_song.trk[2].sound = 2;                               /* the kit of check 8 (slot 3) */
+            press(TE_KEY_GREEN_PUSH);                               /* the DRUM track alone: a mono file */
+            turn(1, 1);
+            press(TE_KEY_GREEN_PUSH);
+            press(TE_KEY_REC);
+            turn(2, -20);
+            press(TE_KEY_REC);
+            for (n = 0; n < 30000 && py_rd_busy(); n++) {
+                py_main();
+                hook_volume();
+            }
+            py_main();
+            py_main();
+            CHECK(24, !py_rd_busy() && file_stat("/yaffs2/user/play_r/REND02.AIF", st) == 0
+                  && st[7] == 54u + 88200u * 2u);
+            fd = file_open("/yaffs2/user/play_r/REND02.AIF", 0, 0x100);
+            n = 0;
+            if (fd >= 0) {
+                for (a = 0; a < 64; a++) {                          /* the first 8192 frames */
+                    file_pread(fd, rb, 256, 54 + 256 * a);
+                    for (i = 0; i < 256; i++)
+                        n += rb[i] != 0;
+                }
+                file_pread(fd, rb, 54, 0);
+                file_close(fd);
+            }
+            dbg[5] = n;
+            CHECK(24, rb[21] == 1 && rb[22] == 0 && rb[23] == 1 && rb[24] == 0x58 && rb[25] == 0x88);   /* mono, 88200 */
+            CHECK(24, n > 16);                                      /* the hit on step 1 */
+            press(TE_KEY_GREEN_PUSH);
+            *TE_SHIFT_HELD = 1;
+            turn(3, 3);
+            *TE_SHIFT_HELD = 0;
+            press(TE_KEY_JOIN);
+            CHECK(24, py_view == 0);
+        }
+
+        /* 25: a rest cell (OF) in the DRUM column: white turn below 00; the column plays its
+         * chain (one bar), a silent bar, then starts again: one hit in two bars and a block */
+        {
+            uint32_t hits;
+            uint8_t c0 = py_song.cell[0][2], c1 = py_song.cell[1][2];
+
+            press(TE_KEY_JOIN);
+            turn(0, -9);
+            turn(1, -9);
+            turn(1, 2);                                             /* column 3 */
+            turn(0, 1);                                             /* row 01: chain dc */
+            turn(2, -200);
+            CHECK(25, py_song.cell[1][2] == PS_EMPTY);
+            turn(2, 1);
+            CHECK(25, py_song.cell[1][2] == PS_REST);
+            turn(2, 1);
+            CHECK(25, py_song.cell[1][2] == 0);
+            turn(2, -1);
+            turn(0, 1);
+            press(TE_KEY_CUT);                                      /* row 02 empty: 00 chain, 01 rest */
+            turn(0, -2);
+            mains(30);
+            hits = py_drum_hits;
+            press(TE_KEY_PLAY);
+            py_main();
+            for (b = 0; b < 1379 + 700; b++) {                      /* into the rest's bar */
+                hook_volume();
+                if (!(b % 4))
+                    py_main();
+            }
+            CHECK(25, py_pat_head(2)->active && py_pat_head(2)->row == 1 && py_pat_head(2)->pat == PS_EMPTY
+                  && py_pat_head(2)->start == 88200u && py_pat_head(2)->len == 88200u);
+            for (b = 0; b < 700; b++) {                             /* past it: row 00 again */
+                hook_volume();
+                if (!(b % 4))
+                    py_main();
+            }
+            CHECK(25, py_pat_head(2)->row == 0 && py_pat_head(2)->start == 176400u
+                  && py_drum_hits == hits + 2 + 1);                 /* steps 1 and 9, then step 1 again */
+            press(TE_KEY_STOP);
+            py_main();
+            press(TE_KEY_STOP);
+            py_main();
+            py_song.cell[0][2] = c0;
+            py_song.cell[1][2] = c1;
+            press(TE_KEY_JOIN);
+            CHECK(25, py_view == 0);
+        }
+
+        /* 26: sounds. Keys 1-8 set the cursor track's sound (list, song view); a chain row's SND
+         * (chain view, green to the third column, white turn) is the track's slot while that row
+         * plays; a key pressed meanwhile wins until the row ends */
+        {
+            uint8_t ch = py_song.cell[0][2];
+            ps_crow keep = py_song.chain[ch][0];
+
+            turn(0, -9);
+            turn(0, 2);                                             /* the list: the DRUM track */
+            press(TE_KEY_SOUND5);
+            CHECK(26, py_song.trk[2].sound == 4 && py_pat_slot(2) == 4);
+            press(TE_KEY_JOIN);
+            turn(0, -9);
+            turn(1, -9);
+            turn(1, 2);
+            press(TE_KEY_SOUND3);                                   /* the song view */
+            CHECK(26, py_song.trk[2].sound == 2 && py_view == 1);
+            press(TE_KEY_WHITE_PUSH);                               /* row 00's chain */
+            CHECK(26, py_view == 2 && py_song.chain[ch][0].snd == PS_EMPTY);
+            turn(1, 5);                                             /* SND */
+            turn(2, 7);                                             /* -, 1 .. 7 */
+            CHECK(26, py_song.chain[ch][0].snd == 6 && py_song.chain[ch][0].pat == keep.pat
+                  && py_song.chain[ch][0].tsp == keep.tsp);
+            turn(2, 5);
+            CHECK(26, py_song.chain[ch][0].snd == 7);
+            turn(2, -1);
+            press(TE_KEY_ORANGE_PUSH);
+            press(TE_KEY_PLAY);
+            py_main();
+            for (b = 0; b < 10; b++)
+                hook_volume();
+            CHECK(26, py_mx.playing && py_pat_slot(2) == 6 && py_song.trk[2].sound == 2);
+            press(TE_KEY_SOUND2);                                   /* now, over the row's */
+            hook_volume();
+            CHECK(26, py_song.trk[2].sound == 1 && py_pat_slot(2) == 1);
+            for (b = 0; b < 1400; b++) {                            /* row 01 (no SND): the track's */
+                hook_volume();
+                if (!(b % 4))
+                    py_main();
+            }
+            CHECK(26, py_pat_head(2)->row == 1 && py_pat_slot(2) == 1);
+            for (b = 0; b < 1400; b++) {                            /* row 00 again: its SND, not the key's */
+                hook_volume();
+                if (!(b % 4))
+                    py_main();
+            }
+            CHECK(26, py_pat_head(2)->row == 0 && py_pat_slot(2) == 6);
+            press(TE_KEY_STOP);
+            py_main();
+            press(TE_KEY_STOP);
+            py_main();
+            CHECK(26, py_pat_slot(2) == 6);                         /* stopped at bar 1: row 00's */
+            py_song.chain[ch][0] = keep;
+            py_song.trk[2].sound = 2;
+            press(TE_KEY_JOIN);
+            CHECK(26, py_view == 0);
+        }
     }
 
     CHECK(11, odd_io == 0);                                         /* TE's NAND driver: even buffers */

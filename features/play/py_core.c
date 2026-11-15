@@ -176,7 +176,115 @@ void py_set_init(py_set *s, const py_setfile *sf, uint32_t te_bpm_x100)
         s->t[k].used = 0;
         s->t[k].file = -1;
         s->t[k].err[0] = 0;
+        s->t[k].song = s->t[k].pending = 0;
     }
+}
+
+static void segs_fill(const py_set *s, const py_track *t, py_segs *x, const uint8_t *seg, int n, int row0,
+                      uint32_t origin)
+{
+    uint32_t sum = 0;
+    int i;
+
+    x->n = 0;
+    x->row0 = (uint8_t)row0;
+    x->origin = origin;
+    for (i = 0; i < n && i < PY_SEGS; i++) {
+        uint32_t len = seg[i] ? t->frames : s->bar_frames;
+
+        if (sum + len < sum)
+            break;                              /* past 2^32 frames (27 h): never reached */
+        sum += len;
+        x->seg[i] = seg[i];
+        x->n = (uint8_t)(i + 1);
+    }
+    x->period = sum;
+}
+
+void py_set_song(py_set *s, int k, const uint8_t *seg, int n, int row0)
+{
+    py_track *t = &s->t[k];
+
+    t->song = (uint8_t)(n >= 0);
+    t->pending = 0;
+    segs_fill(s, t, &t->cur, seg, n, row0, 0);
+}
+
+/* the segments track t plays at global frame g */
+static const py_segs *segs_of(const py_track *t, uint32_t g)
+{
+    return t->pending && (int32_t)(g - t->sw) >= 0 ? &t->nxt : &t->cur;
+}
+
+/* segments x at global frame g: the segment, the frame inside it and what is left of it */
+static int seg_at(const py_set *s, const py_track *t, const py_segs *x, uint32_t g, uint32_t *at,
+                  uint32_t *left)
+{
+    uint32_t f, i;
+
+    if (!x->n || !x->period)
+        return -1;
+    f = (g - x->origin) % x->period;
+    for (i = 0; i < x->n; i++) {
+        uint32_t len = x->seg[i] ? t->frames : s->bar_frames;
+
+        if (f < len) {
+            *at = f;
+            *left = len - f;
+            return (int)i;
+        }
+        f -= len;
+    }
+    return -1;
+}
+
+int py_set_row(const py_set *s, int k, uint32_t g)
+{
+    const py_track *t = &s->t[k];
+    uint32_t at, left;
+    int i;
+
+    if (!t->used || !t->frames || !t->song)
+        return -1;
+    i = seg_at(s, t, segs_of(t, g), g, &at, &left);
+    return i < 0 ? -1 : segs_of(t, g)->row0 + i;
+}
+
+int py_set_cued(const py_set *s, int k, uint32_t g)
+{
+    const py_track *t = &s->t[k];
+
+    return t->used && t->song && t->pending && (int32_t)(g - t->sw) < 0 ? t->nxt.row0 : -1;
+}
+
+uint32_t py_set_cue(py_set *s, py_mixer *m, int k, const uint8_t *seg, int n, int row0, uint32_t guard)
+{
+    py_track *t = &s->t[k];
+    py_ring *r = &m->ring[k];
+    uint32_t g = m->pos + guard, at, left, sw;
+
+    if (!t->used || !t->frames || !t->song)
+        return 0;
+    if (t->pending && (int32_t)(g - t->sw) >= 0) {      /* the last cue has happened (or is too close) */
+        t->cur = t->nxt;
+        t->pending = 0;
+    }
+    if (t->pending) {
+        sw = t->sw;                                     /* still ahead: the new cue takes its place */
+    } else if (seg_at(s, t, &t->cur, g, &at, &left) >= 0) {
+        sw = g + left;                                  /* the end of the segment playing then */
+    } else {
+        uint32_t bar = s->bar_frames;
+
+        sw = bar ? g - g % bar + bar : g;               /* silent: the next bar */
+    }
+    t->pending = 0;                                     /* (nxt is not read while it is rebuilt) */
+    segs_fill(s, t, &t->nxt, seg, n < 0 ? 0 : n, row0, sw);
+    t->sw = sw;
+    t->pending = 1;
+    if ((int32_t)(r->wr - sw) > 0)
+        r->wr = sw;                                     /* read from there again, with the new segments */
+    return sw;
 }
 
 int py_set_assign(py_set *s, int k, const py_file *files, int n, const char *name, int loop)
@@ -187,6 +295,7 @@ int py_set_assign(py_set *s, int k, const py_file *files, int n, const char *nam
     t->used = 0;
     t->file = -1;
     t->err[0] = 0;
+    t->song = t->pending = 0;
     t->loop = (uint8_t)(loop != 0);
     if (!name || !name[0]) {
         scopy(t->err, "NO FILE", sizeof(t->err));
@@ -221,6 +330,16 @@ int32_t py_map(const py_set *s, int k, uint32_t g, uint32_t *run)
     *run = 0xffffffffu;
     if (!t->used || !t->frames)
         return -1;
+    if (t->song) {
+        const py_segs *x = segs_of(t, g);
+        uint32_t at, left = 0xffffffffu;
+        int i = seg_at(s, t, x, g, &at, &left);
+
+        if (x == &t->cur && t->pending && left > t->sw - g)
+            left = t->sw - g;                   /* up to the cue's switch */
+        *run = left;
+        return i >= 0 && x->seg[i] ? (int32_t)at : -1;
+    }
     if (!t->loop) {
         if (g >= t->frames)
             return -1;

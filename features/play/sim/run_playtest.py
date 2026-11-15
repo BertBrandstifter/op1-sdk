@@ -7,7 +7,8 @@ The composed feature runs against TE stand-ins (driver.c): an in-memory yaffs, t
 cleanup call (import hook), TE's volume setup (entry hook, the mix into TE's master buffers),
 keys, knobs, frames; the mix lands in TE's master bus (metronome-mix hook). Three FAT16 disk images are built here: 1 = A1.WAV (2 bars stereo) +
 A2.AIF (1 bar mono, big-endian) + SET.TXT + a hidden "._" file, 2 = A1.WAV only (mono),
-3 = A2.AIF only (A1 gone). Saves build/demo/play_screen*.png.
+3 = A2.AIF only (A1 gone). Saves build/demo/play_screen*.png (the list three times, the song view playing, the chain view
+during an audition, a help page, live mode with a cue pending).
 HLT = exit 0 = pass, ABORT = exit 1 = fail (R7 = failed check bits, see driver.c)."""
 
 import os, struct, sys
@@ -22,7 +23,7 @@ from build import compile_project  # noqa: E402
 
 DRIVER_AT, STACK = 0x01F40000, 0x01F7FFFC
 IMGS = [0x02500000, 0x02800000, 0x02B00000]               # images 1..3 (the driver copies one
-FB = [0x03000000, 0x03030000, 0x03060000]                 # into tape_c.raw at 0x02200000)
+FB = [0x03000000, 0x03030000, 0x03060000, 0x030C0000, 0x03090000, 0x02E00000, 0x02E40000, 0x02E80000]   # the 5th: also the driver's scratch frame                 # into tape_c.raw at 0x02200000)
 STUBS = {                                                 # TE address: (driver function, entry bytes)
     0x01A997F4: ("file_open", 0), 0x01A99908: ("file_close", 0), 0x01A99CA8: ("file_pread", 0),
     0x01A99F84: ("file_write", 0), 0x01A9A69C: ("file_stat", 0), 0x01A9A886: ("file_mkdir", 0),
@@ -34,6 +35,49 @@ STUBS = {                                                 # TE address: (driver 
     0x01912128: ("env_render", 0), 0x019C2F24: ("key_push", 0), 0x019C2F04: ("key_wake", 0),
     0x0196DD44: ("db_op1", 0), 0x019ED238: ("fs_get", 0),
 }
+
+
+# the composed feature's symbols driver.c uses (load_play.py adds its own)
+NEED = ["py_main", "py_mx", "py_blocks", "py_import_files", "py_import_errors", "py_import_runs",
+        "dr_pat", "dr_owned", "dr_loaded", "py_drum_hits", "py_song", "nr_pat", "nr_owned",
+        "nr_loaded", "py_syn_notes", "py_cpu_trk", "py_cpu_all", "eh_register_multi", "dr_req_open", "dr_open",
+        "dr_cur", "dr_via_play", "dr_ext_pat", "dr_ext_clock", "py_view", "py_pat_head", "py_pat_start_row",
+        "py_pat_audition_track", "py_help_on", "py_pat_cued", "py_rd_busy", "py_pat_slot"]
+HOOKS = {"_hook_key": "__sdk_hook_019b6c74", "_hook_knob": "__sdk_hook_019b6c0c",
+         "_hook_frame": "__sdk_hook_019ab8b2", "_hook_volume": "__sdk_hook_019de548",
+         "_hook_cleanup": "__sdk_hook_01997584"}
+
+
+def images():
+    """the three FAT16 disk images the driver imports (see the module doc)"""
+    return [
+        fat16_image([("_A1~1", "WAV", 0x22, bytes(4096)), ("A1", "WAV", 0x20, wav(176400, 2)),
+                     ("A2", "AIF", 0x20, aif(88200)),
+                     ("SET", "TXT", 0x20, b'bpm 120\naudio A1 "song" A2 "hats"\n')]),
+        fat16_image([("A1", "WAV", 0x20, wav(88200, 1))]),
+        fat16_image([("A2", "AIF", 0x20, aif(88200))]),
+    ]
+
+
+def segments(code, syms, driver_src, out, extra_need=()):
+    """the driver (driver_src, linked against the composed code's symbols), the images, frame
+    buffers, TE stubs: (segs, driver symbols)"""
+    imgs = images()
+    defs = {"STACK": STACK, **{"_" + n: syms["_" + n] for n in list(NEED) + list(extra_need)},
+            **{k: syms[v] for k, v in HOOKS.items()}, **{f"_FB{'' if i == 0 else i + 1}": fb for i, fb in enumerate(FB)}}
+    for i, (at, img) in enumerate(zip(IMGS, imgs), 1):
+        defs[f"_IMG{i}"] = at
+        defs[f"_IMG{i}_END"] = at + len(img)
+    driver, d = c_bin([os.path.join(HERE, "crt.S"), driver_src], DRIVER_AT, os.path.join(out, "driver"), defs)
+    segs = [(0x01E00000, code), (DRIVER_AT, driver)] + [(at, img) for at, img in zip(IMGS, imgs)]
+    segs += [(fb, bytes(320 * 512)) for fb in FB]
+    for addr, (fn, pre) in STUBS.items():
+        stub, _ = asm_bin(os.path.join(HERE, "stubs.S"), addr, os.path.join(out, f"stub_{addr:08x}"),
+                          {"FN": d["_" + fn], "PRE": pre}, entry="_stub")
+        segs.append((addr, stub))
+    bus, _ = asm_bin(os.path.join(HERE, "te_busfn.S"), 0x019DE548, os.path.join(out, "te_busfn"), {}, entry="_stub")
+    segs.append((0x019DE548, bus))
+    return segs, d
 
 
 def a1s(i, c):
@@ -121,41 +165,16 @@ def main():
     proj, cfg = composed(["play", "warp"], "pybench")     # warp: a multi-instance engine (keeps eh_register_multi)
     code, syms, elf = compile_project(proj, cfg)
     print(f"project: {len(code)} bytes ({elf})")
-    imgs = [
-        fat16_image([("_A1~1", "WAV", 0x22, bytes(4096)), ("A1", "WAV", 0x20, wav(176400, 2)),
-                     ("A2", "AIF", 0x20, aif(88200)),
-                     ("SET", "TXT", 0x20, b'bpm 120\naudio A1 "song" A2 "hats"\n')]),
-        fat16_image([("A1", "WAV", 0x20, wav(88200, 1))]),
-        fat16_image([("A2", "AIF", 0x20, aif(88200))]),
-    ]
-    need = ["py_main", "py_mx", "py_blocks", "py_import_files", "py_import_errors", "py_import_runs",
-            "dr_pat", "dr_owned", "dr_loaded", "py_drum_hits", "py_song", "nr_pat", "nr_owned",
-            "nr_loaded", "py_syn_notes", "py_cpu_trk", "py_cpu_all", "eh_register_multi", "dr_req_open", "dr_open", "dr_cur", "dr_via_play", "dr_ext_pat",
-            "dr_ext_clock"]
-    defs = {"STACK": STACK, **{"_" + n: syms["_" + n] for n in need},
-            "_hook_key": syms["__sdk_hook_019b6c74"], "_hook_knob": syms["__sdk_hook_019b6c0c"],
-            "_hook_frame": syms["__sdk_hook_019ab8b2"], "_hook_volume": syms["__sdk_hook_019de548"],
-            "_hook_cleanup": syms["__sdk_hook_01997584"],
-            "_FB": FB[0], "_FB2": FB[1], "_FB3": FB[2]}
-    for i, (at, img) in enumerate(zip(IMGS, imgs), 1):
-        defs[f"_IMG{i}"] = at
-        defs[f"_IMG{i}_END"] = at + len(img)
-    driver, d = c_bin([os.path.join(HERE, "crt.S"), os.path.join(HERE, "driver.c")], DRIVER_AT,
-                      os.path.join(OUT, "driver"), defs)
-    segs = [(0x01E00000, code), (DRIVER_AT, driver)] + [(at, img) for at, img in zip(IMGS, imgs)]
-    segs += [(fb, bytes(320 * 512)) for fb in FB]
-    for addr, (fn, pre) in STUBS.items():
-        stub, _ = asm_bin(os.path.join(HERE, "stubs.S"), addr, os.path.join(OUT, f"stub_{addr:08x}"),
-                          {"FN": d["_" + fn], "PRE": pre}, entry="_stub")
-        segs.append((addr, stub))
-    bus, _ = asm_bin(os.path.join(HERE, "te_busfn.S"), 0x019DE548, os.path.join(OUT, "te_busfn"), {}, entry="_stub")
-    segs.append((0x019DE548, bus))
+    segs, d = segments(code, syms, os.path.join(HERE, "driver.c"), OUT)
     elf_run = os.path.join(OUT, "playtest_run.elf")
     r = run_model(elf_run, segs, d["_start"], timeout=600)
     mx = syms["_py_mx"]
     vals = run_gdb(elf_run, [f"/x *(unsigned*){d['_fails']:#x}"] + [f"*(int*){d['_dbg'] + 4 * i:#x}" for i in range(7)]
                    + [f"*(unsigned*){syms['_py_blocks']:#x}"],
-                   [("play_screen", FB[0]), ("play_screen_gone", FB[1]), ("play_screen_tracks", FB[2])],
+                   [("play_screen", FB[0]), ("play_screen_gone", FB[1]), ("play_screen_tracks", FB[2]),
+                    ("play_screen_song", FB[3]), ("play_screen_chain", FB[4]),
+                    ("play_screen_help", FB[5]), ("play_screen_live", FB[6]),
+                    ("play_screen_render", FB[7])],
                    timeout=600)
     if r.returncode and vals:
         print(f"failed check bits: {vals[0]}  first mismatch block/frame/gotL/wantL/gotR/wantR/pos: {vals[1:8]}  blocks {vals[8:]}")

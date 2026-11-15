@@ -22,6 +22,7 @@
 #define PY_RATE         44100
 #define PY_BLOCK        64                      /* frames per audio block */
 #define PY_NAME         12                      /* display name incl. NUL */
+#define PY_SEGS         128                     /* segments of a song-driven track (song rows) */
 #define PY_BAR_SLACK    64                      /* frames a loop may be off a whole bar */
 
 /* ------------------------------------------------------------------ set.txt */
@@ -43,11 +44,23 @@ typedef struct py_file {                        /* an audio file in the set fold
     aud_info a;                                 /* its parsed header */
 } py_file;
 
+typedef struct py_segs {                        /* the segments of a song-driven track */
+    uint8_t n, row0;                            /* segments; the song row of seg[0] */
+    uint8_t seg[PY_SEGS];                       /* nonzero = the file once (its length), 0 = a bar of silence */
+    uint32_t period;                            /* frames of the whole circle */
+    uint32_t origin;                            /* the global frame seg[0] starts at */
+} py_segs;
+
 typedef struct py_track {                       /* what audio track k plays */
     uint8_t used, channels, big_endian, loop;
     int8_t file;                                /* index into the files */
     uint32_t data_off, frames;                  /* PCM inside the file */
     char err[24];                               /* why it does not play ("" = it does) */
+    /* song-driven (py_set_song): the track plays cur's segments in a circle; loop is ignored
+     * then. pending: from global frame sw on it plays nxt instead (py_set_cue, live mode). */
+    uint8_t song, pending;
+    uint32_t sw;
+    py_segs cur, nxt;
 } py_track;
 
 typedef struct py_set {
@@ -61,6 +74,15 @@ void py_set_init(py_set *s, const py_setfile *sf, uint32_t te_bpm_x100);
 /* audio track k plays file `name` of files (case-insensitive), looped or once; returns 1 if it
  * plays, else 0 with t[k].err set ("NO FILE", "SONG.WAV: NOT 44.1 KHZ", ...) */
 int py_set_assign(py_set *s, int k, const py_file *files, int n, const char *name, int loop);
+
+/* audio track k follows the song: n segments (nonzero = the file once, 0 = a bar of silence),
+ * repeated; n = 0: silent; n < 0: free again (looped or once, as assigned). Main thread, with the
+ * rings re-seeked afterwards (py_seek + py_fill): what they hold was read with the old mapping. */
+void py_set_song(py_set *s, int k, const uint8_t *seg, int n, int row0);
+
+/* the song row (row0 + segment) a song-driven track k plays at global frame g; -1 = none (free,
+ * silent, unused) */
+int py_set_row(const py_set *s, int k, uint32_t g);
 
 /* frames per 4/4 bar at bpm x 100 (rounded) */
 uint32_t py_bar_frames(uint32_t bpm_x100);
@@ -121,6 +143,15 @@ uint32_t py_ahead(const py_mixer *m, int k);
  * buffers before its volume (0xff800e34 / 0xff800f34): stride 1; interleaved tx: l = tx, r = tx + 1,
  * stride 2. */
 void py_mix(py_mixer *m, int32_t *l, int32_t *r, int stride);
+
+/* live: song-driven track k changes to other segments (n = 0: silence) when the segment it plays
+ * `guard` frames from now ends (a silent track: at the next bar); the ring is taken back to that
+ * frame so the read-ahead fills it anew. A second cue before the switch replaces the first.
+ * Main thread, while playing; guard must cover one main-loop pass. Returns the switch frame. */
+uint32_t py_set_cue(py_set *s, py_mixer *m, int k, const uint8_t *seg, int n, int row0, uint32_t guard);
+
+/* the song row a pending cue of track k goes to; -1 = none pending at global frame g */
+int py_set_cued(const py_set *s, int k, uint32_t g);
 
 /* Q15 gain of dB x 10 (-600 .. 0; above 0 = unity, below -60 dB = 0) */
 int16_t py_db_q15(int db10);

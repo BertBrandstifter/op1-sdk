@@ -37,6 +37,11 @@ void gfx_disc(int cx, int cy, int r, uint16_t c);      /* filled circle */
 int gfx_text(int x, int y, const char *s, uint16_t c, int scale);
 int gfx_hex(int x, int y, uint32_t v, int digits, uint16_t c, int scale);
 int gfx_dec(int x, int y, int32_t v, uint16_t c, int scale);
+/* 5x7 font (ASCII 32..90, lower case drawn as upper case): easier to read than the 3x5 one where
+ * there is room. Advance 6 per character, 7 high; returns the x after the last character. */
+int gfx_text7(int x, int y, const char *s, uint16_t c);
+int gfx_hex7(int x, int y, uint32_t v, int digits, uint16_t c);
+int gfx_dec7(int x, int y, int32_t v, uint16_t c);
 /* the shift key's arrow (5x5, filled, pointing up) at the text's size; returns the x after it */
 int gfx_shift(int x, int y, uint16_t c, int scale);
 

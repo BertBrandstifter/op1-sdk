@@ -86,6 +86,15 @@ static uint32_t steps_bpm;
 static volatile uint32_t clock_bar;             /* frames per bar */
 
 static ps_head heads[PS_TRACKS];
+/* the list's / keys' sound wins over the playing chain row's until the track's next row */
+static volatile uint8_t snd_over[PS_TRACKS];
+static int slot_of(int t, int synth);
+static volatile uint8_t start_row;              /* the song row every column starts from / loops back to */
+static volatile int8_t aud_track = -1;          /* the chain view's audition: this track plays ... */
+static volatile uint8_t aud_chain;              /* ... this chain alone */
+/* live: the song row track t is asked to jump to (PS_EMPTY = none); the interrupt hands it to the head */
+static volatile uint8_t cue_req[PS_TRACKS] = { PS_EMPTY, PS_EMPTY, PS_EMPTY, PS_EMPTY,
+                                               PS_EMPTY, PS_EMPTY, PS_EMPTY, PS_EMPTY };
 static py_drums drums[PS_TRACKS];
 static py_syn syns[PS_TRACKS];
 static volatile uint8_t inst_of[PS_TRACKS];     /* SYNTH track -> engine instance 1..3, 0 none */
@@ -136,7 +145,7 @@ void py_pat_load(const char *dir)
         n = PY_PREAD(fd, buf, sizeof(buf), 0);
         TE_FILE_CLOSE(fd);
     }
-    if (n != (int)sizeof(buf) || py_song_load(&py_song, buf, (uint32_t)n))
+    if (n < 8 || py_song_load(&py_song, buf, (uint32_t)n))      /* (an older, shorter file is read too) */
         py_song_clear(&py_song);
     song_dirty = 0;
     py_pat_tracks_changed();
@@ -293,6 +302,9 @@ static uint32_t pat_len(void *ctx, int t, int p)
     return 0;
 }
 
+static volatile uint8_t hd;                     /* a render: every SYNTH track without ECO, all voices */
+static int32_t bus88[128];                      /* non-ECO SYNTH tracks, gains applied, 88.2 kHz */
+static int32_t eco44[PY_BLOCK];                 /* ECO SYNTH tracks + the decimated bus */
 static int32_t hist88[62];                      /* the shared decimator's state */
 static uint8_t hist_live;                       /* hist88 holds something not yet flushed */
 
@@ -303,8 +315,13 @@ void py_pat_start(uint32_t g)
 
     for (t = 0; t < PS_TRACKS; t++) {
         heads[t].active = 0;
+        cue_req[t] = PS_EMPTY;
+        snd_over[t] = 0;
         if (py_song_is_pattern(&py_song, t)) {
-            py_song_start(&py_song, t, 0, 0, clock_bar, pat_len, 0, &heads[t]);
+            if (t == aud_track)
+                py_song_start_chain(&py_song, t, aud_chain, 0, clock_bar, pat_len, 0, &heads[t]);
+            else
+                py_song_start(&py_song, t, start_row, 0, clock_bar, pat_len, 0, &heads[t]);
             py_song_seek(&py_song, t, g, clock_bar, pat_len, 0, &heads[t]);
         }
         for (i = 0; i < PY_DVOICES; i++)
@@ -314,13 +331,107 @@ void py_pat_start(uint32_t g)
     for (i = 0; i < 62; i++)
         hist88[i] = 0;
     hist_live = 0;
+    for (i = 0; i < 128; i++)                   /* a block left half done (a render cancelled) */
+        bus88[i] = 0;
+    for (i = 0; i < PY_BLOCK; i++) {
+        eco44[i] = py_mx.ext[i] = 0;
+        for (t = 0; t < PS_TRACKS; t++)
+            py_mx.pin[t][i] = 0;
+    }
+    py_mx.pin_used = py_mx.ext_used = 0;
+}
+
+/* the track's sound was set by hand (list, keys 1-8): it sounds now, whatever the chain row says */
+void py_pat_sound_set(int t)
+{
+    snd_over[t] = 1;
+}
+
+/* the slot track t plays now (0..7) */
+int py_pat_slot(int t)
+{
+    return slot_of(t, py_song.trk[t].type == PS_SYNTH);
+}
+
+/* a render (main, not playing): every SYNTH track at full quality */
+void py_pat_hd(int on)
+{
+    hd = (uint8_t)(on != 0);
+}
+
+/* frames of the longest pattern column played once from song row `row` (to its loop point); 0 =
+ * no pattern track plays there */
+uint32_t py_pat_song_frames(int row)
+{
+    uint32_t max = 0;
+    int t, i;
+
+    for (t = 0; t < PS_TRACKS; t++) {
+        ps_head h;
+        uint32_t sum = 0;
+        int r0, c0;
+
+        if (!py_song_is_pattern(&py_song, t) || !py_song_start(&py_song, t, row, 0, clock_bar, pat_len, 0, &h))
+            continue;
+        r0 = h.row;
+        c0 = h.crow;
+        for (i = 0; i < PS_ROWS * PS_CROWS; i++) {
+            sum += h.len;
+            py_song_next(&py_song, t, clock_bar, pat_len, 0, &h);
+            if (!h.active || (h.row == r0 && h.crow == c0))
+                break;
+        }
+        if (sum > max)
+            max = sum;
+    }
+    return max;
+}
+
+void py_pat_set_start(int row)
+{
+    start_row = (uint8_t)(row < 0 || row >= PS_ROWS ? 0 : row);
+}
+
+int py_pat_start_row(void)
+{
+    return start_row;
+}
+
+void py_pat_audition(int t, int chain)
+{
+    aud_chain = (uint8_t)chain;
+    aud_track = (int8_t)(t >= 0 && t < PS_TRACKS && chain >= 0 && chain < PS_CHAINS ? t : -1);
+}
+
+int py_pat_audition_track(void)
+{
+    return aud_track;
+}
+
+/* live (any thread): pattern track t jumps to song row `row` when its current chain ends */
+void py_pat_cue(int t, int row)
+{
+    if (t >= 0 && t < PS_TRACKS && row >= 0 && row < PS_ROWS)
+        cue_req[t] = (uint8_t)row;
+}
+
+/* the row track t is cued to; -1 = no cue pending */
+int py_pat_cued(int t)
+{
+    const ps_head *h = &heads[t];
+
+    if (cue_req[t] < PS_ROWS)
+        return cue_req[t];
+    return h->active && h->solo == PS_EMPTY && h->cue < PS_ROWS ? h->cue : -1;
 }
 
 /* ------------------------------------------------------------------ audio interrupt */
 
+/* the sound / kit slot track t uses now: the chain row's while it plays (if it names one), else
+ * the track's (an older song's CUR: TE's current slot) */
 static int slot_of(int t, int synth)
 {
-    int s = py_song.trk[t].sound;
+    int s = heads[t].active && heads[t].snd < 8 && !snd_over[t] ? heads[t].snd : py_song.trk[t].sound;
 
     return s < 8 ? s : (int)((synth ? *TE_SYNTH_SLOT : *TE_DRUM_SLOT) & 7);
 }
@@ -367,8 +478,6 @@ static const py_syn_api te_syn_api = {
     eh_render_inst, TE_ADSR_START, TE_ADSR_RELEASE, TE_ADSR_RENDER,
 };
 
-static int32_t bus88[128];                      /* non-ECO SYNTH tracks, gains applied, 88.2 kHz */
-static int32_t eco44[PY_BLOCK];                 /* ECO SYNTH tracks + the decimated bus */
 volatile uint32_t py_trk_cyc[PS_TRACKS];        /* CYCLES per track, summed (play.c windows them) */
 volatile uint32_t py_dec_cyc;                   /* CYCLES of the shared decimator, summed */
 
@@ -400,12 +509,35 @@ static int track_block(int t, uint32_t pos)
     emit_ctx c;
 
     c.t = t;
-    c.slot = slot_of(t, synth);
+    c.slot = slot_of(t, synth);                 /* (a hit before a row change in this block: the old row's) */
+    if (cue_req[t] < PS_ROWS && aud_track < 0) {    /* live: a cue for this column */
+        uint8_t r = cue_req[t];
+
+        cue_req[t] = PS_EMPTY;
+        if (h->active)
+            h->cue = r;                         /* when its chain ends (py_song_next) */
+        else
+            h->start_row = r;                   /* silent: it joins there at the next bar (below) */
+    }
+    if (!h->active && aud_track < 0 && bar && py_song.cell[h->start_row][t] < PS_CHAINS) {
+        /* a column that was empty when play started (or got its first pattern since): it joins
+         * at the next bar, in time with the rest (before, it waited for stop + play) */
+        uint32_t nb = pos - pos % bar;
+
+        if (nb < pos)
+            nb += bar;
+        if (nb < end)
+            py_song_start(&py_song, t, h->start_row, nb, bar, pat_len, 0, h);
+    }
+    if (h->active && (int32_t)(h->start - g) > 0)
+        g = h->start;                           /* the head starts inside this block */
     while (h->active && g < end && guard++ < 8) {
         uint32_t hend = h->start + h->len, n;
 
         if (g >= hend) {
             py_song_next(&py_song, t, bar, pat_len, 0, h);
+            snd_over[t] = 0;                    /* a new row: its sound again */
+            c.slot = slot_of(t, synth);
             continue;
         }
         n = (hend < end ? hend : end) - g;
@@ -430,9 +562,9 @@ static int track_block(int t, uint32_t pos)
     }
     if (synth) {
         py_syn *s = &syns[t];
-        uint8_t eco = tr->eco ? 1 : 0;
+        uint8_t eco = tr->eco && !hd ? 1 : 0;
 
-        s->cap = (uint8_t)(tr->voices ? tr->voices : PY_SYN_CAP_DEFAULT);
+        s->cap = (uint8_t)(hd ? 0 : tr->voices ? tr->voices : PY_SYN_CAP_DEFAULT);
         s->par = (uint8_t)(inst_of[t] & 1);    /* ECO tracks on instances 1 / 3 and 2: other blocks */
         if (s->eco != eco) {
             s->eco = eco;
@@ -462,29 +594,37 @@ static int track_block(int t, uint32_t pos)
 extern volatile int8_t dr_ext_pat, nr_ext_pat;  /* the editors' playheads follow PLAY */
 extern volatile uint32_t dr_ext_clock, nr_ext_clock;
 
-void py_pat_block(uint32_t pos)
+/* one block in steps (the render does them one at a time): step 0..PS_TRACKS-1 = that track's
+ * hits and voices (nothing if it is no pattern track), step PS_TRACKS = the shared decimator and
+ * the SYNTH sum into py_mx.ext */
+void py_pat_step(uint32_t pos, int step)
 {
-    int t, i, dp = -1, np = -1, bus = 0;
-    uint32_t c0, c1;
+    static int dp, np, bus;
+    uint32_t c0;
+    int i;
 
-    for (t = 0; t < PS_TRACKS; t++) {
-        const ps_head *h = &heads[t];
+    if (step == 0) {
+        dp = np = -1;
+        bus = 0;
+    }
+    if (step < PS_TRACKS) {
+        const ps_head *h = &heads[step];
 
-        if (!py_song_is_pattern(&py_song, t))
-            continue;
+        if (!py_song_is_pattern(&py_song, step))
+            return;
         c0 = cycles();
-        bus |= track_block(t, pos);
-        c1 = cycles();
-        py_trk_cyc[t] += c1 - c0;
+        bus |= track_block(step, pos);
+        py_trk_cyc[step] += cycles() - c0;
         if (h->active && h->pat < 14 && pos >= h->start) {
-            if (py_song.trk[t].type == PS_DRUM && dp < 0) {
+            if (py_song.trk[step].type == PS_DRUM && dp < 0) {
                 dp = h->pat;
                 dr_ext_clock = pos - h->start;
-            } else if (py_song.trk[t].type == PS_SYNTH && np < 0) {
+            } else if (py_song.trk[step].type == PS_SYNTH && np < 0) {
                 np = h->pat;
                 nr_ext_clock = pos - h->start;
             }
         }
+        return;
     }
     dr_ext_pat = (int8_t)dp;
     nr_ext_pat = (int8_t)np;
@@ -506,6 +646,14 @@ void py_pat_block(uint32_t pos)
             eco44[i] = 0;
         }
     py_dec_cyc += cycles() - c0;
+}
+
+void py_pat_block(uint32_t pos)
+{
+    int step;
+
+    for (step = 0; step <= PS_TRACKS; step++)
+        py_pat_step(pos, step);
 }
 
 void py_pat_idle(void)

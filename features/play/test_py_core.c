@@ -105,6 +105,28 @@ static void test_map(void)
     CHECK(py_map(&s, 1, 650, &run) == 50 && run == 250);                    /* loop: modulo */
     CHECK(py_map(&s, 1, 100000, &run) == 100 && run == 200);
     CHECK(py_map(&s, 2, 10, &run) == -1);                                   /* unused */
+
+    /* song-driven: ON OF ON in a circle (bar = 88200 at 120): 300 + 88200 + 300 frames */
+    {
+        static const uint8_t seg[3] = { 1, 0, 1 };
+
+        py_set_song(&s, 1, seg, 3, 0);
+        CHECK(s.t[1].song && s.t[1].cur.n == 3 && s.t[1].cur.period == 88800);
+        CHECK(py_map(&s, 1, 0, &run) == 0 && run == 300 && py_set_row(&s, 1, 0) == 0);
+        CHECK(py_map(&s, 1, 299, &run) == 299 && run == 1);
+        CHECK(py_map(&s, 1, 300, &run) == -1 && run == 88200 && py_set_row(&s, 1, 300) == 1);   /* OF: a bar */
+        CHECK(py_map(&s, 1, 88499, &run) == -1 && run == 1);
+        CHECK(py_map(&s, 1, 88500, &run) == 0 && run == 300 && py_set_row(&s, 1, 88500) == 2);
+        CHECK(py_map(&s, 1, 88800 + 310, &run) == -1 && run == 88190);      /* the circle again */
+        CHECK(py_map(&s, 1, 3 * 88800 + 88510, &run) == 10 && run == 290);
+        py_set_song(&s, 1, seg, 0, 0);                                         /* cells, none at the start row */
+        CHECK(s.t[1].song && py_map(&s, 1, 5, &run) == -1 && py_set_row(&s, 1, 5) == -1);
+        py_set_song(&s, 1, seg, -1, 0);                                        /* free again: the loop */
+        CHECK(!s.t[1].song && py_map(&s, 1, 650, &run) == 50 && py_set_row(&s, 1, 650) == -1);
+        py_set_song(&s, 0, seg, 3, 0);
+        py_set_assign(&s, 0, f, 2, "ONCE.WAV", 0);                          /* assigning: free */
+        CHECK(!s.t[0].song);
+    }
 }
 
 /* ------------------------------------------------------------------ streaming + mix */
@@ -327,6 +349,119 @@ static void test_stream(void)
 
 /* pattern-track inputs: mono into both channels with their gain, cleared after use; without an
  * audio set the clock runs on (no end) */
+/* a song-driven track through the ring: ON OF OF ON at a 1000-frame bar (track 1: 1300 frames),
+ * against the samples worked out here (not py_map); the other tracks loop on */
+static void test_stream_song(void)
+{
+    static uint8_t scratch[256 * 4];
+    static const uint8_t seg[4] = { 1, 0, 0, 1 };
+    int32_t tx[2 * PY_BLOCK];
+    py_set s;
+    py_mixer m;
+    int b, f, ok = 1;
+
+    setup(&s, &m, 1);
+    s.bar_frames = 1000;
+    py_set_song(&s, 1, seg, 4, 0);
+    CHECK(s.t[1].cur.period == 4600);
+    m.gain[0] = m.gain[5] = 0;
+    py_seek(&m, 0);
+    py_fill(&m, mem_read, 0, 1u << 30, scratch);
+    m.playing = 1;
+    for (b = 0; b < 300; b++) {                                             /* four circles */
+        uint32_t g0 = m.pos;
+
+        if (!(b % 4))
+            py_fill(&m, mem_read, 0, 1u << 30, scratch);
+        memset(tx, 0, sizeof(tx));
+        py_mix(&m, tx, tx + 1, 2);
+        for (f = 0; f < PY_BLOCK; f++) {
+            uint32_t p = (g0 + (uint32_t)f) % 4600u;
+            int32_t mv = (m.master * m.te_volume) >> 15, acc = 0;
+
+            if (p < 1300)
+                acc = (sample(1, p, 0) * m.gain[1]) >> 15;
+            else if (p >= 3300)
+                acc = (sample(1, p - 3300, 0) * m.gain[1]) >> 15;
+            ok &= tx[2 * f] == (int32_t)((uint32_t)ref_soft((acc * mv) >> 15) << 16) && tx[2 * f + 1] == tx[2 * f];
+        }
+    }
+    CHECK(ok && !m.underruns[1] && !m.read_errors);
+}
+
+/* live cues on a song-driven track: ON ON (rows 4, 5; 1300 frames each) cued to OF ON (rows 9, 10)
+ * while row 4 plays: the switch at the end of the segment, the ring taken back and refilled, the
+ * samples exact through the switch; a cue too close to the segment's end waits for the next one;
+ * a second cue replaces a pending one; a cue to nothing = silence; a silent track: the next bar */
+static void test_cue(void)
+{
+    static uint8_t scratch[256 * 4];
+    static const uint8_t on2[2] = { 1, 1 }, ofon[2] = { 0, 1 }, on1[1] = { 1 };
+    int32_t tx[2 * PY_BLOCK];
+    py_set s;
+    py_mixer m;
+    uint32_t sw, run;
+    int b, f, ok = 1;
+
+    setup(&s, &m, 1);
+    s.bar_frames = 1000;
+    py_set_song(&s, 1, on2, 2, 4);
+    m.gain[0] = m.gain[5] = 0;
+    py_seek(&m, 0);
+    py_fill(&m, mem_read, 0, 1u << 30, scratch);
+    CHECK(py_set_row(&s, 1, 0) == 4 && py_set_row(&s, 1, 1300) == 5 && py_set_cued(&s, 1, 0) == -1);
+    m.playing = 1;
+    for (b = 0; b < 9; b++) {
+        memset(tx, 0, sizeof(tx));
+        py_mix(&m, tx, tx + 1, 2);
+    }
+    py_fill(&m, mem_read, 0, 1u << 30, scratch);                            /* read ahead past the switch */
+    CHECK(m.ring[1].wr > 1300);
+    sw = py_set_cue(&s, &m, 1, ofon, 2, 9, 256);                           /* pos 576: row 4 ends at 1300 */
+    CHECK(sw == 1300 && s.t[1].pending && m.ring[1].wr == 1300 && py_set_cued(&s, 1, m.pos) == 9);
+    CHECK(py_map(&s, 1, 1200, &run) == 1200 && run == 100);                 /* up to the switch */
+    CHECK(py_map(&s, 1, 1300, &run) == -1 && run == 1000 && py_set_row(&s, 1, 1300) == 9);
+    CHECK(py_map(&s, 1, 2300, &run) == 0 && run == 1300 && py_set_row(&s, 1, 2300) == 10);
+    CHECK(py_map(&s, 1, 3600 + 10, &run) == -1 && run == 990);              /* the new circle: 2300 */
+    for (b = 9; b < 120; b++) {
+        uint32_t g0 = m.pos;
+
+        py_fill(&m, mem_read, 0, 1u << 30, scratch);
+        memset(tx, 0, sizeof(tx));
+        py_mix(&m, tx, tx + 1, 2);
+        for (f = 0; f < PY_BLOCK; f++) {
+            uint32_t g = g0 + (uint32_t)f, p = g < 1300 ? g : (g - 1300) % 2300u;
+            int32_t mv = (m.master * m.te_volume) >> 15, acc = 0;
+
+            if (g < 1300)
+                acc = (sample(1, p, 0) * m.gain[1]) >> 15;
+            else if (p >= 1000)
+                acc = (sample(1, p - 1000, 0) * m.gain[1]) >> 15;
+            ok &= tx[2 * f] == (int32_t)((uint32_t)ref_soft((acc * mv) >> 15) << 16);
+        }
+    }
+    CHECK(ok && !m.underruns[1] && py_set_cued(&s, 1, m.pos) == -1);
+
+    /* pos 7680 = 1300 + 2 x 2300 + 1780: in the ON segment (row 10), 520 frames left: a guard of
+     * 600 reaches into the next segment (OF, 1000 frames): the switch waits for its end */
+    CHECK(m.pos == 7680);
+    sw = py_set_cue(&s, &m, 1, on1, 1, 20, 600);
+    CHECK(sw == 7680 + 520 + 1000 && py_set_cued(&s, 1, m.pos) == 20);
+    sw = py_set_cue(&s, &m, 1, on2, 2, 30, 600);                           /* replaces it, same frame */
+    CHECK(sw == 9200 && py_set_cued(&s, 1, m.pos) == 30 && py_set_row(&s, 1, 9200) == 30
+          && py_set_row(&s, 1, 9199) == 9);
+    sw = py_set_cue(&s, &m, 1, on1, 0, 40, 600);                           /* to an empty cell: silence */
+    CHECK(sw == 9200 && py_map(&s, 1, 9300, &run) == -1 && py_set_row(&s, 1, 9300) == -1);
+    m.pos = 9600;                                                           /* silent now: the next bar */
+    sw = py_set_cue(&s, &m, 1, on1, 1, 50, 600);
+    CHECK(sw == 11000 && py_map(&s, 1, 10990, &run) == -1 && run == 10
+          && py_map(&s, 1, 11000, &run) == 0 && py_set_row(&s, 1, 11000) == 50);
+    py_set_song(&s, 1, on2, 2, 0);                                          /* the song anew: no cue */
+    CHECK(!s.t[1].pending && py_set_cued(&s, 1, 0) == -1);
+    py_set_song(&s, 1, on2, -1, 0);
+    CHECK(py_set_cue(&s, &m, 1, on1, 1, 0, 600) == 0 && !s.t[1].pending);  /* a free track: no cues */
+}
+
 static void test_pattern_inputs(void)
 {
     static py_set s;
@@ -364,6 +499,8 @@ int main(void)
     test_assign();
     test_map();
     test_stream();
+    test_stream_song();
+    test_cue();
     CHECK(py_db_q15(0) == 32767 && py_db_q15(-60) == 16423 && py_db_q15(-600) == 33
           && py_db_q15(-601) == 0 && py_db_q15(10) == 32767);
     printf("%s (%d failed)\n", fails ? "FAIL" : "PASS", fails);

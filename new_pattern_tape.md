@@ -1,10 +1,10 @@
 # NEW PATTERN TAPE — the PLAY page
 
-**Status (2026-11-15):** PLAY v0.3 built and device-verified: one track list of up to 8 AUDIO /
-SYNTH / DRUM tracks, master-bus mix, CPU options (`features/play/README.md` is the current
-manual). Sections 0-2.2 and 4-7 below describe the v0.1 design (fixed `A1..A8` / `P1..P4` slots,
-pages) and are kept as history where the README says otherwise. **Section 2.3 (song / chain
-views) is the open design.**
+**Status (2026-11-15):** PLAY v0.7 built: one track list of up to 8 AUDIO / SYNTH / DRUM tracks,
+master-bus mix, CPU options, and the tracker song (song view, chain view, AUDIO cells: section
+2.3). `features/play/README.md` is the current manual. Sections 0-2.2 and 4-7 below describe the
+v0.1 design (fixed `A1..A8` / `P1..P4` slots, pages) and are kept as history where the README says
+otherwise. Open: device test of live mode and of the render.
 **Target image:** `op1plus` (`recipes/op1plus.json`), firmware R246.
 **Feature folder, when built:** `features/play/`.
 
@@ -95,56 +95,106 @@ envelope / decimation TE applies after an engine's render, the drum kit in sampl
 track's choice (sound slot + pattern) is stored (proposal: `PATTERNS.TXT` in PLAY's own folder,
 written when changed; initial values from `set.txt` `pattern` lines).
 
-### 2.3 Song mode: a tracker (proposal 2026-11-15, rewritten for the track list)
+### 2.3 Song mode: a tracker (reviewed 2026-11-15, built as PLAY v0.4)
 
 Concepts from the M8 tracker's public manual (structure and workflow only; own design, own look).
-This section replaces the first version (11 fixed tracks `P1..P4` / `A2..A8`, page keys T1-T4):
-since v0.2 PLAY has **one list of up to 8 typed tracks** (AUDIO / SYNTH / DRUM, `features/play`),
-and the song grid has one column per track. **Built:** the model and the playheads
-(`py_song.c`, host-tested, `SONG.BIN` "PSN2"). **Open:** the views below, AUDIO cells, live mode.
-Points marked **[decide]** are proposals waiting for a yes.
+PLAY has **one list of up to 8 typed tracks** (AUDIO / SYNTH / DRUM, `features/play`), and the
+song grid has one column per track. **Built:** the model and the playheads (`py_song.c`,
+host-tested, `SONG.BIN` "PSN2"), the song view, the chain view, AUDIO cells (`py_view.c`,
+v0.4), live mode, the 5x7 font and the help pages (v0.5).
+
+Review 2026-11-15 (what changed against the proposal; the former **[decide]** points are decided
+as proposed unless listed here):
+
+1. **Knobs.** Since v0.3.4 the list's pattern is on *orange* turn, not white: the list rule below
+   says so. Orange turn has no job in the song / chain views; shift + orange turn stays the master.
+2. **The play clock.** Song rows are not a time grid, so "play from row R" cannot keep the bar
+   counter: play in the song view restarts the clock (bar 1) with every column on the cursor row.
+   Play while playing pauses, as on the list; a pause is resumed from the list (play there
+   continues), the song view's play always starts at its cursor row. Stop twice = bar 1 and start
+   row 00 again.
+3. **The list's quick pattern edit** also needs the chain to be *unshared*: a one-row chain that
+   another cell uses too is no longer edited from the list (it would change the other track).
+4. **AUDIO cells:** white press toggles `ON` / `OF` (an empty cell: `ON`); the proposal left white
+   press undefined there. The column's position is a pure function of the play position (no head
+   state), so the main loop's read-ahead and the mix agree by construction. Editing an AUDIO
+   cell while playing re-seeks that set's rings (as changing a file does).
+5. **Clipboard:** two of them (a song cell, a chain row). A chain number cannot be pasted into an
+   AUDIO column or `ON` / `OF` into a SYNTH / DRUM column (footer note).
+6. **Row insert / delete** act on the whole song row (all columns): columns of equal length stay
+   aligned.
+7. **Numbers** are hex in both views (song rows `00..7F`, chains `00..7F`, chain rows `0..F`);
+   patterns `1..14` and transpose stay decimal, as NOTE ROLL / DRUM ROLL show them.
+8. **Chain view:** all 16 rows on one screen (two blocks of 8), no scrolling. Transpose on a DRUM
+   track shifts the hits' TONE. The audition ends on stop and when the view is left.
+9. **Cursor and playhead:** the playing cell is filled in the track's colour, the cursor is a
+   white frame, so both stay readable on the same cell.
 
 #### Levels
 
 | Level | What | Edited in |
 |---|---|---|
 | **SONG** | 128 rows x 8 columns, column k = track k of the list (same order). SYNTH / DRUM cell: a chain `00..7F` or empty; AUDIO cell: `ON` / `OF` or empty | PLAY, song view |
-| **CHAIN** | 16 rows of *pattern* (`1..14` or empty) + *transpose* (-48..+48 semitones) | PLAY, chain view |
+| **CHAIN** | 16 rows of *pattern* (`1..14` or empty) + *transpose* (-48..+48 semitones) + *sound* (the track's or slot 1..8) | PLAY, chain view |
 | **PATTERN** | NOTE ROLL (SYNTH) / DRUM ROLL (DRUM) pattern 1..14, 1..64 steps | NOTE ROLL / DRUM ROLL |
 
 The 128 chains are shared: any column can use any chain. A chain in a SYNTH column plays NOTE
 ROLL's patterns, the same chain in a DRUM column DRUM ROLL's (the numbers mean the editor of the
-column's type). The chain view names the track it was opened from.
+column's type). The chain view names the track it was opened from and the other tracks using it.
 
-#### Playback (built)
+#### Playback
 
 - Every track has its own playhead going down its column. A chain row plays its pattern once (the
-  pattern's own length), then the next chain row; after row 15 or an empty row, the next song row.
-  An empty song cell ends the column: back to the start row. Columns with different lengths drift
-  apart on purpose (polymeter); equal lengths stay aligned. Song rows are therefore **not** a
-  shared time grid: the views show each column's own playhead.
-- **Start row:** play on the track list starts every column at row 00 (as now); play on the song
-  view at the cursor row, which is also where every column loops back to.
-- **Chain view play:** that chain alone on its track, looping; the other tracks are silent until
-  stop (an audition). **[decide]**
+  pattern's own length), then the next chain row; after row F or an empty row, the next song row.
+  An empty song cell ends the column: back to the start row. A cell whose chain has no rows is
+  skipped. Columns with different lengths drift apart on purpose (polymeter); equal lengths stay
+  aligned. Song rows are therefore **not** a shared time grid: the views show each column's own
+  playhead.
+- **Start row:** play on the track list at bar 1 starts every column at row 00; play on the song
+  view starts the clock again at bar 1 with every column on the cursor row, which is also where
+  every column loops back to. A column whose start-row cell is empty is silent.
+- **Chain view play:** that chain alone on its track, looping, from bar 1; every other track is
+  silent (the track sounds even when it is muted). Stop, or leaving the chain view, ends the
+  audition: stopped at bar 1.
 - Transport, mute / solo / level, CPU and the master stay the track list's (section 4 / README).
 
-#### AUDIO tracks in the song **[decide]**
+#### Sounds in the song (v0.7)
 
-- An AUDIO column with **no cells** plays as today: free, from bar 1, LOOP or ONCE on the list.
+- A chain row has a third value **SND** (`-` = the track's own slot, `1..8`): the sound / kit
+  slot the track plays while that row plays. Per row, not per song cell: a cell is one byte, and
+  a chain is the unit that is reused.
+- **Keys 1..8** set the cursor track's own sound in the list, the song view, live mode and the
+  chain view. While a row with its own SND plays, a key's sound wins until that row ends.
+- The slot is read every block (`slot_of` in py_pattern.c), so a change needs no restart; notes
+  still sounding continue with the new slot's knobs and envelope.
+- `SONG.BIN` is "PSN3" now (chain rows 3 bytes); a "PSN2" file is read and converted in memory
+  (rows without a sound), and written as PSN3 at the next save.
+- Limits: TE's 8 synth slots / 8 kits as they are in memory. No preset loading from flash.
+
+#### Rest cells (v0.6.1)
+
+An empty cell ends a column, so a pause inside a column needs a cell of its own: `OF` in a
+SYNTH / DRUM column (stored `PS_REST` 0xFE, white turn one step below `00`) is one bar of
+silence without a pattern, the same meaning `OF` has in an AUDIO column. Live cues, the start
+row and the render treat it as any other cell. A column with a rest is no longer the list's
+one-pattern case (`SNG`).
+
+#### AUDIO tracks in the song
+
+- An AUDIO column with **no cells** plays as before: free, from bar 1, LOOP or ONCE on the list.
   Nothing changes for sets without a song.
 - As soon as the column has a cell, it follows the song: `ON` = the file from its start, once,
   its own length (a 4-bar loop = 4 bars); `OF` = one bar of silence; empty = the column's end
   (back to the start row). An arrangement is then `ON ON OF ON ...` down the column. The list
   shows `SONG` instead of LOOP / ONCE for such a track.
-- Implementation: the audio ring keeps streaming by global frame; the mix maps a song-driven
-  track's frame through its head (file frame = g - head start while `ON`) and re-seeks the ring
-  when a head starts a new `ON` (the ring is read ahead from the next head's start).
+- Implementation: the cells from the start row to the first empty one are the track's segment
+  table (`py_set_song`); `py_map` maps a global frame through it (position modulo the table's
+  length), so the read-ahead simply reads the right file frames into the ring and the mix needs
+  no change.
 
-#### Getting there and back **[decide]**
+#### Getting there and back
 
-- **join** (unused on the list today) switches **track list <-> song view**. In the chain view,
-  join goes to the song view too.
+- **join** switches **track list <-> song view**. In the chain view, join goes to the song view.
 - **orange press** goes one level up: chain view -> song view -> track list. (On the list it stays
   "re-read the set folder".)
 - **white press on a chain cell** opens the chain view. **shift + blue press** opens the pattern in
@@ -155,90 +205,155 @@ column's type). The chain view names the track it was opened from.
 #### Song view
 
 ```
-SONG                    BPM 120   CPU 31   BAR 05.1      PLAY
-     1SYN  2DRM  3AUD  4SYN  5DRM
-00   00    01    ON    03    --
-01   00    01    ON    03
-02   02    04    OF    --
-03   --    04    ON
-04         --
-CHAIN 02 ON TRACK 1     WHITE PRESS: OPEN  SHIFT: NEW / CLONE
+SONG            BPM 120     CPU 31   BAR 05.1      PLAY
+     1SYN     2DRM     3AUD     4SYN     5DRM
+00   00       01       ON       03       --
+01   00       01       ON       03
+02   02       04       OF       --
+03   --       04       ON
+04            --
+CHAIN 02 ON TRACK 1     WHITE PRESS: OPEN  SHIFT: CLONE
 ```
 
-- Columns: the list's tracks (number + type in the type's colour), 36 px each; rows 11 px, about
-  9 visible, scrolling with the cursor. Empty cells blank, the column's end `--`.
+- Columns: the list's tracks (number + type in the type's colour), 36 px each; rows 11 px, 8
+  visible, scrolling with the cursor. Empty cells blank, the column's end `--`.
 - The cell each column plays now is filled in the track's colour (no glyph: the 3x5 font has no
-  `>`); the cursor is the list's selection bar on one cell.
-- Footer: what the cursor cell is, and the keys that apply to it.
+  `>`); the cursor is a white frame around one cell.
+- Footer: what the cursor cell is, and the keys that apply to it. Without tracks:
+  `NO TRACKS: ADD THEM ON THE LIST (JOIN)`.
 
 | Control | Song view |
 |---|---|
 | blue turn | cursor row (shift: 16 rows) |
 | green turn | cursor column (track) |
-| white turn | the cell's value: chain `00..7F` / empty (shift: 16 at a time); AUDIO `ON` / `OF` / empty |
-| white press | empty cell: the last chain used in this column (M8's "last value"); chain cell: open the chain view |
+| white turn | the cell's value: empty / `OF` (a rest) / chain `00..7F` (shift: 16 at a time); AUDIO: empty / `ON` / `OF` |
+| white press | empty cell: the last chain used in this column (none yet: a new unused chain); chain cell: open the chain view; AUDIO: `ON` <-> `OF` (empty: `ON`) |
 | shift + white press | empty cell: a new unused chain; chain cell: clone it (a copy under a new number, the cell points to the copy) |
 | blue press / green press | mute / solo the cursor column's track (as on the list) |
 | cut | cut the cell into the clipboard (one press: the clipboard keeps it) |
 | insert | paste the clipboard into the cell |
-| shift + insert | a new empty row at the cursor (rows below move down; refused if row 127 is used) |
+| shift + insert | a new empty row at the cursor (rows below move down; refused if row 7F is used) |
 | shift + cut, twice | delete the cursor row (rows below move up) |
 | T1..T4 / shift + T1..T4 | cursor to column 1..4 / mute it |
-| play / stop / back / forward | as on the list; play starts at the cursor row |
+| play | start at the cursor row, bar 1 (playing: pause) |
+| shift + play | cue the cursor row on every column (live mode below) |
+| rec, rec again | render the song from the cursor row (below) |
+| shift + rec | live mode on / off |
+| speech | the help page |
+| stop / back / forward | as on the list |
+| shift + orange turn | master |
 | shift + blue press | the pattern in NOTE ROLL / DRUM ROLL |
 | join / orange press | back to the track list |
 
 #### Chain view
 
 ```
-CHAIN 02   TRACK 1 SYN  SND 2           BAR 05.1      PLAY
-ROW  PAT  TSP
-0    01   +0
-1    01   +5
-2    03   -12
-3    --
-CHAIN 02 IS ALSO USED BY TRACK 4    SHIFT+BLUE: EDIT PATTERN
+CHAIN 02    BPM 120     CPU 31   BAR 05.1      PLAY
+TRACK 1 SYN   SND 2          ALSO ON TRACK 4
+ROW  PAT  TSP              ROW  PAT  TSP
+0    01   +0               8    --
+1    01   +5               9
+2    03   -12              A
+3    --                    B
+...
+ROW 1: PATTERN 1 +5         PLAY: AUDITION  SHIFT+BLUE: EDIT
 ```
 
 | Control | Chain view |
 |---|---|
-| blue turn | cursor row 0..15 |
+| blue turn | cursor row 0..F |
 | green turn | column PAT / TSP |
 | white turn | PAT: `--`, 1..14; TSP: -48..+48 (shift: octaves) |
-| white press | an empty PAT: the last pattern used here |
+| white press | an empty PAT: the last pattern used here (none yet: pattern 1) |
 | cut / insert | cut the row into the clipboard / paste it |
-| shift + insert / shift + cut twice | insert an empty row / delete the row (the rest moves) |
+| shift + insert / shift + cut twice | insert an empty row (refused if row F is used) / delete the row (the rest moves) |
+| blue press / green press | mute / solo the track |
 | shift + blue press | the row's pattern in NOTE ROLL / DRUM ROLL |
 | play / stop | audition this chain on its track / stop |
-| orange press | back to the song view |
+| shift + orange turn | master |
+| join / orange press | back to the song view |
+
+The first empty row ends the chain; rows after it are shown dim (they do not play).
 
 #### The track list with a song
 
-- The list's PAT column shows the pattern the track plays now (while stopped: song row 00's).
-- White turn on a SYNTH / DRUM row keeps editing song row 00's chain, first row (the quick way
-  for a one-pattern track) **only while** the column is just row 00 and its chain one row long.
-  Otherwise the row shows `SONG` and white turn does nothing (today it would cut the chain to one
-  row: a bug to fix with this).
+- The list's pattern number shows the pattern the track plays now (while stopped: song row 00's).
+- Orange turn on a SYNTH / DRUM row keeps editing song row 00's chain, first row (the quick way
+  for a one-pattern track) **only while** the column is just row 00 (or empty), its chain one row
+  long and used by no other cell. Otherwise the label reads `SNG` instead of `PAT` and orange turn
+  does nothing (before v0.4 it cut the chain to one row).
+- On the list the pattern is 1..14 and the sound / kit 1..8, both held at the ends (no `--`, no
+  CUR); a new SYNTH / DRUM track starts on TE's current slot and pattern 1. An empty cell is made
+  in the song view only. A column that is empty at its start row is silent; given a chain there
+  while playing, it joins at the next bar.
+- An AUDIO track with cells shows `SONG` instead of LOOP / ONCE; white press does nothing there.
 
 #### Storage
 
 Unchanged: `SONG.BIN` ("PSN2", CRC) holds the grid, the chains and the track settings; the
-clipboard, the cursors, the "last value" per column and the start row are session-only.
+clipboards, the cursors, the view, the "last value" per column and the start row are session-only.
 
-#### Live mode (later)
+#### Live mode (built, v0.5)
 
-Shift + play on a song row cues it: every column jumps there when its current chain ends; a
-single cell cues only its column. Not part of the first song-view version.
+- **shift + rec** in the song view = live mode on / off (title `LIVE`, red; rec alone was the
+  key in v0.5, it is the render now). In live mode the cells are
+  not edited: **play** cues the cursor row on every column (stopped: play starts there), **white
+  press** cues the cursor cell on its column only, T1..T4 mute (shift: solo). **Shift + play**
+  cues the cursor row in the plain song view too.
+- A cued SYNTH / DRUM column finishes its current chain, then jumps to the cued row, which is its
+  start row from then on (it loops back there). A cued empty cell stops the column; a stopped
+  column cued to a chain joins at the next bar. A second cue before the jump replaces the first.
+- A cued AUDIO column (one with cells) changes at the end of the `ON` / `OF` segment it plays:
+  the track gets a second segment table that takes over at that frame (`py_set_cue`), the ring
+  is taken back to it and read again. A cue less than 4096 frames (93 ms) before the segment's
+  end waits for the next segment. A free AUDIO track (no cells) ignores cues.
+- The cued cell blinks in a frame of the track's colour until the jump.
+- Back / forward, editing AUDIO cells or song rows, and stop twice put every column back on the
+  global start row (cues and per-column start rows are session state of the running play).
+
+#### Render to a file (built, v0.6)
+
+Why: the CPU limits the SYNTH tracks (3 instances, ECO, voice caps). A render plays the song
+into a file, not in real time, at full quality; the file is then one AUDIO track.
+
+- **rec** in the song view or live mode asks `RENDER n BARS FROM ROW rr` (n = the longest
+  column played once from the cursor row; white turn changes it, shift: 8 bars); **rec** again
+  starts; any other key cancels. While it renders, stop or rec cancels (the file is deleted) and
+  every other key and knob is held off.
+- Rendered: the tracks as they sound (levels, mute, solo), SYNTH tracks **without ECO and with all
+  voices**, PLAY's soft clip, the master at 0 dB. Not TE's master EQ / FX / drive. Exactly n bars.
+- File: `/yaffs2/user/play_r/RENDnn.AIF`, AIFF 16 bit 44.1 kHz, stereo if an AUDIO track is in
+  the mix, else mono. The render folder is read into the file pool after the set folder (16 files
+  in all) and survives imports (the set folders `play_a|b` take turns and are cleared).
+- Implementation (`py_render.c`): the audio interrupt, instead of mixing into TE's bus, renders
+  in steps (`py_pat_step`: one track of the next block per step, then the buses and `py_mix`)
+  until ~40 % of a block's cycles are used; a block starts only when every AUDIO ring holds it
+  and the capture ring has room. The main loop writes the capture ring to the file. The engines
+  are only called from the interrupt, as when playing.
+- Open: deleting renders on the device, exporting them to disk mode, a tail past the last bar.
+
+#### The tape key (v0.6)
+
+Decision 3 of section 0 is withdrawn for this image: PLAY is the only tape screen. Tape again and
+shift + tape do nothing on PLAY (TE's tape screen and its erase screen are not reachable); TE's
+tape data is still never touched.
+
+#### Views: font and help (v0.5)
+
+The list, the song view and the chain view use the SDK's 5x7 font (`gfx_text7`, 52 characters a
+line) instead of the 3x5 one; a two-line footer (what the cursor is on; the keys). **speech**
+(without shift) shows a help page for the current view (track list, song, chain, live), blue
+turn pages, any key closes it.
 
 #### Build order
 
-1. Song view, read only: columns, cells, playheads, cursor; join / orange press in and out;
-   play from the cursor row (sim bench: the drawn playheads follow the heads).
-2. Song view editing: values, last value, new / clone, clipboard, row insert / delete; the list's
-   white turn rule above.
-3. Chain view: values, rows, audition play.
-4. AUDIO cells (`ON` / `OF`, song-driven streaming).
-5. Live mode.
+1. Done (v0.4): song view: columns, cells, playheads, cursor; join / orange press in and out;
+   play from the cursor row.
+2. Done (v0.4): song view editing: values, last value, new / clone, clipboard, row insert /
+   delete; the list's orange turn rule above.
+3. Done (v0.4): chain view: values, rows, audition play.
+4. Done (v0.4): AUDIO cells (`ON` / `OF`, song-driven streaming).
+5. Done (v0.5): live mode; the larger font; the help pages.
 
 ## 3. Disk layout and validation
 

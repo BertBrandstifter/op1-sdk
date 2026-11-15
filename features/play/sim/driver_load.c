@@ -129,7 +129,7 @@ int main(void)
     for (t = 0; t < 3; t++) {
         turn(0, -9);
         turn(0, t);
-        turn(3, 1);                             /* orange: pattern 1 */
+                                                /* a new track starts on pattern 1 */
         py_song.trk[t].sound = (uint8_t)t;
         py_song.trk[t].voices = 2;
     }
