@@ -48,6 +48,16 @@ static int render(ac_voice *v, const ac_params *p, double hz, double ms, double 
     return n;
 }
 
+static double rms_i16(const int16_t *x)
+{
+    double s = 0;
+    int i;
+
+    for (i = 0; i < N; i++)
+        s += (double)x[i] * x[i];
+    return sqrt(s / N);
+}
+
 static double rms(const double *x, int a, int b)
 {
     double s = 0;
@@ -292,6 +302,32 @@ int main(void)
     double f, a, b, c;
     int n, i;
 
+    {   /* a released note: the voice ends (on = 0) once its amp is gone, renders silence after */
+        ac_params q = base();
+        ac_voice w;
+        int16_t o[N];
+        uint32_t in[N];
+        int bl, k2, z = 1;
+
+        for (k2 = 0; k2 < N; k2++)
+            in[k2] = inc_of(110);
+        ac_init(&w);
+        ac_note(&w, 0, 0);
+        for (bl = 0; bl < 20; bl++)
+            ac_render(&w, o, N, in, &q);
+        ac_release(&w);
+        for (bl = 0; bl < 40 && w.on; bl++)
+            ac_render(&w, o, N, in, &q);
+        ac_render(&w, o, N, in, &q);
+        for (k2 = 0; k2 < N; k2++)
+            z &= o[k2] == 0;
+        check(!w.on && z && bl < 40, "released voice ends (on = 0) within 40 blocks, then silent");
+        ac_note(&w, 0, 0);
+        for (bl = 0; bl < 4; bl++)
+            ac_render(&w, o, N, in, &q);
+        check(w.on && rms_i16(o) > 500, "a note after the end sounds again");
+        printf("release end: on = 0 after the release, a new note sounds\n");
+    }
     printf("half rate (ECO):\n");
     half_rate();
     printf("sweeps (110 Hz saw):\n");

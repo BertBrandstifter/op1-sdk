@@ -162,9 +162,15 @@
   notes, which start together), so the peak stayed and the audio still overran. Fixed tracks to
   alternate blocks. Likewise a mono engine re-rendered a whole block when a new note came on a
   later voice: render new notes first. Measure the per-block maximum (sim:
-  `features/play/sim/run_playload.py`), not only the window average the CPU numbers show.
+  `features/play/sim/load_play.py`), not only the window average the CPU numbers show.
 - **Running an engine at half rate is not free of sound changes** unless the engine knows: ACID's
   envelopes, slide and filter are tuned per sample, so ECO halved their speed and dropped the
   filter an octave. The engine now gets `EH_HALF` and switches tables; engines without such
   tuning (most) sound the same.
+- **TE renders a synth voice until its own envelope ends, and with RELEASE low that is over 29 s.**
+  A few keys played on an engine screen then kept up to six full engine renders running in the
+  background (PLAY or not). The engine host now hands back silence without calling the engine
+  once TE's envelope for the voice is releasing below -60 dB (TE's Adsr object, re_voice.md), and
+  ACID 3 / MONO 3 end a voice once their own amp is gone. An engine must never assume "TE calls
+  render" means "the voice sounds".
 

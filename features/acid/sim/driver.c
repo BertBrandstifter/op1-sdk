@@ -1,5 +1,6 @@
 /* ACID 3 bench (build/apps/op1plus + acid): engine host + ACID glue against stub TE functions and
- * TE's per-sample pitch buffer. Returns failed-check bits (0 = pass). */
+ * TE's per-sample pitch buffer. Returns failed-check bits (0 = pass). Check 14: the host skips a TE
+ * voice released below -60 dB (silence, no engine render), the block start goes to the next voice. */
 #include <op1/te246.h>
 
 extern void wh_te_render(void *self, int16_t *out, int16_t *knobs);    /* the engine host's */
@@ -497,5 +498,39 @@ int main(void)
         CHECK(13, on_pick && on_late && off && knob_off && push_off);
     }
     kb(45 + 25 % 12, 0);
+    /* 14: TE's voice 0 released below -60 dB (TE's envelope object): the host renders silence
+     * without the engine, and the block start goes to the next voice rendered (ACID's mono state
+     * advances every block: two blocks of voice 5 differ); voice 5 quiet: silent, cheap */
+    {
+        volatile int32_t *adsr0 = (int32_t *)0xff8000d4, *adsr5 = (int32_t *)(0xff8000d4 + 5 * 24);
+        static int16_t o0[128], a5[128], b5[128];
+        uint32_t t1, quiet;
+        int same = 1, zero = 1;
+
+        for (i = 0; i < 8; i++)
+            K(i) = knobs[i] = saw[i];
+        pitch(HZ(220.0));
+        wh_te_note_on(VOICE(5), 0, 0);
+        adsr0[0] = 5;                                               /* release, level 100 (Q30) */
+        adsr0[2] = 100;
+        wh_te_render(VOICE(0), o0, knobs);
+        wh_te_render(VOICE(5), a5, knobs);
+        t1 = cycles();
+        wh_te_render(VOICE(0), o0, knobs);
+        quiet = cycles() - t1;
+        wh_te_render(VOICE(5), b5, knobs);
+        for (i = 0; i < 128; i++) {
+            same &= a5[i] == b5[i];
+            zero &= o0[i] == 0;
+        }
+        CHECK(14, zero && !same && quiet < 2000);
+        adsr5[0] = 5;
+        adsr5[2] = 100;
+        o0[0] = 1;
+        wh_te_render(VOICE(5), o0, knobs);
+        CHECK(14, o0[0] == 0 && o0[127] == 0);
+        adsr0[0] = adsr0[2] = adsr5[0] = adsr5[2] = 0;
+    }
+
     return fails;
 }

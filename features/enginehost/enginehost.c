@@ -19,6 +19,22 @@
 static eh_render_fn engines[EH_TAGS];
 static volatile uint8_t fresh[EH_VOICES];       /* note_on seen, render starts the note */
 static int last_voice = EH_VOICES;              /* new audio block when the index does not rise */
+static uint8_t block_due;                       /* the block's first rendered voice gets EH_BLOCK */
+
+/* TE's envelope of voice vi (dsp/Adsr.cpp, analysis/notes/re_voice.md): 24-byte objects at
+ * 0xff8000d4 + 24 vi, +0 state (4 / 5 release, 8 kill), +8 level Q30. TE renders the envelope
+ * before the engine and keeps calling the engine until the envelope is done: with a long RELEASE
+ * (TE's release knob low: over 29 s) a voice that is long inaudible still costs a whole render */
+#define EH_TE_ADSR(vi)      ((const volatile int32_t *)(0xff8000d4u + 24u * (uint32_t)(vi)))
+#define EH_TE_QUIET         (1 << 20)           /* level Q30: -60 dB */
+
+static int te_voice_quiet(int vi)
+{
+    const volatile int32_t *a = EH_TE_ADSR(vi);
+    int32_t st = a[0];
+
+    return (st == 4 || st == 5 || st == 8) && a[2] < EH_TE_QUIET;
+}
 volatile uint8_t eh_prof;                       /* set by cpuinfo: count the engines' cycles */
 volatile uint32_t eh_cycles;                    /* CYCLES spent in SDK engine renders (wraps) */
 
@@ -92,8 +108,19 @@ void eh_te_render(void *self, int16_t *out, int16_t *knobs)
         return;
     }
     if (vi <= last_voice)                       /* TE renders voices in order once per block */
-        flags |= EH_BLOCK;
+        block_due = 1;
     last_voice = vi;
+    if (!fresh[vi] && te_voice_quiet(vi)) {     /* released below -60 dB: silence, no render */
+        int i;
+
+        for (i = 0; i < 128; i++)
+            out[i] = 0;
+        return;
+    }
+    if (block_due) {                            /* the first voice rendered in this block */
+        block_due = 0;
+        flags |= EH_BLOCK;
+    }
     if (fresh[vi]) {
         fresh[vi] = 0;
         flags |= EH_FRESH;

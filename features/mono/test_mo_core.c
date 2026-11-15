@@ -649,6 +649,30 @@ static void test_monotonic(void)
     }
 }
 
+/* RELEASE on: after the key up the voice ends once its loudness contour is down (sounding = 0,
+ * silence without work: TE keeps calling a voice until its own envelope ends); a new note sounds */
+static void test_release_end(void)
+{
+    mo_params p;
+    mo_voice v;
+    int b, z = 1, k;
+
+    base(&p);
+    p.release = 1;
+    p.ldec = 5;
+    note(&v, 220, &p, 128 * 8);
+    mo_release(&v, &p);
+    for (b = 0; b < 2000 && v.sounding; b++)
+        play(&v, 220, &p, 0, 128);
+    play(&v, 220, &p, 0, 128);
+    for (k = 0; k < 128; k++)
+        z &= buf[k] == 0;
+    CHECK(!v.sounding && z && b < 2000);
+    mo_note(&v, inc_hz(220), &p);
+    play(&v, 220, &p, 0, 128 * 4);
+    CHECK(v.sounding && rms(128 * 3, 128) > 300);
+}
+
 int main(void)
 {
     test_math();
@@ -663,6 +687,7 @@ int main(void)
     test_glide();
     test_reset();
     test_monotonic();
+    test_release_end();
     printf("%s: %d checks, %d failed\n", fails ? "FAIL" : "OK", checks, fails);
     return fails != 0;
 }

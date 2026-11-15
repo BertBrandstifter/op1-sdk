@@ -354,6 +354,9 @@ static inline __attribute__((always_inline)) void render(ac_voice *v, int16_t *o
     v->y[0] = y1; v->y[1] = y2; v->y[2] = y3; v->y[3] = y4;
     v->hx = hx; v->hy = hy; v->px = px; v->py = py; v->qx = qx; v->qy = qy; v->fy = fy;
     v->ph = ph; v->sph = sph;
+    if (!v->gate && v->amp < (1 << 14) && v->dc1 < (1 << 10) && v->dc2 < (1 << 10) && v->gain < (1 << 10))
+        v->on = 0;                              /* released and the amp gone (below -96 dB): silent from
+                                                 * now (TE keeps calling a voice until its envelope ends) */
 }
 
 static __attribute__((noinline)) void render1(ac_voice *v, int16_t *out, int n, const uint32_t *inc, const ac_params *p)

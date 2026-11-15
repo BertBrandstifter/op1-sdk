@@ -302,6 +302,9 @@ void mo_render(mo_voice *v, int16_t *out, int n, const uint32_t *inc, const mo_p
     }
     /* keyboard control from the pitch (glide included, as a classic keyboard CV), MIDI key Q16 */
     mo_filter(v, acc, out, n, (69 << 16) + (eff - mo_log2(INC69)) * 12, p);
+    if (v->lenv.stage == 3 && v->lenv.r >= ONE24 && v->lgain == 0)
+        v->sounding = 0;                        /* the loudness contour has released: silent from now
+                                                 * (TE keeps calling a voice until its own envelope ends) */
 }
 
 /* tanh, Q14 in and out (1.0 = 16384): table over [-4, 4), clamped, interpolated */
