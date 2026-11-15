@@ -41,8 +41,12 @@
 #define TE_ADSR_START       ((void (*)(void *))0x0191211a)
 #define TE_ADSR_RELEASE     ((void (*)(void *, int))0x019120d0)
 #define TE_ADSR_RENDER      ((int (*)(void *, int16_t *, const int16_t *, const int16_t *))0x01912128)
-/* TE's finger patterns, loaded from okseq on first use */
+/* TE's finger patterns, loaded from okseq on first use: TE's getter for the finger sequencer
+ * (0x019ed238, static RE 2026-11-15) builds both sequencers (synth 0x01dd98bc, drum 0x01dda710) on
+ * its first call, reads both okseq rows (0x019ed0a4, SQL on op1.db) and sets FS_LOADED; TE calls it
+ * when the finger sequencer is first opened or played */
 #define FS_LOADED           (*(volatile uint8_t *)0x01ddb564)
+#define TE_FS_GET           ((void *(*)(void))0x019ed238)
 #define FS_DNOTE(p, s, h)   (*(volatile int32_t *)(0x01dda720 + (p) * 0x100 + (s) * 8 + (h) * 4))
 #define FS_DLEN(p)          (*(volatile int32_t *)(0x01ddb520 + 4 * (p)))
 #define FS_SNOTE(p, s, h)   (*(volatile int32_t *)(0x01dd98cc + (p) * 0x100 + (s) * 8 + (h) * 4))
@@ -75,6 +79,7 @@ static uint32_t nhash[NR_PATTERNS];
 static union { dr_pattern d; nr_pattern n; } scratch_pat;
 static union { dr_fs_notes d; nr_fs_notes n; } te_notes;
 static uint8_t next_d, next_n;
+static uint8_t fs_asked;                        /* TE_FS_GET called (once) */
 
 static uint64_t dsteps[DR_RATES], nstep;        /* samples per step (16.16) */
 static uint32_t steps_bpm;
@@ -258,6 +263,14 @@ void py_pat_main(uint32_t bar, uint32_t bpm_x100)
         steps_bpm = bpm_x100;
     }
     clock_bar = bar;
+    /* TE's own finger patterns (every pattern NOTE ROLL / DRUM ROLL never edited) are not in RAM
+     * until TE loads them: once op1.db is open (as NOTE ROLL waits for it) and the song has a
+     * SYNTH / DRUM track, load them as opening the finger sequencer would; until then such a
+     * pattern plays empty. Main thread, once. */
+    if (!FS_LOADED && !fs_asked && TE_DB_OP1() && *TE_DB_LOCK && py_pat_any()) {
+        fs_asked = 1;
+        TE_FS_GET();
+    }
     refresh();
     if (song_dirty) {
         song_dirty = 0;

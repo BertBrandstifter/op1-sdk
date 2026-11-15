@@ -2222,7 +2222,9 @@ void dr_frame(uint16_t *buf)
     uint64_t L;
     int l;
 
-    if (!inited || *TE_PLAYMODE != 1)
+    /* drum playmode only, except opened from PLAY: then on the tape screen whatever the keyboard
+     * plays (PLAY stops drawing while it is open: without this, TE's tape showed through) */
+    if (!inited || (*TE_PLAYMODE != 1 && !(dr_via_play && shown())))
         return;
     gfx_begin(buf);
     if (!shown()) {

@@ -1889,7 +1889,9 @@ static void draw_msg(void)
 
 void nr_frame(uint16_t *buf)
 {
-    if (!inited || *TE_PLAYMODE != 0)
+    /* synth playmode only, except opened from PLAY: then on the tape screen whatever the keyboard
+     * plays (PLAY stops drawing while it is open: without this, TE's tape showed through) */
+    if (!inited || (*TE_PLAYMODE != 0 && !(nr_via_play && shown())))
         return;
     gfx_begin(buf);
     if (!shown()) {

@@ -16,8 +16,8 @@ root (song mode as a tracker: Song → Chain → Pattern, section 2.3; its views
 ```
 PLAY            BPM 120     CPU 31   BAR 02.3      PLAY
 1 AUD SONG.WAV   LOOP          [=====     ] -9 DB  M S
-2 SYN PAT 2 SND 1 V2 ECO   12 .[===       ] -9 DB  M S
-3 DRM PAT 1 KIT CUR         4 .[========  ] -9 DB  M S
+2 SYN SND 1 PAT 2 V2 ECO   12 .[===       ] -9 DB  M S
+3 DRM KIT CUR PAT 1         4 .[========  ] -9 DB  M S
 + ADD SYNTH
 MASTER 0 DB        PRESS: VOICES  SHIFT: ECO  SHIFT+BLUE: EDIT
 ```
@@ -28,10 +28,10 @@ MASTER 0 DB        PRESS: VOICES  SHIFT: ECO  SHIFT+BLUE: EDIT
 | blue press | mute | |
 | shift + blue press | SYNTH / DRUM: its pattern in NOTE ROLL / DRUM ROLL, shown over PLAY (its playhead follows PLAY; shift + blue press closes it) | |
 | green turn / press | level / solo | |
-| white turn | AUDIO: the file; SYNTH / DRUM: the pattern (--, 1..14) | the type: AUDIO / SYNTH / DRUM |
+| white turn | AUDIO: the file; SYNTH / DRUM: the sound / kit (CUR = TE's current, 1..8) | the type: AUDIO / SYNTH / DRUM |
 | white press | AUDIO: LOOP / ONCE; SYNTH: voices 2 -> 4 -> 1 | add the track |
 | shift + white press | SYNTH: ECO on / off | |
-| orange turn | SYNTH / DRUM: the sound / kit (CUR = TE's current, 1..8) | |
+| orange turn | SYNTH / DRUM: the pattern (--, 1..14) | |
 | shift + orange turn | master | master |
 | orange press | re-read the set folder | |
 | cut, cut again | remove the track | |
@@ -66,7 +66,10 @@ per voice slot (24: TE's 6 + 3 instances x 6) and per instance (MONO 3's voice o
 voice, MALLET's motor, WHEEL's rotor, PALETTE's budget); keyboard displays stay TE's.
 
 Patterns are edited in NOTE ROLL / DRUM ROLL. A pattern you never edited there plays TE's own
-finger pattern once TE has loaded those (open TE's finger sequencer once after booting). Until
+finger pattern: TE loads those only when its finger sequencer is first opened, so PLAY asks TE to
+load them (TE's own loader, synth and drum at once) as soon as op1.db is open after boot and the
+song has a SYNTH or DRUM track (v0.3.3; before, such tracks stayed silent until the finger
+sequencer had been opened). Until
 the song view exists, a track's pattern is song row 00 of that track (its chain = the track
 number, one row). The track list, the choices, levels, mutes and solos are kept in `SONG.BIN` in
 the set folder (written about 2 s after a change; kept when a new set without its own
@@ -136,6 +139,7 @@ its databases or the disk image.
   the ADD row, exact mixed samples of once / looped files, a gone file on its own track, keys,
   a DRUM track sample by sample, a SYNTH track on a test engine as instance 1 with TE's envelope
   stand-ins, SONG.BIN saved and read back, removing a track, no yaffs buffer at an odd address,
+  TE's finger patterns loaded once op1.db is open (a DRUM track on TE's own pattern plays),
   the SYNTH cost options (voices, ECO renders every other block, muted renders nothing) and the
   CPU numbers.
 

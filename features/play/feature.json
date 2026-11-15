@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "play",
   "title": "PLAY tape screen",
-  "version": "0.3.2",
+  "version": "0.3.5",
   "status": "experimental",
   "summary": "The tape key opens PLAY, a second tape screen (TE's own 4-track tape: tape again): one list of up to 8 tracks, each AUDIO (a WAV / AIF from disk mode's play/ folder, looped or once, streamed from flash), SYNTH (NOTE ROLL patterns on its own instance of an SDK engine with one of the 8 synth sounds, TE's envelope, PLAY's decimator) or DRUM (DRUM ROLL patterns on PLAY's own sample player from TE's kits, in place), all sample-locked from bar 1, with level, mute, solo, master and a bar counter; the mix joins TE's master bus like the tape (master EQ, master FX, mixer drive and volume act on it). The track list lives in SONG.BIN (a tracker song: song rows x tracks, chains of patterns + transpose). When disk mode is left, a hook in TE's disk sync copies play/ into /yaffs2/user/play_a|play_b before TE clears the disk (the only writes, with SONG.BIN).",
   "license": "MIT",
@@ -385,7 +385,7 @@
   "controls": [
     "tape key: PLAY (from another screen); tape again on the tape screen: PLAY <-> TE's tape",
     "PLAY: a list of up to 8 tracks (AUDIO / SYNTH / DRUM); blue turn cursor, blue press mute, green turn level, green press solo",
-    "PLAY: white turn = the track's file (AUDIO) or pattern 1-14 (SYNTH: NOTE ROLL, DRUM: DRUM ROLL), white press = LOOP / ONCE (AUDIO) or voices 2 / 4 / 1 (SYNTH), shift + white press = ECO (SYNTH: the engine at 44.1 kHz, half the cost); orange turn = sound / kit slot (CUR, 1-8); shift + orange turn = master",
+    "PLAY: white turn = the track's file (AUDIO) or sound / kit slot (CUR, 1-8), white press = LOOP / ONCE (AUDIO) or voices 2 / 4 / 1 (SYNTH), shift + white press = ECO (SYNTH: the engine at 44.1 kHz, half the cost); orange turn = pattern 1-14 (SYNTH: NOTE ROLL, DRUM: DRUM ROLL); shift + orange turn = master",
     "PLAY: + ADD row: white turn the type, white press adds; insert twice = a new track before the cursor's; cut twice = remove the track",
     "PLAY: play start / pause, stop pause / again back to bar 1, back / forward one bar, T1-T4 cursor (shift: mute), orange press re-read the set folder",
     "disk mode: WAV / AIF files (+ set.txt with bpm) in a play/ folder are imported when disk mode is left",

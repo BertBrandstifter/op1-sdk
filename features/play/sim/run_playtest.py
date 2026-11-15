@@ -32,6 +32,7 @@ STUBS = {                                                 # TE address: (driver 
     0x019D2BF0: ("console_print", 0), 0x019B6C74: ("log_key", 1), 0x019B6C0C: ("log_knob", 1),
     0x019B2674: ("nop", 0), 0x0191211A: ("env_start", 0), 0x019120D0: ("env_release", 0),
     0x01912128: ("env_render", 0), 0x019C2F24: ("key_push", 0), 0x019C2F04: ("key_wake", 0),
+    0x0196DD44: ("db_op1", 0), 0x019ED238: ("fs_get", 0),
 }
 
 

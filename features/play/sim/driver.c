@@ -23,9 +23,11 @@
  * 12 cut twice removes a track
  * 13 insert twice adds a track before the cursor's (its type picked with white while armed); the
  *    other tracks keep their order and patterns; any other key in between cancels
- * 14 shift + blue press on a DRUM track opens DRUM ROLL over PLAY on its pattern, its playhead
- *    follows PLAY, shift + blue press closes it
- * 15 SYNTH cost options: white press cycles the voices (2 -> 4 -> 1), shift + white press ECO: the
+ * 14 shift + blue press on a DRUM track opens DRUM ROLL over PLAY on its pattern and it draws
+ *    (also with TE's keyboard in synth mode), its playhead follows PLAY, shift + blue press closes it
+ * 16 TE's own finger patterns: not loaded before op1.db is open; then PLAY loads them once (TE's
+ *    getter), and a DRUM track on a pattern DRUM ROLL never edited plays TE's hit
+ * 15 white turn = sound, orange turn = pattern; SYNTH cost options: white press cycles the voices (2 -> 4 -> 1), shift + white press ECO: the
  *    engine renders every other block at twice the step; muted: nothing renders; PLAY's CPU
  *    numbers (total, per track) appear while playing and clear on stop
  * Returns failed-check bits (0 = pass). */
@@ -389,6 +391,32 @@ void log_knob(int knob, int16_t *diff) { (void)knob; (void)diff; knobs_to_te++; 
 void nop(void) {}
 static uint16_t pushed[16];
 static int npushed, wakes;
+/* op1.db (0 until the driver opens it) and TE's finger-sequencer getter (it loads okseq: here one
+ * TE drum pattern 0 with a hit on step 1, the rest empty) */
+static int db_open_now, fs_gets;
+static uint32_t db_dummy;
+
+void *db_op1(void) { return db_open_now ? &db_dummy : 0; }
+
+void *fs_get(void)
+{
+    int p, s, h;
+
+    fs_gets++;
+    for (p = 0; p < 14; p++) {
+        *(volatile int32_t *)(0x01ddb520 + 4 * p) = 16;                 /* drum lengths */
+        *(volatile int32_t *)(0x01dda6cc + 4 * p) = 16;                 /* synth lengths */
+        for (s = 0; s < 32; s++)
+            for (h = 0; h < 2; h++) {
+                *(volatile int32_t *)(0x01dda720 + p * 0x100 + s * 8 + h * 4) = -1;
+                *(volatile int32_t *)(0x01dd98cc + p * 0x100 + s * 8 + h * 4) = -1;
+            }
+    }
+    *(volatile int32_t *)(0x01dda720 + 3 * 0x100) = 53;                 /* TE's drum pattern 4: step 1, key 0 */
+    *(volatile uint8_t *)0x01ddb564 = 1;
+    return 0;
+}
+
 void key_push(uint16_t ev) { if (npushed < 16) pushed[npushed++] = ev; }
 void key_wake(void) { wakes++; }
 
@@ -685,7 +713,7 @@ int main(void)
         turn(0, 5);                                                 /* the ADD row */
         turn(2, 2);                                                 /* AUDIO -> SYNTH -> DRUM */
         press(TE_KEY_WHITE_PUSH);                                   /* track 3 = DRUM */
-        turn(2, 1);                                                 /* pattern 1 */
+        turn(3, 1);                                                 /* orange: pattern 1 */
         press(TE_KEY_GREEN_PUSH);                                   /* solo */
         mains(30);                                                  /* published; tracks reopened */
         CHECK(8, ntracks() == 3 && py_song.trk[2].type == PS_DRUM && py_song.cell[0][2] < PS_CHAINS
@@ -754,7 +782,7 @@ int main(void)
         turn(0, 5);                                                 /* the ADD row */
         turn(2, -1);                                                /* DRUM -> SYNTH */
         press(TE_KEY_WHITE_PUSH);                                   /* track 4 = SYNTH */
-        turn(2, 1);                                                 /* pattern 1 */
+        turn(3, 1);                                                 /* orange: pattern 1 */
         press(TE_KEY_GREEN_PUSH);                                   /* solo */
         mains(30);
         CHECK(9, ntracks() == 4 && py_song.trk[3].type == PS_SYNTH && py_song.cell[0][3] < PS_CHAINS
@@ -832,6 +860,18 @@ int main(void)
         press(TE_KEY_BLUE_PUSH);
         *TE_SHIFT_HELD = 0;
         CHECK(14, dr_open == 1 && dr_via_play == 1 && dr_cur == 0 && npushed == 0);
+        {                                                           /* drawn although TE's keyboard is in synth mode */
+            volatile uint16_t *scr = (uint16_t *)0x03090000;
+            int px, drawn = 0;
+
+            *(volatile int32_t *)0x01de4c40 = 0;                    /* TE_PLAYMODE: synth */
+            for (px = 0; px < 320 * 256; px++)
+                scr[px] = 0x1234;
+            hook_frame((uint16_t *)scr);
+            for (px = 0; px < 320 * 256; px++)
+                drawn += scr[px] != 0x1234;
+            CHECK(14, drawn > 320 * 100);                           /* DRUM ROLL's screen, not TE's tape */
+        }
         {
             uint8_t before = py_song.trk[r].level;
             int16_t d = 1;
@@ -868,6 +908,17 @@ int main(void)
         turn(0, t);                                                 /* rows: index order */
         press(TE_KEY_GREEN_PUSH);                                   /* solo: gains anew */
         CHECK(15, t < PS_TRACKS && py_song.trk[t].solo && py_mx.gain[t] && py_song.trk[t].voices == 0);
+        {                                                           /* white turn = sound, orange = pattern */
+            uint8_t snd = py_song.trk[t].sound, pat = py_song.chain[py_song.cell[0][t]][0].pat;
+
+            turn(2, 1);
+            CHECK(15, py_song.trk[t].sound != snd && py_song.chain[py_song.cell[0][t]][0].pat == pat);
+            turn(2, -1);
+            turn(3, 1);
+            CHECK(15, py_song.trk[t].sound == snd && py_song.chain[py_song.cell[0][t]][0].pat == pat + 1);
+            turn(3, -1);
+            CHECK(15, py_song.chain[py_song.cell[0][t]][0].pat == pat);
+        }
         press(TE_KEY_WHITE_PUSH);
         CHECK(15, py_song.trk[t].voices == 4);
         press(TE_KEY_WHITE_PUSH);
@@ -909,6 +960,43 @@ int main(void)
         hook_volume();
         CHECK(15, py_cpu_all == 0 && py_cpu_trk[t] == 0);
         press(TE_KEY_BLUE_PUSH);                                    /* unmute */
+    }
+
+    /* 16: TE's finger patterns: asked for once op1.db is open (the song has pattern tracks) */
+    {
+        int t, k;
+        uint32_t hits;
+
+        mains(10);
+        CHECK(16, fs_gets == 0);                                    /* op1.db not open yet */
+        *(void *volatile *)0x01bab718 = &db_dummy;                  /* TE's db semaphore exists */
+        db_open_now = 1;
+        mains(10);
+        CHECK(16, fs_gets == 1 && *(volatile uint8_t *)0x01ddb564 == 1);
+        for (t = 0; t < PS_TRACKS && py_song.trk[t].type != PS_DRUM; t++)
+            ;
+        for (k = 0; k < PS_TRACKS; k++)
+            py_song.trk[k].solo = py_song.trk[k].mute = 0;
+        dr_owned &= (uint16_t)~(1u << 3);                           /* pattern 4: TE's own */
+        turn(0, -9);
+        turn(0, t);
+        turn(3, 3);                                                 /* orange: pattern 1 -> 4 */
+        press(TE_KEY_GREEN_PUSH);                                   /* solo */
+        mains(30);                                                  /* the copies refresh */
+        CHECK(16, t < PS_TRACKS && py_song.chain[py_song.cell[0][t]][0].pat == 3);
+        hits = py_drum_hits;
+        press(TE_KEY_STOP);
+        py_main();
+        press(TE_KEY_STOP);
+        py_main();
+        press(TE_KEY_PLAY);
+        py_main();
+        for (b = 0; b < 10; b++)
+            hook_volume();
+        CHECK(16, py_drum_hits == hits + 1);
+        press(TE_KEY_STOP);
+        py_main();
+        dbg[6] = fs_gets;
     }
 
     CHECK(11, odd_io == 0);                                         /* TE's NAND driver: even buffers */

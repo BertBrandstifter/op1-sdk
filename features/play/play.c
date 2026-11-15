@@ -828,7 +828,7 @@ int py_knob(int knob, int16_t *diff)
             changed(0);
         }
         break;
-    case 2:                                     /* white: what it plays; ADD row: the type */
+    case 2:                                     /* white: the sound / kit or the file; ADD row: the type */
         if (t < 0) {
             int v = add_type + d;
 
@@ -836,17 +836,17 @@ int py_knob(int knob, int16_t *diff)
         } else if (py_song.trk[t].type == PS_AUDIO) {
             step_file(t, d);
         } else {
-            step_pattern(t, d);
+            step_sound(t, d);
         }
         break;
-    default:                                    /* orange: sound slot; shift: master */
+    default:                                    /* orange: the pattern; shift: master */
         if (*TE_SHIFT_HELD) {
             int v = master_db + d;
 
             master_db = (int8_t)(v < -60 ? -60 : v > 0 ? 0 : v);
             update_gains();
         } else if (t >= 0 && py_song.trk[t].type != PS_AUDIO) {
-            step_sound(t, d);
+            step_pattern(t, d);
         }
         break;
     }
@@ -947,16 +947,16 @@ static void draw_track(int y, int row, int k, int sel)
         int pat = pattern_of(k);
         const ps_head *h = py_pat_head(k);
 
-        x = gfx_text(36, y, "PAT ", C_GREY, 1);
-        if (pat >= 0 && pat < PS_PATTERNS)
-            gfx_dec(x, y, pat + 1, C_WHITE, 1);
-        else
-            gfx_text(x, y, "--", C_DIM, 1);
-        x = gfx_text(64, y, t->type == PS_DRUM ? "KIT " : "SND ", C_GREY, 1);
+        x = gfx_text(36, y, t->type == PS_DRUM ? "KIT " : "SND ", C_GREY, 1);   /* white */
         if (t->sound < 8)
             gfx_dec(x, y, t->sound + 1, C_WHITE, 1);
         else
             gfx_text(x, y, "CUR", C_WHITE, 1);
+        x = gfx_text(68, y, "PAT ", C_GREY, 1);                                  /* orange */
+        if (pat >= 0 && pat < PS_PATTERNS)
+            gfx_dec(x, y, pat + 1, C_WHITE, 1);
+        else
+            gfx_text(x, y, "--", C_DIM, 1);
         if (t->type == PS_SYNTH) {
             int slot = t->sound < 8 ? t->sound : (int)(*TE_SYNTH_SLOT & 7);
 
@@ -1031,5 +1031,5 @@ void py_frame(uint16_t *buf)
     else if (py_song.trk[t].type == PS_SYNTH)
         gfx_text(120, 140, "PRESS: VOICES  SHIFT: ECO  SHIFT+BLUE: EDIT", C_GREY, 1);
     else
-        gfx_text(120, 140, "WHITE: PATTERN  ORANGE: SOUND  SHIFT+BLUE: EDIT", C_GREY, 1);
+        gfx_text(120, 140, "WHITE: KIT  ORANGE: PATTERN  SHIFT+BLUE: EDIT", C_GREY, 1);
 }
