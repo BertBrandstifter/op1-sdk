@@ -85,10 +85,13 @@ TYPE) work too; as drum FX page 2 keeps the stored values (no drum page yet). SP
   followers (shift-based), per-block gain 2^(±2) from their ratio, ramped; texture = LCG noise
   shaped per kind (crackle + pops, hiss + flutter, droplets, brown noise in a wandering band-pass,
   narrow band + drifting whistle, rumble), breath LFO, input-follower duck.
-- **Cost (sim, worst page-2 settings):** cycles per 64-sample block (output gain included) PHASER 13.1k, FLANGER 9.2k, CHORUS 14.1k,
-  COMB 9.3k, RING MOD 7.4k, TREMOLO 7.0k, FOLD 10.2k, FUZZ 8.7k, BITCRUSH 9.8k, DJ 23.4k (24 dB + drive),
-  LADDER 15.7k, AUTO-WAH 19.2k, VOWEL 14.9k, TRANSIENT 13.8k, TEXTURE 14.1k → ~1–4 % CPU;
-  master stereo ~2×. RAM: 3 states × ~4.3 KB.
+- **Cost (sim, worst page-2 settings):** cycles per 64-sample block (output gain included), v0.8.1
+  (DJ's SVF inlined, `fxpack_core.c` built with unswitch-loops (a pragma: the per-block choices
+  leave the sample loops); bit for bit the same output, +4.5 KB code; measured 2026-11-17, core
+  only): PHASER 12.3k, FLANGER 8.8k, CHORUS 12.5k, COMB 8.9k, RING MOD 6.7k, TREMOLO 5.9k, FOLD 9.5k,
+  FUZZ 6.9k, BITCRUSH 8.1k, DJ 17.0k (24 dB + drive; was 22.2k), LADDER 15.1k, AUTO-WAH 11.0k,
+  VOWEL 14.1k, TRANSIENT 12.1k, TEXTURE 9.3k → ~1–3 % CPU; with TE's glue the worst 17.3k (was
+  23.4k), master stereo ~2×. RAM: 3 states × ~4.3 KB.
 
 ## Tests
 

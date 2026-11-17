@@ -77,6 +77,14 @@ Changed in the review (the first three bit for bit the same output):
 
 Not worth it (measured): -O3 (2-7 %), constant divisions per block.
 
+FX (2026-11-17, fxpack 0.8.1, bit for bit the same output): DJ's SVF inlined (it was a call per
+sample) and `fxpack_core.c` built with unswitch-loops (a file pragma: compose merges every
+feature's cflags into one set): DJ 22.2 K -> 17.0 K, TEXTURE 11.2 K -> 9.3 K, FUZZ 8.5 K -> 6.9 K,
+AUTO-WAH 13.0 K -> 11.0 K per 64-sample block. Measured and not worth it on the FX: -O3 (PHASER
++31 %), 16 x 16 multiplies forced in C (SHIMMER +9 %), SHIMMER's loop split into passes (+2.5 %),
+unswitch-loops on SHIMMER (+3 %). SHIMMER (36.7 K) and RESO (21.9 K) are left as they are; only
+hand-written assembly would cut SHIMMER's register-starved loop (~100 instructions per sample).
+
 ## Where TE spends flash and code space (static analysis, 2026-11-14)
 
 ### The update file (stock 13.04 MB, LZMA)

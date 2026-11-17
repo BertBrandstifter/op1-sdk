@@ -1,4 +1,8 @@
 /* FXPACK effect core, see fxpack_core.h and README.md. Tables: fp_tables.h (gen_tables.py). */
+/* this file only (compose merges every feature's cflags into one set): the per-block choices
+ * (stages, mode, drive on/off, ...) move out of the sample loops; bit for bit the same output,
+ * 3 .. 24 % fewer cycles per effect (sim, 2026-11-17) */
+#pragma GCC optimize ("unswitch-loops", "no-tree-loop-distribute-patterns")
 #include "fxpack_core.h"
 #include "fp_tables.h"
 
@@ -497,7 +501,9 @@ static void bitcrush(fp_state *s, int16_t *b, int m, const int16_t *p)
 }
 
 /* Simper trapezoidal SVF, coefficients Q14; returns low (hp = 0) or high (hp = 1) */
-static int32_t svf(int32_t *ic, int32_t v0, int32_t a1, int32_t a2, int32_t a3, int32_t k, int hp)
+/* inlined: as a call (per sample, twice at 24 dB) DJ cost 25 % more */
+static inline __attribute__((always_inline)) int32_t svf(int32_t *ic, int32_t v0, int32_t a1, int32_t a2, int32_t a3,
+                                                          int32_t k, int hp)
 {
     int32_t v3 = v0 - ic[1], v1 = (a1 * ic[0] + a2 * v3) >> 14, v2 = ic[1] + ((a2 * ic[0] + a3 * v3) >> 14);
 
