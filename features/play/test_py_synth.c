@@ -155,12 +155,19 @@ int main(void)
     test_decimator();
 
     memset(&s, 0, sizeof(s));
+    CHECK(py_syn_tail(&s));                                             /* nothing sounds */
     py_syn_note(&s, 81, 100, 100);                                      /* held 100 samples */
+    CHECK(!py_syn_tail(&s));                                            /* a note waits to start */
     blk(&s, 2, 5, 32767, bus, out);
     CHECK(renders == 1 && last_inst == 2 && last_v == 0 && last_flags == (PY_SYN_FRESH | PY_SYN_BLOCK)
           && last_inc == 2 * PY_INC_A4 && !releases && s.v[0].vel == (100 << 8));
+    CHECK(!py_syn_tail(&s));                                            /* held */
     blk(&s, 2, 5, 32767, bus, out);                                     /* 36 left: release now */
     CHECK(last_flags == PY_SYN_BLOCK && releases == 1 && rel_slot == 5 && py_syn_active(&s) == 1);
+    CHECK(py_syn_tail(&s));                                             /* only its release sounds */
+    py_syn_note(&s, 60, 100, 1000);
+    CHECK(!py_syn_tail(&s));                                            /* a tail and a new note */
+    s.v[1].on = 0;
     blk(&s, 2, 5, 32767, bus, out);
     blk(&s, 2, 5, 32767, bus, out);                                     /* the envelope is done */
     CHECK(!py_syn_active(&s));
@@ -238,7 +245,16 @@ int main(void)
     pk = blk(&s, 1, 0, 32767, bus, out);                                /* the second half: no render */
     CHECK(renders == 1 && env_calls == 2 && out[0] == 998 && out[63] == 998 && pk == 998 && s.phase == 0);
     blk(&s, 1, 0, 32767, bus, out);
-    CHECK(renders == 2);
+    CHECK(renders == 2 && !(last_flags & PY_SYN_BOOST));
+    /* ECO boost (the caller's budget): the engine told (BOOST) with HALF; not without ECO */
+    s.boost = 1;
+    blk(&s, 1, 0, 32767, bus, out);                                     /* the second half */
+    blk(&s, 1, 0, 32767, bus, out);
+    CHECK(renders == 3 && last_flags == (PY_SYN_BLOCK | PY_SYN_HALF | PY_SYN_BOOST));
+    s.eco = 0;
+    s.phase = 0;
+    blk(&s, 1, 0, 32767, bus, out);
+    CHECK(renders == 4 && last_flags == PY_SYN_BLOCK);
     /* ECO hold: 100 samples = release in the first envelope block of the second pair */
     memset(&s, 0, sizeof(s));
     s.eco = 1;

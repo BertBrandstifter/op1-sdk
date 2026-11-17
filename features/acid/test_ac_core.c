@@ -295,6 +295,135 @@ static void half_rate(void)
     }
 }
 
+/* one note at hz, held gate_ms then released, ms in all; normal (88.2 kHz) or ECO (44.1 kHz, boost) */
+static int note_at(const ac_params *q, int half, int boost, double hz, int acc, double gate_ms, double ms, double *buf)
+{
+    ac_params p = *q;
+    ac_voice v;
+    uint32_t inc[N];
+    int16_t out[N];
+    double sr = half ? 44100.0 : 88200.0;
+    int i, b, n = 0, blocks = (int)(ms * sr / 1000 / N + 0.5), gate = (int)(gate_ms * sr / 1000 / N + 0.5);
+
+    p.half = (uint8_t)half;
+    p.boost = (uint8_t)boost;
+    for (i = 0; i < N; i++)
+        inc[i] = (uint32_t)(hz / sr * 4294967296.0);
+    ac_init(&v);
+    ac_note(&v, 0, acc);
+    for (b = 0; b < blocks; b++) {
+        if (b == gate)
+            ac_release(&v);
+        ac_render(&v, out, N, inc, &p);
+        for (i = 0; i < N; i++)
+            buf[n++] = out[i];
+    }
+    return n;
+}
+
+/* energy of the harmonics of hz between lo and hi Hz in x[a..b) at rate sr, dB */
+static double band_db(const double *x, int a, int b, double hz, double sr, double lo, double hi)
+{
+    double e = 1e-9;
+    int h;
+
+    for (h = 1; h * hz < hi; h++) {
+        double w, c, s0, s1 = 0, s2 = 0, m;
+        int i;
+
+        if (h * hz < lo)
+            continue;
+        w = 2 * M_PI * hz * h / sr;
+        c = 2 * cos(w);
+        for (i = a; i < b; i++) {
+            s0 = x[i] + c * s1 - s2;
+            s2 = s1;
+            s1 = s0;
+        }
+        m = sqrt(s1 * s1 + s2 * s2 - c * s1 * s2) / (b - a);
+        e += m * m;
+    }
+    return 10 * log10(e);
+}
+
+/* ECO (v0.3.3): (1) cutoff sweeps past 10 kHz (env mod, accent) at 44.1 kHz: the level as at
+ * 88.2 kHz (before: the half-rate k past Q25 at 11.6 kHz wrapped negative, the filter latched at
+ * the rail, +11 .. +20 dB); with EH_BOOST the top of the sweep as bright as at 88.2 kHz too.
+ * (2) high resonance + accent (the 303's squelch): the harmonics at 1-2, 2-4, 4-8 kHz in the first
+ * 10 / 10-30 ms within 1 dB of 88.2 kHz (before: up to 4.6 dB off: one k per cutoff could not
+ * place the peak at both r = 0.9 and 1). (3) boost with the cutoff low: bit for bit as without. */
+static void eco_sweeps(void)
+{
+    static double full[88200 * 3 / 10 + N], half[44100 * 3 / 10 + N], hb[44100 * 3 / 10 + N];
+    static const int grid[][4] = {      /* res, envmod, cutoff, accent */
+        { 60, 255, 255, 1 }, { 150, 255, 255, 1 }, { 255, 255, 255, 0 }, { 255, 255, 200, 1 }, { 255, 200, 200, 0 },
+        { 255, 255, 160, 1 }, { 255, 160, 255, 0 }, { 200, 230, 230, 1 }, { 100, 200, 255, 1 }, { 255, 200, 110, 1 },
+    };
+    static const double typ[][2] = { { 110, 0 }, { 220, 0 }, { 110, 1 } };   /* hz, square */
+    char what[200];
+    unsigned c;
+    int i;
+
+    for (c = 0; c < sizeof(grid) / sizeof(grid[0]); c++) {
+        ac_params p = base();
+        double lf, lh, lb, hf, hh, hbb;
+
+        p.res = grid[c][0]; p.envmod = grid[c][1]; p.cutoff = grid[c][2]; p.accent = 63;
+        note_at(&p, 0, 0, 110, grid[c][3], 200, 300, full);
+        note_at(&p, 1, 0, 110, grid[c][3], 200, 300, half);
+        note_at(&p, 1, 1, 110, grid[c][3], 200, 300, hb);
+        lf = 20 * log10(rms(full, 0, 26460));
+        lh = 20 * log10(rms(half, 0, 13230));
+        lb = 20 * log10(rms(hb, 0, 13230));
+        hf = band_db(full, 0, 2646, 110, 88200, 5000, 12000);     /* the first 30 ms, 5-12 kHz */
+        hh = band_db(half, 0, 1323, 110, 44100, 5000, 12000);
+        hbb = band_db(hb, 0, 1323, 110, 44100, 5000, 12000);
+        snprintf(what, sizeof(what), "ECO sweep r%d e%d c%d acc%d: level %+.2f dB (boost %+.2f), 5-12 kHz first 30 ms "
+                 "%+.2f dB (boost %+.2f)", grid[c][0], grid[c][1], grid[c][2], grid[c][3], lh - lf, lb - lf, hh - hf, hbb - hf);
+        check(fabs(lh - lf) < 1.0 && fabs(lb - lf) < 1.0 && fabs(hbb - hf) < 1.5, what);
+        printf("  %s\n", what);
+    }
+    for (c = 0; c < sizeof(typ) / sizeof(typ[0]); c++) {
+        static const double bands[3][2] = { { 1000, 2000 }, { 2000, 4000 }, { 4000, 8000 } };
+        static const int win[2][2] = { { 0, 10 }, { 10, 30 } };
+        ac_params p = base();
+        double worst = 0;
+        int b, w, wb = 0, ww = 0;
+
+        p.res = 255; p.envmod = 200; p.cutoff = 110; p.accent = 63;
+        p.wave = typ[c][1] ? AC_SQUARE : AC_SAW;
+        note_at(&p, 0, 0, typ[c][0], 1, 200, 60, full);
+        note_at(&p, 1, 0, typ[c][0], 1, 200, 60, half);
+        for (w = 0; w < 2; w++)
+            for (b = 0; b < 3; b++) {
+                double d = band_db(half, win[w][0] * 441 / 10, win[w][1] * 441 / 10, typ[c][0], 44100, bands[b][0], bands[b][1])
+                           - band_db(full, win[w][0] * 882 / 10, win[w][1] * 882 / 10, typ[c][0], 88200, bands[b][0], bands[b][1]);
+
+                if (fabs(d) > fabs(worst)) {
+                    worst = d;
+                    wb = b;
+                    ww = w;
+                }
+            }
+        snprintf(what, sizeof(what), "ECO squelch %s %.0f Hz (r255 e200 c110 accent): worst band %+.2f dB (%.0f-%.0f Hz, %d-%d ms)",
+                 typ[c][1] ? "square" : "saw", typ[c][0], worst, bands[wb][0], bands[wb][1], win[ww][0], win[ww][1]);
+        check(fabs(worst) < 1.0, what);
+        printf("  %s\n", what);
+    }
+    {
+        ac_params p = base();
+        int same = 1;
+
+        p.res = 230; p.envmod = 120; p.cutoff = 80; p.accent = 63;   /* the sweep stays below 6 kHz */
+        note_at(&p, 1, 0, 110, 1, 200, 300, half);
+        note_at(&p, 1, 1, 110, 1, 200, 300, hb);
+        for (i = 0; i < 13230; i++)
+            same &= half[i] == hb[i];
+        check(same, "ECO boost with the cutoff below 6 kHz: the same samples as without");
+        printf("  ECO boost, cutoff below 6 kHz: %s\n", same ? "bit-identical" : "DIFFERENT");
+    }
+}
+
 int main(void)
 {
     ac_params p;
@@ -330,6 +459,7 @@ int main(void)
     }
     printf("half rate (ECO):\n");
     half_rate();
+    eco_sweeps();
     printf("sweeps (110 Hz saw):\n");
     sweep("CUTOFF", 0, 255, 18, s_cutoff, 110, 0, 50, 150, bright, +1, 3.0);
     sweep("RESONANCE", 0, 255, 12, s_res, 110, 0, 100, 200, m_reso, +1, 3.0);

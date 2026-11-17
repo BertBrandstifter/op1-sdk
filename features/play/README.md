@@ -3,14 +3,16 @@
 A second tape screen with one list of up to **8 tracks** in any order. Each track is one of:
 
 - **AUDIO**: a WAV / AIF file from the set folder, looped or played once;
-- **SYNTH**: NOTE ROLL patterns, played on its own instance of an SDK engine (ACID 3, MONO 3,
-  STATION 1, PARTY, PALETTE, MALLET, WHEEL, WARP, TRIO) with one of the 8 synth sounds;
+- **SYNTH**: NOTE ROLL patterns, played on an instance of an SDK engine (ACID 3, MONO 3,
+  STATION 1, PARTY, PALETTE, MALLET, WHEEL, WARP, TRIO) with one of the 8 synth sounds; up to 8
+  SYNTH tracks share 3 instances, so at most 3 sound at once (they take turns in the song);
 - **DRUM**: DRUM ROLL patterns, played from one of the 8 drum kits.
 
 Everything runs in sync from bar 1, with level, mute, solo, master and a bar counter. PLAY is the
 tape screen of an image that contains it: TE's own 4-track tape screen is not reachable there
-(until v0.5 a second press of tape switched to it; TE's tape data is never touched). A tracker song arranges it all: the
-**song view** (join) has one column per track, the **chain view** strings patterns together,
+(until v0.5 a second press of tape switched to it; TE's tape data is never touched). The tape
+key always shows the track list; join opens the song view from any screen (v0.8.2). A tracker song arranges it all: the
+**song view** (join, from any screen) has one column per track, the **chain view** strings patterns together,
 **live mode** (shift + rec in the song view) cues rows while it plays, and **rec** renders
 the song into an AIFF file that plays back as one cheap AUDIO track (below). **speech** shows a help
 page for the view you are in. The views use the SDK's 5x7 font (52 characters a line). Spec: `new_pattern_tape.md` in the SDK root (section 2.3).
@@ -89,7 +91,7 @@ CHAIN 02 ALSO ON TRACK 4        WHITE PRESS: OPEN  SHIFT: CLONE
 | shift + blue press | the pattern in NOTE ROLL / DRUM ROLL |
 | keys 1..8 | sound / kit 1..8 of the cursor column's track, at once |
 | shift + orange turn | master |
-| join / orange press | back to the track list |
+| tape / orange press | back to the track list (join stays: join always opens the song view) |
 
 **Gaps.** An empty cell is the column's end, not a pause. For a pause put `OF` cells in the
 column: each is one bar of silence, in SYNTH / DRUM columns (white turn, one step below `00`)
@@ -202,7 +204,12 @@ the tape come on top (cpuinfo's `load te`). Ways to keep it down, per SYNTH trac
   twice the pitch step = two blocks) and skips the decimator: half the engine's cost. ECO tracks
   take turns (instances 1 and 3 on one block, 2 on the next), so three ECO tracks cost at most two
   renders in any block. ACID 3 knows ECO and keeps its cutoffs, envelopes and slide (its own
-  44.1 kHz tables). Other engines run as if at 88.2 kHz: their own time constants (filter
+  44.1 kHz tables, resonance matched per resonance). **ECO boost** (v0.8.1): an ECO render
+  carries `EH_BOOST` while PLAY's work in the last block of the same parity, the boosts already
+  granted in this block and the track's own last render stay under 200k cycles (~35 % of a
+  block); ACID 3 then runs its filter at 88.2 kHz where its cutoff is above 6 kHz (the top of
+  an accent / env-mod sweep: up to twice the render's work in those blocks, nothing extra
+  otherwise). Other engines run as if at 88.2 kHz: their own time constants (filter
   envelopes, LFOs, glides) run at half speed and aliasing rises on bright sounds; TE's envelope
   keeps its timing.
 - Muted tracks (mute, level -60, another track soloed) render nothing.
@@ -211,12 +218,18 @@ decimator, and a new note renders before the voices already sounding (a mono eng
 ACID 3 then renders once in that block instead of twice: the CPU spikes that came with legato
 notes).
 
-Limits: 3 SYNTH tracks (engine instances), 2 DRUM tracks (CPU), 8 tracks in all. A synth sound
+Limits: up to 8 SYNTH tracks, at most 3 of them sounding at once (v0.8): the 3 engine
+instances are a pool. A track takes one for its first note and gives it back once its voices
+are silent, so SYNTH tracks that take turns in the song (rest cells, later columns, live cues)
+can use 8 different sounds. A note that finds no free instance takes one whose track only has
+a release tail left (the tail is cut), else it is dropped and the track shows `BUSY` for ~1 s
+(red `SYN` in the song view). Muted tracks take none. 2 DRUM tracks (CPU), 8 tracks in all. A synth sound
 whose engine is one of TE's own shows `NOT AN SDK ENGINE`: TE's engines exist once, as TE's six
 voices, and TE renders only the sound being played; running one a second time would need each
 engine's voice objects rebuilt (reverse engineering per engine). The SDK engines keep their state
 per voice slot (24: TE's 6 + 3 instances x 6) and per instance (MONO 3's voice order, ACID 3's mono
-voice, MALLET's motor, WHEEL's rotor, PALETTE's budget); keyboard displays stay TE's.
+voice, MALLET's motor, WHEEL's rotor, PALETTE's budget); keyboard displays stay TE's. That state
+passes on with the instance to the next track that takes it.
 
 Patterns are edited in NOTE ROLL / DRUM ROLL. A pattern you never edited there plays TE's own
 finger pattern: TE loads those only when its finger sequencer is first opened, so PLAY asks TE to
@@ -286,8 +299,8 @@ its databases or the disk image.
   while held, an octave up, the start delay, the level law, voice stealing, clamping.
 - `test_py_synth.c` (host): pitch increments, TE's halfband (DC, 1 kHz passes, 30 kHz gone), the
   voices against stand-ins for an engine and TE's envelope (flags, instance, release after the
-  hold, -60 dB release end, voice cap and stealing, new notes first, gain and peak, ECO (parity,
-  HALF flag), no engine; the 32-bit decimator bit for bit against the 64-bit sum).
+  hold, -60 dB release end, release tails (`py_syn_tail`), voice cap and stealing, new notes first, gain and peak, ECO (parity,
+  HALF flag, BOOST only with ECO), no engine; the 32-bit decimator bit for bit against the 64-bit sum).
 - `sim/load_play.py` (simulator, a measurement, not in test_all: about 10 minutes): three SYNTH tracks on
   ACID 3, a legato note every 1/16, ECO off and on: cycles per block (peak, average), renders per
   track. 2026-11-15: ECO off peak 201k (314k before new-notes-first), ECO on peak 129k (206k
@@ -297,12 +310,15 @@ its databases or the disk image.
   a DRUM track sample by sample, a SYNTH track on a test engine as instance 1 with TE's envelope
   stand-ins, SONG.BIN saved and read back, removing a track, no yaffs buffer at an odd address,
   TE's finger patterns loaded once op1.db is open (a DRUM track on TE's own pattern plays),
-  the SYNTH cost options (voices, ECO renders every other block, muted renders nothing) and the
+  the SYNTH cost options (voices, ECO renders every other block with HALF and, under light load,
+  BOOST, muted renders nothing) and the
   CPU numbers; the song view (cells, clone, clipboard, song rows, play from the cursor row), the
   chain view (rows, audition), AUDIO cells sample by sample over two circles; the help page
   (speech), live mode (a cued row at the chain's end, live keys, an AUDIO cue sample by sample),
   render (an AUDIO track into a stereo AIFF sample by sample, the master not in it, the file
   in the pool; cancel deletes it; a DRUM track into a mono file; keys held off meanwhile),
-  rest cells, sounds (keys 1-8, a chain row's SND, a key over it until the row ends).
+  rest cells, sounds (keys 1-8, a chain row's SND, a key over it until the row ends), five
+  SYNTH tracks on the 3 pooled instances (in turn: all play on instance 1; at once: three play,
+  two show BUSY).
 
 License: MIT.

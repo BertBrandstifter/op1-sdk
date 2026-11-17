@@ -171,6 +171,32 @@ column's type). The chain view names the track it was opened from and the other 
   (rows without a sound), and written as PSN3 at the next save.
 - Limits: TE's 8 synth slots / 8 kits as they are in memory. No preset loading from flash.
 
+#### Up to 8 SYNTH tracks, 3 at once (v0.8)
+
+SYNTH tracks no longer own an engine instance: the three instances (1..3, enginehost `EH_INST`)
+are a pool. A track takes one for its first note and gives it back once its voices are silent
+(release below -60 dB), so up to 8 SYNTH tracks can share a song when they take turns (rest
+cells, columns that start later, live cues): the song switches between up to 8 sounds and
+engines, not 8 in parallel.
+
+- At most 3 SYNTH tracks sound at once. A note that finds no free instance takes one whose
+  track only has release tails left (that tail is cut); if every instance holds a note, the new
+  note is dropped and the track shows `BUSY` (list, red `SYN` in the song view) for ~1 s.
+- A muted track (mute, level -60, another one soloed) takes no instance.
+- Memory and CPU stay as in v0.7 (no extra instances): the per-instance engine state (MONO 3's
+  voice order, ACID 3's mono voice, MALLET's motor, WHEEL's rotor) passes from one track to the
+  next, as it already did when a chain row changed a track's sound.
+- DRUM tracks stay at 2 (CPU).
+
+#### ECO boost (v0.8.1)
+
+ECO renders an engine at 44.1 kHz, every other block. Where that is audible (ACID 3: the top of
+an accent / env-mod sweep above 6 kHz, measured 2026-11-17) the engine may run at the full rate
+for those parts only: PLAY marks an ECO render with `EH_BOOST` while its CPU budget allows it
+(PLAY's work in the last block of the same parity + the boosts granted in this block + the
+track's own last render under 200k cycles, ~35 % of a block). Engines that ignore the flag are
+unchanged. No setting: ECO stays one switch per track.
+
 #### Rest cells (v0.6.1)
 
 An empty cell ends a column, so a pause inside a column needs a cell of its own: `OF` in a
@@ -194,7 +220,10 @@ one-pattern case (`SNG`).
 
 #### Getting there and back
 
-- **join** switches **track list <-> song view**. In the chain view, join goes to the song view.
+- **join** opens the **song view** (v0.8.2: from the list, from the chain view, from any other
+  screen; in the song view, plain or live, it stays). **tape** opens the **track list** (from
+  another screen and from the song / chain view). Before v0.8.2 join toggled list <-> song view
+  and the tape key brought back whichever view was open last.
 - **orange press** goes one level up: chain view -> song view -> track list. (On the list it stays
   "re-read the set folder".)
 - **white press on a chain cell** opens the chain view. **shift + blue press** opens the pattern in
@@ -220,7 +249,7 @@ CHAIN 02 ON TRACK 1     WHITE PRESS: OPEN  SHIFT: CLONE
 - The cell each column plays now is filled in the track's colour (no glyph: the 3x5 font has no
   `>`); the cursor is a white frame around one cell.
 - Footer: what the cursor cell is, and the keys that apply to it. Without tracks:
-  `NO TRACKS: ADD THEM ON THE LIST (JOIN)`.
+  `NO TRACKS: ADD THEM ON THE LIST - TAPE`.
 
 | Control | Song view |
 |---|---|
@@ -243,7 +272,7 @@ CHAIN 02 ON TRACK 1     WHITE PRESS: OPEN  SHIFT: CLONE
 | stop / back / forward | as on the list |
 | shift + orange turn | master |
 | shift + blue press | the pattern in NOTE ROLL / DRUM ROLL |
-| join / orange press | back to the track list |
+| tape / orange press | back to the track list |
 
 #### Chain view
 
@@ -336,7 +365,8 @@ into a file, not in real time, at full quality; the file is then one AUDIO track
 
 Decision 3 of section 0 is withdrawn for this image: PLAY is the only tape screen. Tape again and
 shift + tape do nothing on PLAY (TE's tape screen and its erase screen are not reachable); TE's
-tape data is still never touched.
+tape data is still never touched. v0.8.2: the tape key always shows PLAY's track list; join on
+another screen injects a tape key press (TE_KEY_PUSH) and PLAY opens in the song view.
 
 #### Views: font and help (v0.5)
 

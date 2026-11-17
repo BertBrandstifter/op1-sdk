@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "enginehost",
   "title": "Engine host (SDK synth engines on drwave)",
-  "version": "1.6",
+  "version": "1.7",
   "status": "device-verified",
   "status_note": "v1.4: extended tags 8..13 (slots 5-7 tag 7, slot 8 tag - 7) for ACID 3 and PALETTE (sim-verified); v1.3: dot-matrix displays eh_dots.c, antialiased shapes eh_aa.c (sim-verified); v1.2 device-verified",
   "firmware": {

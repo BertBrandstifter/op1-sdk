@@ -41,8 +41,7 @@ void py_pat_hd(int on);                         /* main, not playing: SYNTH trac
 uint32_t py_pat_song_frames(int row);           /* the longest pattern column played once from that row */
 void py_pat_idle(void);                         /* audio interrupt, not playing */
 void py_pat_dirty(void);                        /* the song was edited */
-void py_pat_tracks_changed(void);               /* track types changed: engine instances anew */
-int py_pat_inst(int t);                         /* SYNTH track t's engine instance (0 = none) */
+int py_pat_starved(int t);                      /* a note of SYNTH track t found no engine instance (~1 s) */
 int py_pat_any(void);                           /* the song plays any P track */
 const struct ps_head *py_pat_head(int t);
 

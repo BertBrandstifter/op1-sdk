@@ -14,7 +14,9 @@
  * the engine's own time constants run at half speed, TE's envelope keeps its speed: two envelope
  * blocks, every other sample; an engine that knows PY_SYN_HALF, as ACID 3, keeps its own times too).
  * ECO tracks render on alternate blocks (`par`: the caller spreads its tracks over both), so their
- * cost does not pile up in one block. Notes start at the next block (ECO: the next block of the
+ * cost does not pile up in one block. With `boost` (the caller's CPU budget) the render carries
+ * PY_SYN_BOOST: an engine that knows it (ACID 3) may run at the full rate where its sound needs
+ * it. Notes start at the next block (ECO: the next block of the
  * track's parity), new notes render first (a mono engine's new note then needs one render, not
  * two); the note-off comes after the note's hold, then the envelope's release. TE's synth FX and LFO are not
  * applied (one instance each, TE's). */
@@ -27,6 +29,7 @@
 #define PY_SYN_FRESH    0x01                    /* = EH_FRESH: first block of a new note */
 #define PY_SYN_BLOCK    0x02                    /* = EH_BLOCK: first voice of the instance */
 #define PY_SYN_HALF     0x04                    /* = EH_HALF: ECO, the samples are at 44.1 kHz */
+#define PY_SYN_BOOST    0x08                    /* = EH_BOOST: ECO, the engine may do twice the work */
 #define PY_INC_A4       21426141u               /* phase increment of MIDI 69 at 88.2 kHz */
 #define PY_SYN_CAP_DEFAULT 2                    /* voices of a track whose setting is 0 */
 #define PY_ENV_FLOOR    33                      /* -60 dB of full scale: a released voice ends */
@@ -55,6 +58,7 @@ typedef struct py_syn {
     uint8_t eco;                                /* 1: the engine at 44.1 kHz */
     uint8_t phase;                              /* ECO: 1 = the second half of eco_buf is due */
     uint8_t par;                                /* ECO: renders on blocks of this parity (0 / 1) */
+    uint8_t boost;                              /* ECO: the caller's CPU budget allows PY_SYN_BOOST */
     int32_t eco_buf[128];                       /* ECO: two output blocks, gain applied */
 } py_syn;
 
@@ -73,6 +77,9 @@ uint32_t py_syn_block(py_syn *s, const py_syn_api *api, int inst, const int16_t 
                       uint32_t blk);
 
 int py_syn_active(const py_syn *s);
+
+/* nothing sounds but release tails (or nothing at all): no voice holds a note */
+int py_syn_tail(const py_syn *s);
 
 /* TE's halfband: 128 samples in (88.2 kHz) -> 64 out (44.1 kHz), hist = 62 samples of state */
 void py_syn_decimate(int32_t *hist, const int32_t *in, int32_t *out);

@@ -46,6 +46,8 @@ typedef struct ac_params {
     uint8_t muff;               /* AC_MUFF_* */
     uint8_t level;              /* 0..15: output, 10 = unity */
     uint8_t half;               /* 1: output at 44.1 kHz (PLAY's ECO), inc per 44.1 kHz sample */
+    uint8_t boost;              /* half: the filter may run at 88.2 kHz while the cutoff is high
+                                 * (PLAY's EH_BOOST: its CPU budget allows it this block) */
 } ac_params;
 
 typedef struct ac_voice {
@@ -66,6 +68,7 @@ typedef struct ac_voice {
     uint8_t gate;               /* the note's key is down (or no key-up has come) */
     uint8_t accent;             /* the note is accented */
     uint8_t snap;               /* the next block starts at the note's pitch */
+    uint8_t fast;               /* boost: the last control update ran at 88.2 kHz */
 } ac_voice;
 
 void ac_init(ac_voice *v);

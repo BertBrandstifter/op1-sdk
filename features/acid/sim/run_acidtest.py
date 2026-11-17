@@ -46,7 +46,7 @@ def main():
          "_compose_init": syms["_compose_init"],
          "_engine_name": syms["_compose_engine_name"], "_ac_page": syms["_ac_page"], "_ac_bank": syms["_ac_bank"],
          "_ac_title_on": syms["_ac_title_on"], "_ac_note_shown": syms["_ac_note_shown"], "_ac_tick": syms["_ac_tick"],
-         "_ac_param": syms["_ac_param"], "_ac_param_set": syms["_ac_param_set"], "_ac_bank_knobs": syms["_ac_bank_knobs"],
+         "_ac_param": syms["_ac_param"], "_ac_render": syms["_ac_render"], "_ac_init": syms["_ac_init"], "_ac_note": syms["_ac_note"], "_ac_param_set": syms["_ac_param_set"], "_ac_bank_knobs": syms["_ac_bank_knobs"],
          "_kb_note_on": syms["_compose_kb_note_on"], "_kb_note_off": syms["_compose_kb_note_off"],
          "_hook_key": syms["__sdk_hook_019b6c74"], "_hook_frame": syms["__sdk_hook_019ab8b2"], "_FB": 0x03000000, "_hook_knob": syms["__sdk_hook_019b6c0c"]},
     )
@@ -63,7 +63,10 @@ def main():
     r = run_model(elf_run, segs, d["_start"], timeout=300)
     vals = run_gdb(elf_run, [f"*(unsigned*){d[s]:#x}" for s in ("_cycles_plain", "_cycles_heavy")]
                    + [f"/x *(unsigned*){d['_fails']:#x}"]
-                   + [f"((int*){d['_bank_peak']:#x})[{i}]" for i in range(16)] + [f"((int*){d['_bank_rms']:#x})[{i}]" for i in range(16)] + [f"((int*){d['_acc_pk']:#x})[{i}]" for i in range(4)], [("acid_screen", 0x03000000), ("acid_screen_p2", 0x03040000)], timeout=300)
+                   + [f"((int*){d['_bank_peak']:#x})[{i}]" for i in range(16)] + [f"((int*){d['_bank_rms']:#x})[{i}]" for i in range(16)] + [f"((int*){d['_acc_pk']:#x})[{i}]" for i in range(4)] + [f"((unsigned*){d['_cycles_eco']:#x})[{i}]" for i in range(4)], [("acid_screen", 0x03000000), ("acid_screen_p2", 0x03040000)], timeout=300)
+    if len(vals) >= 43:
+        print(f"ECO cost per 128 samples (cutoff low): normal {vals[39]}, ECO {vals[40]}, ECO + boost {vals[41]}; "
+              f"ECO + boost, cutoff above 6 kHz: {vals[42]}")
     if len(vals) >= 35:
         print('accent peaks:', vals[35:39])
         print("bank peak / rms dBFS:", ", ".join(f"{i + 1}: {int(vals[3 + i])} / {20 * __import__('math').log10(max(1, 16 * int(vals[19 + i]) ** 0.5) / 32768):.1f}" for i in range(16)))

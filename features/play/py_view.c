@@ -61,10 +61,28 @@ static int cursor_track(int *list, int *n)
     return list[s_col];
 }
 
+static void leave_chain(void);
+
+/* join (the list, the chain view, another screen): the song view, as it was (live mode stays) */
 void py_v_enter(void)
 {
+    if (py_view == PY_V_CHAIN)
+        leave_chain();                          /* (ends an audition) */
     del_armed = 0;
+    rd_ask = 0;
+    help = 0;
     py_view = PY_V_SONG;
+}
+
+/* the tape key: the track list */
+void py_v_list(void)
+{
+    if (py_view == PY_V_CHAIN)
+        leave_chain();
+    del_armed = 0;
+    rd_ask = 0;
+    help = 0;
+    py_view = PY_V_LIST;
 }
 
 static void toggle_mute(int t)
@@ -168,8 +186,9 @@ static void song_key(int key, int shift)
     if (live && live_key(key, shift, list, n, t))
         return;
     switch (key) {
-    case TE_KEY_JOIN:
-    case TE_KEY_ORANGE_PUSH:
+    case TE_KEY_JOIN:                           /* join always means the song view: stay */
+        break;
+    case TE_KEY_ORANGE_PUSH:                    /* (and the tape key, play.c) */
         py_view = PY_V_LIST;
         break;
     case TE_KEY_PLAY:                           /* from the cursor row, bar 1; playing: pause */
@@ -557,7 +576,7 @@ static void song_frame(void)
 
         x = gfx_dec7(COL_X(i), 22, i + 1, tr->mute ? C_DIM : C_WHITE);
         gfx_text7(x, 22, tr->type == PS_AUDIO ? "AUD" : tr->type == PS_SYNTH ? "SYN" : "DRM",
-                  tr->mute ? C_DIM : colour(tr->type));
+                  tr->mute ? C_DIM : py_pat_starved(list[i]) ? C_RED : colour(tr->type));   /* red: BUSY */
         if (tr->solo)
             gfx_rect(COL_X(i), 30, 24, 1, C_AMBER);
     }
@@ -611,7 +630,7 @@ static void song_frame(void)
         uint8_t v = t >= 0 ? py_song.cell[row][t] : PS_EMPTY;
 
         if (t < 0) {
-            gfx_text7(4, PY_FOOT_Y1, "NO TRACKS: ADD THEM ON THE LIST - JOIN", C_GREY);
+            gfx_text7(4, PY_FOOT_Y1, "NO TRACKS: ADD THEM ON THE LIST - TAPE", C_GREY);
         } else if (py_song.trk[t].type == PS_AUDIO) {
             gfx_text7(4, PY_FOOT_Y1, v == PS_ON ? "ON: THE FILE ONCE" : v == PS_OF ? "OF: ONE BAR SILENT"
                       : py_song_col_used(&py_song, t) ? "THE COLUMN ENDS HERE" : "NO CELLS: THE TRACK PLAYS FREE",
@@ -774,7 +793,7 @@ static const help_line help_page[HELP_PAGES][HELP_LINES] = {
         { "REC, REC", "RENDER THE SONG TO AN AIF FILE" },
         { "SHIFT+REC", "LIVE MODE ON / OFF" },
         { "KEYS 1-8", "SOUND / KIT 1-8 OF THE CURSOR TRACK" },
-        { "JOIN, ORANGE PR", "BACK TO THE TRACK LIST" },
+        { "TAPE, ORANGE PR", "BACK TO THE TRACK LIST" },
     },
     {   /* the chain view */
         { 0, "16 ROWS: PATTERN, TRANSPOSE, SOUND - EMPTY ROW = END" },

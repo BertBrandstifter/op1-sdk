@@ -22,7 +22,9 @@ Engines with an extended tag build slots 5-8 with `eh_p2s(tag, slot - 4, v)`.
 
 - `eh_register(tag, render)` from the engine's `init`; render(vi, out, knobs, inc, flags) with
   `EH_FRESH` (first block of a new note) and `EH_BLOCK` (first voice of this audio block: shared
-  per-block state such as WHEEL's rotor).
+  per-block state such as WHEEL's rotor); from PLAY's ECO tracks `EH_HALF` (the 128 samples are
+  at 44.1 kHz) and `EH_BOOST` (PLAY's CPU budget allows twice the work this render: ACID 3 runs
+  its filter at 88.2 kHz while the cutoff is above 6 kHz; engines that ignore it are unchanged).
 - `eh_fx_knob` / `eh_fx_draw` (`eh_ui.c`): the "page 3" every engine shows: the sound's FX knobs
   with their names (TE's OP-1 guide names; SDK effects by their own), kept inside TE's range for
   the FX type, saved through TE's FX save.

@@ -90,6 +90,16 @@ int py_syn_active(const py_syn *s)
     return n;
 }
 
+int py_syn_tail(const py_syn *s)
+{
+    int i;
+
+    for (i = 0; i < PY_SPOLY; i++)
+        if (s->v[i].on && !s->v[i].released)
+            return 0;
+    return 1;
+}
+
 static void start_voice(py_sv *v, const py_syn_api *api)
 {
     int i;
@@ -169,7 +179,7 @@ uint32_t py_syn_block(py_syn *s, const py_syn_api *api, int inst, const int16_t 
         if (first)
             flags |= PY_SYN_BLOCK;
         if (s->eco)
-            flags |= PY_SYN_HALF;
+            flags |= PY_SYN_HALF | (s->boost ? PY_SYN_BOOST : 0);
         for (i = 0; i < 128; i++)
             inc[i] = s->eco ? v->inc << 1 : v->inc;
         if (!api->render(inst, k, eng, knobs, inc, flags)) {

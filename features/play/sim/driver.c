@@ -31,7 +31,8 @@
  * 17 the list's knobs hold at the ends; an empty column given its pattern while playing joins
  *    at the next bar
  * 15 white turn = sound, orange turn = pattern; SYNTH cost options: white press cycles the voices (2 -> 4 -> 1), shift + white press ECO: the
- *    engine renders every other block at twice the step; muted: nothing renders; PLAY's CPU
+ *    engine renders every other block at twice the step, with EH_HALF and (light load) EH_BOOST
+ *    on every render, neither after ECO off; muted: nothing renders; PLAY's CPU
  *    numbers (total, per track) appear while playing and clear on stop
  * 21 song view (join): white press on an empty cell = a new chain, white turn its number, shift +
  *    white press clones, cut / insert move a cell (a chain is not pasted into an AUDIO column),
@@ -57,11 +58,19 @@
  * 25 a rest cell (OF, white turn below 00) in a DRUM column: one silent bar, then the column goes on
  * 26 keys 1-8 = the cursor track's sound / kit (list, song view); a chain row's SND column is the
  *    track's slot while the row plays; a key pressed meanwhile wins until the row ends
+ * 27 up to 8 SYNTH tracks share the 3 engine instances: five SYNTH tracks added on the ADD row;
+ *    taking turns (one note each, one bar after the other) every one plays, all on instance 1
+ *    (each gives it back once silent); all five at once: three play (instances 1-3), the other
+ *    two drop their note and show BUSY
+ * 28 views (v0.8.2): join stays in the song view (plain and live), tape on PLAY: the list; tape
+ *    from another screen: the list (not the view left there); join on another screen: taken, a
+ *    tape press injected (TE_KEY_PUSH + wake), PLAY opens in the song view
  * Returns failed-check bits (0 = pass). */
 #include <stdarg.h>
 #include <op1/te246.h>
 #include "../py_core.h"
 #include "../py_song.h"
+#include "../../enginehost/eh_host.h"
 
 extern void hook_key(int key, int down);
 extern void hook_knob(int knob, int16_t *diff);
@@ -75,6 +84,9 @@ extern char FB[], FB2[], FB3[], FB4[], FB5[], FB6[], FB7[];
 extern int py_help_on(void), py_pat_cued(int t), py_rd_busy(void);
 extern char FB8[];
 extern int py_pat_slot(int t);
+extern int py_pat_starved(int t);
+extern volatile uint32_t py_boosts;
+extern void py_update_gains(void), py_pat_set_start(int row);
 extern volatile uint8_t py_view;                /* 0 list, 1 song view, 2 chain view */
 extern const ps_head *py_pat_head(int t);
 extern int py_pat_start_row(void), py_pat_audition_track(void);
@@ -511,7 +523,8 @@ static void clear_master(void)
 
 /* ------------------------------------------------------------------ a test engine + TE's envelope */
 
-static int eng_vi = -1, eng_calls;
+static int eng_vi = -1, eng_calls, eng_insts;   /* eng_insts: bit i = instance i rendered */
+static int eng_flags;                           /* the render flags seen (OR) */
 static uint32_t eng_inc;
 static int env_starts, env_releases, env_slot = -1;
 
@@ -522,6 +535,8 @@ static void test_engine(int vi, int16_t *out, const int16_t *knobs, const uint32
     (void)knobs;
     (void)flags;
     eng_vi = vi;
+    eng_insts |= 1 << (vi / 6);
+    eng_flags |= flags;
     eng_inc = inc[0];
     eng_calls++;
     for (i = 0; i < 128; i++)
@@ -947,6 +962,7 @@ int main(void)
     /* 15: SYNTH cost options */
     {
         int t, k, calls;
+        uint32_t boosts;
 
         for (t = 0; t < PS_TRACKS && py_song.trk[t].type != PS_SYNTH; t++)
             ;
@@ -983,16 +999,22 @@ int main(void)
         press(TE_KEY_PLAY);
         py_main();
         calls = eng_calls;
+        boosts = py_boosts;
+        eng_flags = 0;
         for (b = 0; b < 40; b++)                                    /* inside the note (1 step) */
             hook_volume();
         CHECK(15, eng_calls - calls == 20 && eng_inc == 2 * 21426141u);
+        CHECK(15, (eng_flags & (EH_HALF | EH_BOOST)) == (EH_HALF | EH_BOOST) && py_boosts - boosts == 20);
         *TE_SHIFT_HELD = 1;
         press(TE_KEY_WHITE_PUSH);                                   /* ECO off */
         *TE_SHIFT_HELD = 0;
         calls = eng_calls;
+        boosts = py_boosts;
+        eng_flags = 0;
         for (b = 0; b < 20; b++)
             hook_volume();
         CHECK(15, eng_calls - calls == 20 && eng_inc == 21426141u);
+        CHECK(15, !(eng_flags & (EH_HALF | EH_BOOST)) && py_boosts == boosts);
         press(TE_KEY_BLUE_PUSH);                                    /* mute (solo wins: unsolo too) */
         press(TE_KEY_GREEN_PUSH);
         calls = eng_calls;
@@ -1100,6 +1122,30 @@ int main(void)
         py_main();
         press(TE_KEY_JOIN);
         CHECK(21, py_view == 1 && py_song.trk[2].type == PS_DRUM && py_song.trk[0].type == PS_AUDIO);
+        /* join stays in the song view (plain and live), tape: the list; on another screen tape
+         * shows the list (not the view left), join injects a tape press and opens the song view */
+        press(TE_KEY_JOIN);
+        CHECK(28, py_view == 1);
+        shift_press(TE_KEY_REC);                                    /* live */
+        press(TE_KEY_JOIN);
+        CHECK(28, py_view == 1);
+        shift_press(TE_KEY_REC);
+        press(TE_KEY_TAPE);
+        CHECK(28, py_view == 0);
+        press(TE_KEY_JOIN);
+        *TE_EDIT_MODE = 0;                                          /* the synth screen */
+        press(TE_KEY_TAPE);                                         /* TE opens the tape screen: PLAY's list */
+        *TE_EDIT_MODE = TE_EDIT_MODE_TAPE;
+        CHECK(28, py_view == 0);
+        *TE_EDIT_MODE = 0;
+        npushed = 0;
+        wakes = 0;
+        press(TE_KEY_JOIN);                                         /* taken: a tape press injected */
+        CHECK(28, npushed == 2 && pushed[0] == (TE_KEY_TAPE | 1 << 8) && pushed[1] == TE_KEY_TAPE && wakes == 1);
+        press(TE_KEY_TAPE);                                         /* (TE plays the injected press) */
+        *TE_EDIT_MODE = TE_EDIT_MODE_TAPE;
+        CHECK(28, py_view == 1);
+        npushed = 0;
         turn(1, 2);                                                 /* column 3: the DRUM track */
         dc = py_song.cell[0][2];
         turn(0, 1);                                                 /* row 01 */
@@ -1136,7 +1182,7 @@ int main(void)
         press(TE_KEY_CUT);                                          /* deleted */
         *TE_SHIFT_HELD = 0;
         CHECK(21, py_song.cell[0][2] == cl && py_song.cell[2][2] == nc && py_song.cell[3][2] == PS_EMPTY);
-        press(TE_KEY_JOIN);                                         /* the list: rows 00 + 02: no quick edit */
+        press(TE_KEY_TAPE);                                         /* the list: rows 00 + 02: no quick edit */
         pat = py_song.chain[cl][0].pat;
         turn(0, -9);
         turn(0, 2);
@@ -1270,7 +1316,7 @@ int main(void)
             press(TE_KEY_GREEN_PUSH);
             py_main();
             CHECK(20, py_song.cell[0][0] == PS_EMPTY && py_song.cell[1][0] == PS_EMPTY && !py_mx.set->t[0].song);
-            press(TE_KEY_JOIN);
+            press(TE_KEY_TAPE);
             CHECK(20, py_view == 0);
         }
 
@@ -1410,7 +1456,7 @@ int main(void)
             press(TE_KEY_GREEN_PUSH);
             py_main();
             CHECK(23, !py_song_used0());
-            press(TE_KEY_JOIN);
+            press(TE_KEY_TAPE);
             CHECK(23, py_view == 0);
         }
 
@@ -1472,7 +1518,7 @@ int main(void)
             if (fd >= 0)
                 file_close(fd);
             CHECK(24, !bad && py_mx.gain[1]);
-            press(TE_KEY_JOIN);                                     /* the list: the file is in the pool */
+            press(TE_KEY_TAPE);                                     /* the list: the file is in the pool */
             turn(0, -9);
             for (n = 0; n < 4 && !streq0(py_song.trk[0].file, "REND01.AIF"); n++)
                 turn(2, 1);
@@ -1533,7 +1579,7 @@ int main(void)
             *TE_SHIFT_HELD = 1;
             turn(3, 3);
             *TE_SHIFT_HELD = 0;
-            press(TE_KEY_JOIN);
+            press(TE_KEY_TAPE);
             CHECK(24, py_view == 0);
         }
 
@@ -1582,7 +1628,7 @@ int main(void)
             py_main();
             py_song.cell[0][2] = c0;
             py_song.cell[1][2] = c1;
-            press(TE_KEY_JOIN);
+            press(TE_KEY_TAPE);
             CHECK(25, py_view == 0);
         }
 
@@ -1640,9 +1686,102 @@ int main(void)
             CHECK(26, py_pat_slot(2) == 6);                         /* stopped at bar 1: row 00's */
             py_song.chain[ch][0] = keep;
             py_song.trk[2].sound = 2;
-            press(TE_KEY_JOIN);
+            press(TE_KEY_TAPE);
             CHECK(26, py_view == 0);
         }
+    }
+
+    /* 27: five SYNTH tracks on three engine instances */
+    {
+        uint8_t *p = nr_pat;                                        /* NOTE ROLL pattern 0: A4, one step */
+        int t, r, starts, inst_seen = 0, starved = 0;
+
+        press(TE_KEY_STOP);
+        py_main();
+        press(TE_KEY_STOP);
+        py_main();
+        for (i = 0; i < 1796; i++)
+            p[i] = 0;
+        p[0] = 16;
+        for (i = 0; i < 64; i++) {
+            uint8_t *sp = p + 4 + i * 28;
+            int n;
+
+            for (n = 0; n < 6; n++)
+                sp[n * 4] = 0xff;
+            sp[25] = 100;
+            sp[26] = 1;
+        }
+        p[4] = 69; p[5] = 100; p[6] = 4;
+        nr_owned = 1;
+        mains(30);                                                  /* the copy published */
+        *(volatile int32_t *)0xff8016d4 = 1;                        /* TE's synth slot 2: the test engine */
+        for (t = 0; t < PS_TRACKS; t++)
+            py_song.trk[t].type = PS_NONE;
+        py_main();
+        turn(0, -9);
+        turn(2, -9);
+        turn(2, 1);                                                 /* AUDIO -> SYNTH */
+        for (t = 0; t < 5; t++) {
+            turn(0, 9);                                             /* the ADD row */
+            press(TE_KEY_WHITE_PUSH);                               /* SYNTH stays the ADD row's type */
+            mains(2);
+        }
+        CHECK(27, ntracks() == 5);
+        for (t = 0; t < 5; t++) {
+            ps_track *k = &py_song.trk[t];
+
+            CHECK(27, k->type == PS_SYNTH);
+            k->mute = k->solo = 0;
+            k->voices = k->eco = 0;
+            k->sound = 1;
+            for (r = 0; r < PS_ROWS; r++)                           /* one bar each, in turn */
+                py_song.cell[r][t] = r < 5 ? (r == t ? 0x10 : PS_REST) : PS_EMPTY;
+        }
+        for (r = 0; r < PS_CROWS; r++) {
+            py_song.chain[0x10][r].pat = r ? PS_EMPTY : 0;
+            py_song.chain[0x10][r].tsp = 0;
+            py_song.chain[0x10][r].snd = PS_EMPTY;
+        }
+        py_pat_set_start(0);
+        py_update_gains();
+        starts = env_starts;
+        eng_insts = 0;
+        press(TE_KEY_PLAY);
+        py_main();
+        for (b = 0; b < 5 * 1378 - 100; b++) {                      /* five bars (120 bpm), not the 6th's note */
+            hook_volume();
+            for (t = 0; t < 5; t++)
+                starved |= py_pat_starved(t) << t;
+            if (!(b % 4))
+                py_main();
+        }
+        inst_seen = eng_insts;
+        CHECK(27, env_starts - starts == 5 && inst_seen == 1 << 1 && starved == 0);
+        dbg[6] = env_starts - starts; dbg[7] = inst_seen | starved << 8;
+        press(TE_KEY_STOP);
+        py_main();
+        press(TE_KEY_STOP);
+        py_main();
+        for (t = 0; t < 5; t++)                                     /* all five at once */
+            for (r = 0; r < 5; r++)
+                py_song.cell[r][t] = r ? PS_EMPTY : 0x10;
+        starts = env_starts;
+        eng_insts = starved = 0;
+        press(TE_KEY_PLAY);
+        py_main();
+        for (b = 0; b < 200; b++) {
+            hook_volume();
+            if (!(b % 4))
+                py_main();
+        }
+        for (t = 0; t < 5; t++)
+            starved |= py_pat_starved(t) << t;
+        inst_seen = eng_insts;
+        CHECK(27, env_starts - starts == 3 && inst_seen == (7 << 1) && starved == (3 << 3));
+        dbg[4] = env_starts - starts; dbg[5] = inst_seen | starved << 8;
+        press(TE_KEY_STOP);
+        py_main();
     }
 
     CHECK(11, odd_io == 0);                                         /* TE's NAND driver: even buffers */

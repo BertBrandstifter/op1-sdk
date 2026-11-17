@@ -2,7 +2,7 @@
  * py_core.c, py_song.c, py_drum.c, py_synth.c (host-tested) and py_pattern.c.
  *
  *   tracks     one list of up to 8 tracks, each AUDIO (a WAV / AIF of the set folder, looped or
- *              once), SYNTH (NOTE ROLL patterns on its own engine instance and a sound slot) or
+ *              once), SYNTH (NOTE ROLL patterns on a pooled engine instance and a sound slot) or
  *              DRUM (DRUM ROLL patterns on a kit); added from the "+ ADD" row, removed with cut
  *              (twice). The list, the choices, levels, mutes and solos live in SONG.BIN.
  *   set folder /yaffs2/user/play_a|b: the audio files + SET.TXT (tempo), imported from disk mode's
@@ -15,9 +15,11 @@
  *              TE's master EQ, master FX, the mixer's drive and the volume act on PLAY too.
  *   views      the track list (here), the song view and the chain view (py_view.c): join / orange
  *              press between them; the tracker song itself is py_song.c.
- *   screen     the tape key opens PLAY (TE's tape: tape again); PLAY is drawn over TE's frame and
- *              takes every tape-mode key that would move, record or edit TE's tape; playback keeps
- *              running on other screens.
+ *   screen     the tape key opens PLAY on its track list (also from the song / chain view); join
+ *              opens the song view, from any screen (another screen: PLAY injects a tape key
+ *              press, TE switches to the tape screen, PLAY opens there in the song view). PLAY is
+ *              drawn over TE's frame and takes every tape-mode key that would move, record or edit
+ *              TE's tape; playback keeps running on other screens.
  * Threads: KeyHandler (keys, knobs) edits the song's track settings and sets requests; file I/O
  * and allocation in the main loop; mixing in the audio interrupt; drawing in the GUI thread. */
 #include <op1/te246.h>
@@ -36,7 +38,6 @@
 #define PY_BUDGET       (48u << 10)             /* bytes read per main-loop pass at most */
 #define PREFILL         (2 * CHUNK_FRAMES)      /* frames per track read before play starts */
 #define MAXFILES        16
-#define MAX_SYNTH       3                       /* engine instances */
 #define MAX_DRUM        2                       /* CPU */
 #define TE_BUS_L        ((int16_t *)0xff800d34)  /* int16[64]: TE's master bus (before EQ / FX) */
 #define TE_BUS_R        ((int16_t *)0xff800db4)
@@ -101,7 +102,7 @@ static int can_add(int type)
 {
     if (count(PS_NONE) == 0)
         return 0;
-    return type == PS_SYNTH ? count(PS_SYNTH) < MAX_SYNTH : type == PS_DRUM ? count(PS_DRUM) < MAX_DRUM : 1;
+    return type == PS_DRUM ? count(PS_DRUM) < MAX_DRUM : 1;    /* SYNTH: any number, 3 sound at once */
 }
 
 /* ------------------------------------------------------------------ files (main thread) */
@@ -489,7 +490,6 @@ void py_main(void)
 
         req_tracks = 0;
         req_resume = 0;
-        py_pat_tracks_changed();
         open_audio();
         update_gains();
         seek_to(py_mx.pos, playing);
@@ -567,6 +567,8 @@ static int take(int key)
         taken[key >> 5] |= 1u << (key & 31);
     return 1;
 }
+
+static volatile uint8_t join_due;               /* join on another screen: the tape key comes, then the song view */
 
 static int on_screen(void)
 {
@@ -937,10 +939,26 @@ int py_key(int key, int down)
     if (key == TE_KEY_TAPE) {
         if (*TE_EDIT_MODE != TE_EDIT_MODE_TAPE) {
             shown = 1;                          /* TE switches to the tape screen: PLAY first */
+            if (!py_rd_busy()) {                /* the list (join from another screen: the song view) */
+                if (join_due)
+                    py_v_enter();
+                else
+                    py_v_list();
+            }
+            join_due = 0;
             return 0;
         }
         /* PLAY is the tape screen of this image: no way to TE's own tape screen (v0.6; before,
-         * tape again switched to it) nor to its erase screen (shift + tape) */
+         * tape again switched to it) nor to its erase screen (shift + tape). Tape here: the list */
+        if (!editor_up() && !py_rd_busy())
+            py_v_list();
+        return take(key);
+    }
+    if (key == TE_KEY_JOIN && *TE_EDIT_MODE != TE_EDIT_MODE_TAPE && !*TE_SHIFT_HELD) {
+        join_due = 1;                           /* another screen: to the tape screen, the song view */
+        TE_KEY_PUSH((uint16_t)(TE_KEY_TAPE | 1 << 8));
+        TE_KEY_PUSH((uint16_t)TE_KEY_TAPE);
+        TE_KEY_WAKE();
         return take(key);
     }
     if (on_screen() && tape_key(key) && py_rd_busy()) {     /* a render: stop or rec cancels it */
@@ -1234,19 +1252,19 @@ static void draw_track(int y, int row, int k, int sel)
         if (t->type == PS_SYNTH) {
             int slot = py_pat_slot(k);
 
-            if (!py_pat_inst(k)) {
-                gfx_text7(116, y, "NO ENGINE SLOT", C_RED);
-                return;
-            }
             if (!eh_multi_ok(TE_SYNTH_KNOBS + slot * 8)) {
                 gfx_text7(116, y, eh_tag(TE_SYNTH_KNOBS + slot * 8) ? "ENGINE NOT IN PLAY YET" : "NOT AN SDK ENGINE",
                           C_RED);
                 return;
             }
-            x = gfx_text7(116, y, "V", C_GREY);
-            gfx_dec7(x, y, t->voices ? t->voices : PY_SYN_CAP_DEFAULT, C_WHITE);
-            if (t->eco)
-                gfx_text7(132, y, "ECO", C_GREEN);
+            if (py_pat_starved(k)) {            /* 3 other SYNTH tracks hold notes: its notes drop */
+                gfx_text7(116, y, "BUSY", C_RED);
+            } else {
+                x = gfx_text7(116, y, "V", C_GREY);
+                gfx_dec7(x, y, t->voices ? t->voices : PY_SYN_CAP_DEFAULT, C_WHITE);
+                if (t->eco)
+                    gfx_text7(132, y, "ECO", C_GREEN);
+            }
         }
         if (py_mx.playing && !t->mute)          /* the track's share (percent) */
             gfx_dec7(154, y, (py_cpu_trk[k] + 5) / 10, py_cpu_trk[k] > 300 ? C_RED : C_GREY);
@@ -1309,7 +1327,7 @@ static void list_frame(void)
         x = gfx_text7(x, y, type_name(add_type),
                       ok ? (add_type == PS_AUDIO ? C_AMBER : add_type == PS_SYNTH ? C_BLUE : C_RED) : C_DIM);
         if (!ok)
-            gfx_text7(x + 8, y, add_type == PS_SYNTH ? "(MAX 3 SYNTH)" : "(MAX 2 DRUM)", C_DIM);
+            gfx_text7(x + 8, y, "(MAX 2 DRUM)", C_DIM);
         else if (add_type == PS_AUDIO && !nfiles)
             gfx_text7(x + 8, y, "NO FILES: PUT WAV / AIF IN PLAY/", C_DIM);
     }

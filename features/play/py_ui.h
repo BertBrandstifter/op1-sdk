@@ -58,7 +58,8 @@ int py_rd_audio(void);                          /* audio interrupt: 1 = a render
 int py_rd_main(void);                           /* main loop: 1 = a render runs */
 
 /* py_view.c */
-void py_v_enter(void);                          /* the list's join: the song view */
+void py_v_enter(void);                          /* join: the song view (from the list, the chain view, another screen) */
+void py_v_list(void);                           /* the tape key: the track list */
 void py_v_key(int key);                         /* a key press in the song / chain view */
 void py_v_knob(int knob, int d);
 void py_v_frame(void);

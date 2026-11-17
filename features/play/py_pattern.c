@@ -12,11 +12,16 @@
  *             head (py_song) walks its chains; the editor's own scheduler (dr_schedule /
  *             nr_schedule) gives the hits of the current pattern in this block on PLAY's clock.
  *             DRUM: py_drum plays them from TE's kit of the track's drum slot (read in place).
- *             SYNTH: py_synth plays them on the track's own engine instance (1..3, enginehost)
- *             with the slot's knobs and TE's envelope code. DRUM blocks go into py_mx.pin[t];
+ *             SYNTH: py_synth plays them on an engine instance (1..3, enginehost) with the
+ *             slot's knobs and TE's envelope code. The instances are a pool: a SYNTH track takes
+ *             one for its first note and gives it back once its voices are silent, so up to 8
+ *             SYNTH tracks take turns, at most 3 sounding at once (a note that finds none takes
+ *             an instance whose track only has release tails left, else it is dropped).
+ *             DRUM blocks go into py_mx.pin[t];
  *             SYNTH tracks are summed with their gains at 88.2 kHz and decimated once
  *             (ECO tracks: at 44.1 kHz, no decimation) into py_mx.ext. A track at gain 0 renders
- *             nothing. CYCLES per track for PLAY's CPU numbers.
+ *             nothing. CYCLES per track for PLAY's CPU numbers and the ECO boost budget
+ *             (PY_BOOST_CYC: an ECO render may do twice the work where the engine wants it).
  * TE addresses: static RE 2026-11-15 (analysis/notes/re_drum.md, re_voice.md, re_rolls.md). */
 #include <op1/te246.h>
 #include "../drumroll/dr_core.h"
@@ -97,7 +102,11 @@ static volatile uint8_t cue_req[PS_TRACKS] = { PS_EMPTY, PS_EMPTY, PS_EMPTY, PS_
                                                PS_EMPTY, PS_EMPTY, PS_EMPTY, PS_EMPTY };
 static py_drums drums[PS_TRACKS];
 static py_syn syns[PS_TRACKS];
-static volatile uint8_t inst_of[PS_TRACKS];     /* SYNTH track -> engine instance 1..3, 0 none */
+/* the instance pool (audio interrupt; py_pat_start resets it with the interrupt not playing) */
+static volatile uint8_t inst_of[PS_TRACKS];     /* SYNTH track -> engine instance 1..3, 0 = none now */
+static uint8_t inst_busy;                       /* bit i: instance i is taken */
+static volatile uint16_t starved[PS_TRACKS];    /* blocks left of "a note found no instance" (GUI) */
+#define STARVED_BLOCKS  690                     /* ~1 s */
 volatile uint32_t py_drum_hits, py_syn_notes;   /* bench, debug */
 
 /* ------------------------------------------------------------------ main thread */
@@ -107,18 +116,10 @@ void py_pat_dirty(void)
     song_dirty = 1;
 }
 
-/* engine instances 1..3 to the first three SYNTH tracks (in track order) */
-void py_pat_tracks_changed(void)
+/* GUI: a note of SYNTH track t found no free engine instance in the last second */
+int py_pat_starved(int t)
 {
-    int t, n = 1;
-
-    for (t = 0; t < PS_TRACKS; t++)
-        inst_of[t] = (uint8_t)(py_song.trk[t].type == PS_SYNTH && n < EH_INST ? n++ : 0);
-}
-
-int py_pat_inst(int t)
-{
-    return inst_of[t];
+    return t >= 0 && t < PS_TRACKS && starved[t] != 0 && py_mx.playing;
 }
 
 int py_pat_any(void)
@@ -148,7 +149,6 @@ void py_pat_load(const char *dir)
     if (n < 8 || py_song_load(&py_song, buf, (uint32_t)n))      /* (an older, shorter file is read too) */
         py_song_clear(&py_song);
     song_dirty = 0;
-    py_pat_tracks_changed();
 }
 
 static void save_song(void)
@@ -308,6 +308,17 @@ static int32_t eco44[PY_BLOCK];                 /* ECO SYNTH tracks + the decima
 static int32_t hist88[62];                      /* the shared decimator's state */
 static uint8_t hist_live;                       /* hist88 holds something not yet flushed */
 
+/* ECO boost: an ECO track's render carries PY_SYN_BOOST (ACID 3: its filter at 88.2 kHz while the
+ * cutoff is high, up to twice the render's work) while PLAY's work in the last block of the same
+ * parity, the boosts granted in this block and this track's last render stay under PY_BOOST_CYC */
+#define PY_BOOST_CYC    200000u                 /* CYCLES per block: ~35 % of one at 400 MHz (TE's own
+                                                 * 25-30 %; sim load bench, ECO off: PLAY's peak 201k) */
+typedef char py_boost_flags_match[PY_SYN_BOOST == EH_BOOST && PY_SYN_HALF == EH_HALF ? 1 : -1];
+static uint32_t blk_cyc[2];                     /* PLAY's track work in the last block of each parity */
+static uint32_t blk_sum, boost_add;             /* this block: track work so far, the boosts' extra */
+static uint32_t ren_cyc[PS_TRACKS];             /* the track's last ECO render */
+volatile uint32_t py_boosts;                    /* ECO renders that carried PY_SYN_BOOST (sim) */
+
 /* main thread, the interrupt not playing: every pattern head placed at global frame g */
 void py_pat_start(uint32_t g)
 {
@@ -327,7 +338,12 @@ void py_pat_start(uint32_t g)
         for (i = 0; i < PY_DVOICES; i++)
             drums[t].v[i].on = 0;
         py_syn_reset(&syns[t]);
+        inst_of[t] = 0;
+        starved[t] = 0;
+        ren_cyc[t] = 0;
     }
+    inst_busy = 0;
+    blk_cyc[0] = blk_cyc[1] = 0;
     for (i = 0; i < 62; i++)
         hist88[i] = 0;
     hist_live = 0;
@@ -463,6 +479,39 @@ static void drum_emit(void *ctx, const dr_hit *h)
     py_drum_hits++;
 }
 
+static void inst_free(int t)
+{
+    if (inst_of[t]) {
+        inst_busy &= (uint8_t)~(1u << inst_of[t]);
+        inst_of[t] = 0;
+    }
+}
+
+/* track t's instance, taken from the pool if it has none: a free one, else one whose track only
+ * has release tails left (cut); 0 = every instance has a track with a note held */
+static int inst_take(int t)
+{
+    int i, u;
+
+    if (inst_of[t])
+        return inst_of[t];
+    for (i = 1; i < EH_INST; i++)
+        if (!(inst_busy & (1u << i))) {
+            inst_busy |= (uint8_t)(1u << i);
+            inst_of[t] = (uint8_t)i;
+            return i;
+        }
+    for (u = 0; u < PS_TRACKS; u++)
+        if (u != t && inst_of[u] && py_syn_tail(&syns[u])) {
+            inst_of[t] = inst_of[u];
+            inst_of[u] = 0;
+            py_syn_reset(&syns[u]);
+            return inst_of[t];
+        }
+    starved[t] = STARVED_BLOCKS;
+    return 0;
+}
+
 static void synth_emit(void *ctx, const nr_hit *h)
 {
     const emit_ctx *c = ctx;
@@ -470,8 +519,10 @@ static void synth_emit(void *ctx, const nr_hit *h)
 
     if (key < 0 || key > 127)
         return;
-    py_syn_note(&syns[c->t], key, (h->n->vel * 127 + 50) / 100, h->hold);
     py_syn_notes++;
+    if (!py_mx.gain[c->t] || !inst_take(c->t))
+        return;                                 /* muted (renders nothing), or no instance free */
+    py_syn_note(&syns[c->t], key, (h->n->vel * 127 + 50) / 100, h->hold);
 }
 
 static const py_syn_api te_syn_api = {
@@ -570,15 +621,30 @@ static int track_block(int t, uint32_t pos)
             s->eco = eco;
             s->phase = 0;
         }
+        if (starved[t])
+            starved[t]--;
         if (!gain || !inst_of[t]) {
             py_syn_reset(s);
         } else if (py_syn_active(s) || s->phase) {
+            uint32_t blk = pos / PY_BLOCK, c0;
+            int renders = eco && !s->phase && !((blk ^ s->par) & 1);   /* (else: no render this block) */
+
+            s->boost = (uint8_t)(renders && blk_cyc[blk & 1] + boost_add + ren_cyc[t] <= PY_BOOST_CYC);
+            if (s->boost) {
+                boost_add += ren_cyc[t];
+                py_boosts++;
+            }
+            c0 = cycles();
             peak_to(t, py_syn_block(s, &te_syn_api, inst_of[t], (const int16_t *)(TE_SYNTH_KNOBS + c.slot * 8),
                                     (const int16_t *)(TE_SYNTH_ADSR + (uint32_t)c.slot * 16u), c.slot,
-                                    gain, bus88, eco44, pos / PY_BLOCK));
+                                    gain, bus88, eco44, blk));
+            if (renders)
+                ren_cyc[t] = cycles() - c0;
             bus = !eco;
             py_mx.ext_used = 1;
         }
+        if (!py_syn_active(s) && !s->phase)
+            inst_free(t);                       /* silent: the instance goes back to the pool */
     } else if (!gain) {
         int i;
 
@@ -606,6 +672,12 @@ void py_pat_step(uint32_t pos, int step)
     if (step == 0) {
         dp = np = -1;
         bus = 0;
+        blk_sum = boost_add = 0;
+        for (i = 0; i < PS_TRACKS; i++)         /* a track removed or no longer SYNTH: its instance back */
+            if (inst_of[i] && py_song.trk[i].type != PS_SYNTH) {
+                py_syn_reset(&syns[i]);
+                inst_free(i);
+            }
     }
     if (step < PS_TRACKS) {
         const ps_head *h = &heads[step];
@@ -614,7 +686,9 @@ void py_pat_step(uint32_t pos, int step)
             return;
         c0 = cycles();
         bus |= track_block(step, pos);
-        py_trk_cyc[step] += cycles() - c0;
+        c0 = cycles() - c0;
+        py_trk_cyc[step] += c0;
+        blk_sum += c0;
         if (h->active && h->pat < 14 && pos >= h->start) {
             if (py_song.trk[step].type == PS_DRUM && dp < 0) {
                 dp = h->pat;
@@ -645,7 +719,9 @@ void py_pat_step(uint32_t pos, int step)
             py_mx.ext[i] += eco44[i];
             eco44[i] = 0;
         }
-    py_dec_cyc += cycles() - c0;
+    c0 = cycles() - c0;
+    py_dec_cyc += c0;
+    blk_cyc[(pos / PY_BLOCK) & 1] = blk_sum + c0;
 }
 
 void py_pat_block(uint32_t pos)

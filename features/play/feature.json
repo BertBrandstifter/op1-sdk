@@ -2,9 +2,9 @@
   "schema": 1,
   "name": "play",
   "title": "PLAY tape screen",
-  "version": "0.7.0",
+  "version": "0.8.2",
   "status": "experimental",
-  "summary": "The tape key opens PLAY instead of TE's tape screen (which is not reachable in an image with play; TE's tape data stays untouched): one list of up to 8 tracks, each AUDIO (a WAV / AIF from disk mode's play/ folder, looped or once, streamed from flash), SYNTH (NOTE ROLL patterns on its own instance of an SDK engine with one of the 8 synth sounds, TE's envelope, PLAY's decimator) or DRUM (DRUM ROLL patterns on PLAY's own sample player from TE's kits, in place), all sample-locked from bar 1, with level, mute, solo, master and a bar counter; the mix joins TE's master bus like the tape (master EQ, master FX, mixer drive and volume act on it). A tracker song arranges the tracks (join: song view, 128 rows x one column per track, each column with its own playhead; chain view: 16 rows of pattern + transpose, audition; AUDIO cells ON / OF; live mode: rows and cells cued while playing); it lives in SONG.BIN with the track list. When disk mode is left, a hook in TE's disk sync copies play/ into /yaffs2/user/play_a|play_b before TE clears the disk (the only writes, with SONG.BIN and the rendered files in /yaffs2/user/play_r).",
+  "summary": "The tape key opens PLAY instead of TE's tape screen (which is not reachable in an image with play; TE's tape data stays untouched): one list of up to 8 tracks, each AUDIO (a WAV / AIF from disk mode's play/ folder, looped or once, streamed from flash), SYNTH (NOTE ROLL patterns on an SDK engine with one of the 8 synth sounds; up to 8 SYNTH tracks share 3 engine instances, at most 3 sound at once, TE's envelope, PLAY's decimator) or DRUM (DRUM ROLL patterns on PLAY's own sample player from TE's kits, in place), all sample-locked from bar 1, with level, mute, solo, master and a bar counter; the mix joins TE's master bus like the tape (master EQ, master FX, mixer drive and volume act on it). A tracker song arranges the tracks (join: song view, 128 rows x one column per track, each column with its own playhead; chain view: 16 rows of pattern + transpose, audition; AUDIO cells ON / OF; live mode: rows and cells cued while playing); it lives in SONG.BIN with the track list. When disk mode is left, a hook in TE's disk sync copies play/ into /yaffs2/user/play_a|play_b before TE clears the disk (the only writes, with SONG.BIN and the rendered files in /yaffs2/user/play_r).",
   "license": "MIT",
   "authors": [
     "unknown"
@@ -131,6 +131,18 @@
       "shift": "yes",
       "screen": "tape",
       "modal": true
+    },
+    {
+      "input": "join_press",
+      "shift": "no",
+      "screen": [
+        "synth",
+        "drum",
+        "mixer",
+        "tempo",
+        "sequencer",
+        "album"
+      ]
     },
     {
       "input": "sound1_press",
@@ -390,14 +402,14 @@
     }
   ],
   "controls": [
-    "tape key: PLAY (TE's own tape screen and its erase screen, shift + tape, are not reachable in this image)",
+    "tape key: PLAY's track list, also from the song / chain view (TE's own tape screen and its erase screen, shift + tape, are not reachable in this image); join on any other screen: PLAY's song view",
     "PLAY: a list of up to 8 tracks (AUDIO / SYNTH / DRUM); blue turn cursor, blue press mute, green turn level, green press solo",
     "PLAY: white turn = the track's file (AUDIO) or sound / kit slot 1-8 (held at the ends), white press = LOOP / ONCE (AUDIO) or voices 2 / 4 / 1 (SYNTH), shift + white press = ECO (SYNTH: the engine at 44.1 kHz, half the cost); orange turn = pattern 1-14, held at the ends (SYNTH: NOTE ROLL, DRUM: DRUM ROLL; a track with a longer song: SNG, edited in the song view); shift + orange turn = master",
     "PLAY: + ADD row: white turn the type, white press adds; insert twice = a new track before the cursor's; cut twice = remove the track",
     "PLAY: play start / pause, stop pause / again back to bar 1, back / forward one bar, T1-T4 cursor (shift: mute), orange press re-read the set folder",
     "disk mode: WAV / AIF files (+ set.txt with bpm) in a play/ folder are imported when disk mode is left",
     "PLAY: shift + blue press on a SYNTH / DRUM track: its pattern in NOTE ROLL / DRUM ROLL over PLAY, the playhead follows PLAY; shift + blue press closes it",
-    "PLAY: join = the song view (one column per track): blue turn row, green turn column, white turn the cell (chain 00-7F or OF = a rest of one bar; AUDIO: ON / OF), white press = last chain / open the chain view / ON-OF, shift + white press = new chain / clone, cut / insert = cell clipboard, shift + insert = new song row, shift + cut twice = delete it, play = from the cursor row, join / orange press = back",
+    "PLAY: join = the song view (one column per track): blue turn row, green turn column, white turn the cell (chain 00-7F or OF = a rest of one bar; AUDIO: ON / OF), white press = last chain / open the chain view / ON-OF, shift + white press = new chain / clone, cut / insert = cell clipboard, shift + insert = new song row, shift + cut twice = delete it, play = from the cursor row, orange press / tape = back (join stays: join always means the song view, live mode too)",
     "PLAY: live mode (shift + rec in the song view): play = cue the cursor row on every column, white press = cue the cursor cell, T1-T4 = mute (shift: solo); a column jumps to its cue when its chain (AUDIO: its ON / OF segment) ends; shift + play cues a row in the song view too",
     "PLAY: rec in the song view / live mode = render: white turn the length in bars, rec again starts, stop cancels; the song from the cursor row is written as RENDnn.AIF (16 bit, 44.1 kHz, SYNTH tracks without ECO and with all voices, not in real time) into /yaffs2/user/play_r and can be picked on an AUDIO track",
     "PLAY: keys 1-8 = sound / kit 1-8 of the cursor track at once (list, song view, live, chain view); chain view: a third column SND = the slot the track plays while that row plays (-: the track's own)",

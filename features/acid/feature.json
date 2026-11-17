@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "acid",
   "title": "ACID 3 synth engine (TD-3-MO-style bassline: 303 type with the modded-out mods)",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"

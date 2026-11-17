@@ -242,6 +242,7 @@ static void inst_render(int vi, int16_t *out, const int16_t *knobs, const uint32
 
     params(knobs, s, &p);
     p.half = (flags & EH_HALF) != 0;            /* PLAY's ECO: 44.1 kHz, the increments per 44.1 kHz sample */
+    p.boost = (flags & EH_BOOST) != 0;          /* ECO: the filter at 88.2 kHz while the cutoff is high */
     if (flags & EH_BLOCK)
         a->blocks++;
     if (flags & EH_FRESH) {

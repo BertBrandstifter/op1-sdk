@@ -28,6 +28,10 @@
                                          * (two audio blocks), inc is per 44.1 kHz sample; an engine that
                                          * knows it keeps its time constants and cutoffs, others run as if
                                          * at 88.2 kHz (their own times at half speed) */
+#define EH_BOOST        0x08            /* render flag (PLAY's ECO, with EH_HALF): PLAY's CPU budget
+                                         * allows this render twice the work; an engine may run its
+                                         * inner rate at 88.2 kHz where the sound needs it (ACID 3:
+                                         * the filter while its cutoff is above 6 kHz) */
 #define EH_VOICES       6
 #define EH_INST         4               /* instances: 0 = TE's voices, 1..3 = PLAY's synth tracks */
 #define EH_SLOTS        (EH_INST * EH_VOICES)   /* voice index vi = instance x EH_VOICES + voice */

@@ -42,7 +42,20 @@ cycles pages.
   oversampled at 176.4 kHz as in v0.2 (the FM loop needs the rate). On a PLAY track with ECO
   (render flag `EH_HALF`, v0.3.1) the voice renders at 44.1 kHz with its own fitted table and its
   control coefficients squared: the same cutoffs, envelope times and slide (host test: level per
-  10 ms within 0.4 dB, 3rd harmonic within 0.1 dB of the 88.2 kHz voice); CUTOFF 314 .. 2394 Hz (the 303's range), resonance skewed
+  10 ms within 0.4 dB, 3rd harmonic within 0.1 dB of the 88.2 kHz voice). v0.3.3 (measured
+  2026-11-17 against the 88.2 kHz voice through PLAY's decimator): the 44.1 kHz table's k passed
+  64 at 11.6 kHz (Q25 wrapped negative): env mod / accent sweeps past ~10 kHz latched the filter
+  at the rail, +11 .. +20 dB; the half-rate cutoff now stops at 10.2 kHz and gen_tables checks
+  k < 64 and every entry's poles. One k per cutoff could not place the resonance peak at both
+  r = 0.9 and 1 that close to Nyquist (1 .. 4 dB weak at r = 1, 1 .. 2 dB strong at 0.9): the k
+  now comes per resonance (five nodes 0.5 .. 1), the peak within 0.3 dB (r ≥ 0.7, 200 Hz ..
+  8 kHz); the squelch (r 255, env 200, cut 110, accent) within 0.5 dB per band at the note's
+  start (before: up to 4.6 dB off). With PLAY's `EH_BOOST` (its CPU budget allows it) the
+  filter runs at 88.2 kHz per control update while the cutoff is above 6 kHz (2 semitones of
+  hysteresis; only in blocks whose cutoff can get there: otherwise the same work as plain ECO):
+  extreme sweeps then within 0.6 dB at 5 .. 12 kHz (without: up to +15 dB). Cost (sim, 128
+  samples): ECO 41.6k, ECO + boost below 6 kHz 43.0k, above 74.3k (normal 40.3k per block);
+  CUTOFF 314 .. 2394 Hz (the 303's range), resonance skewed
   as Open303, the **measured env-mod mapping** (env mod scales and offsets the envelope in
   octaves, as measured on a real 303); the filter envelope is the MEG through rc1 (SOFT ATK, stock
   3 ms), the accent through rc2 (the sweep circuit); the **amp**: instant attack, 1230 ms decay to 0

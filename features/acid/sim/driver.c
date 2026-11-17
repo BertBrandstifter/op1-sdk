@@ -1,7 +1,10 @@
 /* ACID 3 bench (build/apps/op1plus + acid): engine host + ACID glue against stub TE functions and
  * TE's per-sample pitch buffer. Returns failed-check bits (0 = pass). Check 14: the host skips a TE
- * voice released below -60 dB (silence, no engine render), the block start goes to the next voice. */
+ * voice released below -60 dB (silence, no engine render), the block start goes to the next voice.
+ * Check 15: ECO (PLAY's EH_HALF: 128 samples at 44.1 kHz) costs as a normal block; with EH_BOOST and
+ * the cutoff below 6 kHz the same, above it at most 2.3 x (the filter at 88.2 kHz). */
 #include <op1/te246.h>
+#include "../ac_core.h"
 
 extern void wh_te_render(void *self, int16_t *out, int16_t *knobs);    /* the engine host's */
 extern void wh_te_note_on(void *self, int a1, int a2);
@@ -28,6 +31,7 @@ extern void ac_bank_knobs(int e, int16_t *k);
 static int drwave_renders, drwave_notes, saves, fxsaves, keys_seen, knobs_seen;
 static int16_t out[128];
 volatile uint32_t cycles_plain, cycles_heavy;   /* read by run_acidtest.py */
+volatile uint32_t cycles_eco[4];                /* normal, ECO, ECO + boost low, ECO + boost fast */
 volatile int fails;
 volatile int bank_peak[16], bank_rms[16];       /* read by run_acidtest.py */
 volatile int acc_pk[4];
@@ -530,6 +534,39 @@ int main(void)
         wh_te_render(VOICE(5), o0, knobs);
         CHECK(14, o0[0] == 0 && o0[127] == 0);
         adsr0[0] = adsr0[2] = adsr5[0] = adsr5[2] = 0;
+    }
+
+    /* 15: ECO cost (ac_render direct): a 110 Hz saw, resonance 200; the cutoff low (60, no env mod),
+     * then high (255, env mod 255, accent: the sweep above 6 kHz), the block after the note on */
+    {
+        static ac_voice v;
+        static uint32_t inc[128];
+        static int16_t o[128];
+        ac_params p;
+        int i, k;
+
+        for (i = 0; i < (int)sizeof(p); i++)
+            ((uint8_t *)&p)[i] = 0;
+        p.res = 200; p.decay = 110; p.accent = 63; p.accdec = 6; p.sweep = AC_SWEEP_NORM; p.speed = 1;
+        p.slide = 8; p.soft = 4; p.level = 10;
+        for (k = 0; k < 4; k++) {
+            uint32_t t1;
+
+            p.half = (uint8_t)(k > 0);
+            p.boost = (uint8_t)(k > 1);
+            p.cutoff = k == 3 ? 255 : 60;
+            p.envmod = k == 3 ? 255 : 0;
+            for (i = 0; i < 128; i++)
+                inc[i] = k ? 10713070u : 5356535u;      /* 110 Hz at 44.1 / 88.2 kHz */
+            ac_init(&v);
+            ac_note(&v, 0, 1);
+            ac_render(&v, o, 128, inc, &p);
+            t1 = cycles();
+            ac_render(&v, o, 128, inc, &p);
+            cycles_eco[k] = cycles() - t1;
+        }
+        CHECK(15, cycles_eco[1] < cycles_eco[0] * 11 / 10 && cycles_eco[2] < cycles_eco[1] * 11 / 10
+                  && cycles_eco[3] > cycles_eco[1] * 3 / 2 && cycles_eco[3] < cycles_eco[1] * 23 / 10);
     }
 
     return fails;

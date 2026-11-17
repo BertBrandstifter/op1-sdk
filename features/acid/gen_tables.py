@@ -4,10 +4,13 @@ NOTICE): the TB-303 filter ("TB_303" mode of rosic::TeeBeeFilter: a linear diode
 mystran & kunn, its coefficient / feedback / gain fits), the measured cutoff / env-mod mapping and
 the envelope / RC time constants. Here: per-semitone filter coefficients for both filter rates
 (2 x: 176.4 kHz, Open303's own fits, used while FILTER FM is on; 1 x: 88.2 kHz, half the cost;
-half: 44.1 kHz for PLAY's ECO tracks;
-b0 and k fitted so that the filter's response matches the 2 x one, weighted to high resonance),
+b0 and k fitted so that the filter's response matches the 2 x one, weighted to high resonance;
+half: 44.1 kHz for PLAY's ECO tracks: b0 and k at five resonances 0.5 .. 1 so that the resonance
+peak's frequency and height match the 2 x filter's, capped at HALF_TOP),
 control-rate coefficients (one update per 8 output samples), resonance skew, tanh, exp2 / log2.
-Also checks the filter's stability at full resonance at both rates.
+Also checks the filter's stability: ring-down at full resonance, and every table entry's poles
+(linear model) inside the unit circle at every rate and resonance node; k must stay below 64
+(Q25 in an int32).
 Run: python3 gen_tables.py (needs numpy; the fit takes a minute)"""
 import math, os
 import numpy as np
@@ -16,6 +19,11 @@ SR = 88200                      # TE's voice rate
 FS = 2 * SR                     # the 2 x rate (Open303's fits are made for it)
 CTL = SR / 8                    # control updates per second (one per 8 output samples)
 TOP = 140                       # semitones above 20 Hz in the filter table (capped at 14 kHz)
+HALF_TOP = 108                  # half rate (44.1 kHz): the cutoff stops at 10.2 kHz. The half-rate
+                                # k passes 64 at 11.6 kHz (entry 110): Q25 wrapped negative in
+                                # ac_core.c, the filter latched up at the rail (+11 .. +20 dB, found
+                                # 2026-11-17); the fit is poor that close to Nyquist anyway
+HALF_R = (0.5, 0.625, 0.75, 0.875, 1.0)    # half rate: resonance nodes of the k table (below 0.5: node 0)
 
 
 def arr(name, ctype, vals, comment, per=8):
@@ -140,7 +148,60 @@ def fit_rate(fc, fs_to):
     return b, k, math.sqrt(err(b, k, 0.9))
 
 
-b0q, kq, b0q1, kq1, b0qh, kqh, fit_worst, fit_worst_h = [], [], [], [], [], [], 0.0, 0.0
+def resp_at(b0, kr, r, fs, f):
+    """|H| (with the gain compensation) at frequencies f"""
+    global FIT_F
+    keep, FIT_F = FIT_F, f
+    try:
+        return resp(b0, kr * r, fs) * gain(kr, r)
+    finally:
+        FIT_F = keep
+
+
+def peak(b0, kr, r, fs, fc):
+    """the response's maximum near the cutoff fc: frequency, dB (a coarse grid, then a fine one)"""
+    f = fc * 2 ** np.linspace(-1.5, 1.0, 300)
+    i = int(resp_at(b0, kr, r, fs, f).argmax())
+    lo, hi = f[max(i - 1, 0)], f[min(i + 1, len(f) - 1)]
+    f = lo * (hi / lo) ** np.linspace(0, 1, 200)
+    h = resp_at(b0, kr, r, fs, f)
+    return f[h.argmax()], 20 * math.log10(h.max())
+
+
+def fit_half(fc, b0, k):
+    """half rate: b0 (the peak's frequency at r = 1) and k at each of HALF_R (the peak's height),
+    starting from fit_rate's b0, k. Near Nyquist one k cannot match both r = 1 and r = 0.9 (r = 1
+    came out 1 .. 4 dB weak, r = 0.9 1 .. 2 dB strong above 4 kHz), one k per resonance can."""
+    fs = SR // 2
+    b2, k2 = tb303(fc, FS)
+    f1, h1 = peak(b2, k2, 1.0, FS, fc)
+    for _ in range(3):
+        k = golden(lambda x: (peak(b0, x, 1.0, fs, fc)[1] - h1) ** 2, k * 0.85, k * 1.15, 28)
+        b0 = golden(lambda x: math.log(peak(x, k, 1.0, fs, fc)[0] / f1) ** 2, b0 * 0.92, min(b0 * 1.08, 0.499), 28)
+    ks = []
+    for r in HALF_R:
+        h = peak(b2, k2, r, FS, fc)[1]
+        ks.append(k if r == 1.0 else golden(lambda x: (peak(b0, x, r, fs, fc)[1] - h) ** 2, k * 0.5, k * 1.3, 28))
+    return b0, ks
+
+
+def kr_half(ks, r):
+    """k at full resonance for resonance r: the nodes interpolated as ac_core.c coeffs()"""
+    if r <= HALF_R[0]:
+        return ks[0]
+    x = (r - HALF_R[0]) * 8
+    i = min(int(x), len(HALF_R) - 2)
+    return ks[i] + (ks[i + 1] - ks[i]) * (x - i)
+
+
+def radius(b0, kr, r, fs):
+    """the linear filter's largest pole magnitude (state y1..y4 + feedback high-pass)"""
+    a = hp_coeff(150.0, fs)
+    A = np.array([step(np.eye(6)[i], 0, b0, kr * r, a) for i in range(6)]).T
+    return max(abs(np.linalg.eigvals(A)))
+
+
+b0q, kq, b0q1, kq1, b0qh, kqh, fit_worst, pk_worst, pk_at = [], [], [], [], [], [[] for _ in HALF_R], 0.0, [0.0, 0.0], [None, None]
 for st in range(TOP + 1):
     fc = min(20 * 2 ** (st / 12), 14000)
     b0, k = tb303(fc)
@@ -150,19 +211,42 @@ for st in range(TOP + 1):
     fit_worst = max(fit_worst, e)
     b0q1.append(q31(b0))
     kq1.append(round(k * (1 << 25)))
-    b0, k, e = fit_rate(fc, SR // 2)
-    fit_worst_h = max(fit_worst_h, e) if fc <= 8000 else fit_worst_h   # above: near Nyquist, best effort
-    b0qh.append(q31(b0))
-    kqh.append(round(k * (1 << 25)))
+    if st <= HALF_TOP:
+        b0r, kr_, e = fit_rate(fc, SR // 2)
+        b0, ks = fit_half(fc, b0r, kr_)
+        w = min(1.0, max(0.0, math.log2(fc / 150)))     # below 150 Hz the feedback high-pass blurs the peak:
+        b0 = b0r + (b0 - b0r) * w                       # fit_rate's b0, k; to 300 Hz blended into the peak fit
+        ks = [kr_ + (x - kr_) * w for x in ks]
+        b2, k2 = tb303(fc, FS)
+        if 200 <= fc <= 8000:   # the peak's height between the nodes too (below 200 Hz the feedback high-pass blurs it)
+            for r in (0.55, 0.7, 0.8, 0.9, 0.95, 1.0):
+                d = peak(b0, kr_half(ks, r), r, SR // 2, fc)[1] - peak(b2, k2, r, FS, fc)[1]
+                hi = int(r >= 0.7)      # [0]: r 0.55 (mild, a shallow peak), [1]: r 0.7 .. 1 (the 303's squelch)
+                if abs(d) > pk_worst[hi]:
+                    pk_worst[hi], pk_at[hi] = abs(d), (round(fc), r)
+        hb, hk = q31(b0), [round(x * (1 << 25)) for x in ks]
+    b0qh.append(hb)             # above HALF_TOP: HALF_TOP's (the cap)
+    for j in range(len(HALF_R)):
+        kqh[j].append(hk[j])
 assert fit_worst < 0.3, f"1 x fit at r = 0.9: {fit_worst} dB rms"
-assert fit_worst_h < 1.0, f"half-rate fit at r = 0.9: {fit_worst_h} dB rms"
+assert pk_worst[1] < 0.3 and pk_worst[0] < 0.5, f"half-rate resonance peak (200 Hz .. 8 kHz): {pk_worst} dB off at (Hz, r) {pk_at}"
+assert max(kq + kq1 + sum(kqh, [])) < 1 << 31, "k past Q25's range (ac_core.c reads the tables as int32)"
 
-# stability: full resonance must ring down at every cutoff the engine can reach, at both rates
+# stability: full resonance must ring down at every cutoff the engine can reach, at every rate
 for fc in (30, 60, 120, 250, 500, 1000, 2000, 4000, 8000, 14000):
     st = min(TOP, round(12 * math.log2(fc / 20)))
-    for fs, b0t, krt in ((FS, b0q, kq), (SR, b0q1, kq1), (SR // 2, b0qh, kqh)):
+    for fs, b0t, krt in ((FS, b0q, kq), (SR, b0q1, kq1), (SR // 2, b0qh, kqh[-1])):
         q = run_filter(b0t[st] / 2 ** 31, krt[st] / 2 ** 25, 1.0, fs)
         assert q < 0.5, f"filter unstable at {fc} Hz, r = 1, {fs} Hz: {q}"
+# and every entry's poles inside the unit circle (half rate: at the nodes and between them)
+for st in range(TOP + 1):
+    for fs, b0t, krt in ((FS, b0q, kq), (SR, b0q1, kq1)):
+        rad = radius(b0t[st] / 2 ** 31, krt[st] / 2 ** 25, 1.0, fs)
+        assert rad < 1, f"pole outside the unit circle: entry {st}, {fs} Hz: {rad}"
+    ks = [kqh[j][st] / 2 ** 25 for j in range(len(HALF_R))]
+    for r in (0.25, 0.5, 0.5625, 0.625, 0.6875, 0.75, 0.8125, 0.875, 0.9375, 1.0):
+        rad = radius(b0qh[st] / 2 ** 31, kr_half(ks, r), r, SR // 2)
+        assert rad < 1, f"pole outside the unit circle: half-rate entry {st}, r = {r}: {rad}"
 
 tnh = [round(math.tanh(-4 + i / 64) * 16384) for i in range(513)]
 tnh[-1] = tnh[-2]
@@ -184,6 +268,8 @@ SPEED = [60.0, 15.0, 5.0]                               # rc2: SLOW, NORM (Open3
 out = ["/* generated by gen_tables.py - do not edit. Model constants from Open303 (MIT, see NOTICE). */",
        "#ifndef AC_TABLES_H", "#define AC_TABLES_H", "", "#include <stdint.h>", "",
        f"#define AC_TOP {TOP}",
+       f"#define AC_HALF_TOP {HALF_TOP} /* half rate: entries above repeat this one (the cutoff stops at 10.2 kHz) */",
+       f"#define AC_HALF_R {len(HALF_R)} /* half rate: k nodes at resonance 0.5 .. 1 in steps of 1/8 */",
        f"#define AC_HP_FB {q31(hp_coeff(150.0, FS))} /* feedback high-pass 150 Hz at 176.4 kHz (2 x), Q31 */",
        f"#define AC_HP_PRE {q31(hp_coeff(44.486, FS))} /* pre-filter high-pass 44.5 Hz at 176.4 kHz, Q31 */",
        f"#define AC_HP_FB1 {q31(hp_coeff(150.0, SR))} /* feedback high-pass 150 Hz at 88.2 kHz (1 x), Q31 */",
@@ -202,7 +288,11 @@ out += arr("ac_kr", "uint32_t", kq, "2 x: filter feedback k at full resonance, Q
 out += arr("ac_b0_1", "uint32_t", b0q1, "1 x (88.2 kHz, fitted to the 2 x response): b0, Q31, per semitone")
 out += arr("ac_kr_1", "uint32_t", kq1, "1 x: k at full resonance, Q25, per semitone")
 out += arr("ac_b0_h", "uint32_t", b0qh, "half rate (44.1 kHz, PLAY's ECO; fitted to the 2 x response): b0, Q31")
-out += arr("ac_kr_h", "uint32_t", kqh, "half rate: k at full resonance, Q25, per semitone")
+out += ["/* half rate: k at full resonance, Q25, per resonance node (r = 0.5 0.625 0.75 0.875 1) and semitone */",
+        f"static const uint32_t ac_kr_h[{len(HALF_R)}][{TOP + 1}] = {{"]
+for j in range(len(HALF_R)):
+    out += ["    {"] + ["        " + ", ".join(str(v) for v in kqh[j][i:i + 8]) + "," for i in range(0, TOP + 1, 8)] + ["    },"]
+out += ["};", ""]
 out += arr("ac_tanh", "int16_t", tnh, "tanh(x), Q14, x = -4 .. 4 in 512 steps of 1/64 (+ guard)", 12)
 out += arr("ac_texp2", "uint32_t", ex2, "2^(i/256), Q16")
 out += arr("ac_tlog2", "uint32_t", lg2, "log2(1 + i/256), Q16")
@@ -222,9 +312,9 @@ open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ac_tables.h"), "w
 print("b0", b0q[0], b0q[70], b0q[-1], "k", round(kq[0] / 2 ** 25, 2), round(kq[70] / 2 ** 25, 2), round(kq[-1] / 2 ** 25, 2))
 print("1 x: b0", b0q1[0], b0q1[70], b0q1[-1], "k", round(kq1[0] / 2 ** 25, 2), round(kq1[70] / 2 ** 25, 2),
       round(kq1[-1] / 2 ** 25, 2), f"worst fit at r = 0.9 {fit_worst:.2f} dB rms")
-print("half: b0", b0qh[0], b0qh[70], b0qh[-1], "k", round(kqh[0] / 2 ** 25, 2), round(kqh[70] / 2 ** 25, 2),
-      round(kqh[-1] / 2 ** 25, 2), f"worst fit (to 8 kHz) at r = 0.9 {fit_worst_h:.2f} dB rms")
+print("half: b0", b0qh[0], b0qh[70], b0qh[-1], "k (r = 1)", round(kqh[-1][0] / 2 ** 25, 2), round(kqh[-1][70] / 2 ** 25, 2),
+      round(kqh[-1][-1] / 2 ** 25, 2), f"worst resonance peak (200 Hz .. 8 kHz) r 0.55: {pk_worst[0]:.2f} dB at {pk_at[0]}, r 0.7 .. 1: {pk_worst[1]:.2f} dB at {pk_at[1]}")
 st = round(12 * math.log2(1000 / 20))
-for fs, b0t, krt in ((FS, b0q, kq), (SR, b0q1, kq1), (SR // 2, b0qh, kqh)):
+for fs, b0t, krt in ((FS, b0q, kq), (SR, b0q1, kq1), (SR // 2, b0qh, kqh[-1])):
     print(f"stable; {fs} Hz, r=1 ring-down at 1 kHz:", round(run_filter(b0t[st] / 2 ** 31, krt[st] / 2 ** 25, 1.0, fs), 4),
           "r=1.3:", round(run_filter(b0t[st] / 2 ** 31, krt[st] / 2 ** 25, 1.3, fs), 4))
