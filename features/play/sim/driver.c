@@ -31,7 +31,8 @@
  * 17 the list's knobs hold at the ends; an empty column given its pattern while playing joins
  *    at the next bar
  * 15 white turn = sound, orange turn = pattern; SYNTH cost options: white press cycles the voices (2 -> 4 -> 1), shift + white press ECO: the
- *    engine renders every other block at twice the step, with EH_HALF and (light load) EH_BOOST
+ *    engine renders every other block at twice the step, with EH_HALF and (light load) EH_BOOST;
+ *    orange turn while playing: the row's pattern changes at once (pending until the playing one ends)
  *    on every render, neither after ECO off; muted: nothing renders; PLAY's CPU
  *    numbers (total, per track) appear while playing and clear on stop
  * 21 song view (join): white press on an empty cell = a new chain, white turn its number, shift +
@@ -58,10 +59,11 @@
  * 25 a rest cell (OF, white turn below 00) in a DRUM column: one silent bar, then the column goes on
  * 26 keys 1-8 = the cursor track's sound / kit (list, song view); a chain row's SND column is the
  *    track's slot while the row plays; a key pressed meanwhile wins until the row ends
- * 27 up to 8 SYNTH tracks share the 3 engine instances: five SYNTH tracks added on the ADD row;
- *    taking turns (one note each, one bar after the other) every one plays, all on instance 1
- *    (each gives it back once silent); all five at once: three play (instances 1-3), the other
- *    two drop their note and show BUSY
+ * 27 up to 8 SYNTH tracks share the 5 engine instances: seven SYNTH tracks added on the ADD row;
+ *    five taking turns (one note each, one bar after the other) every one plays, all on instance
+ *    1 (each gives it back once silent); all seven at once: five play (instances 1-5), the other
+ *    two drop their note and show BUSY; with PLAY's CPU over the guard (py_inst_cyc lowered) only
+ *    three play, four show BUSY
  * 28 views (v0.8.2): join stays in the song view (plain and live), tape on PLAY: the list; tape
  *    from another screen: the list (not the view left there); join on another screen: taken, a
  *    tape press injected (TE_KEY_PUSH + wake), PLAY opens in the song view
@@ -85,7 +87,9 @@ extern int py_help_on(void), py_pat_cued(int t), py_rd_busy(void);
 extern char FB8[];
 extern int py_pat_slot(int t);
 extern int py_pat_starved(int t);
-extern volatile uint32_t py_boosts;
+extern volatile uint32_t py_boosts, py_inst_cyc;
+extern int py_list_pattern(int t);
+#define PY_PAT_PENDING  0x100                   /* (play.h) */
 extern void py_update_gains(void), py_pat_set_start(int row);
 extern volatile uint8_t py_view;                /* 0 list, 1 song view, 2 chain view */
 extern const ps_head *py_pat_head(int t);
@@ -1015,6 +1019,14 @@ int main(void)
             hook_volume();
         CHECK(15, eng_calls - calls == 20 && eng_inc == 21426141u);
         CHECK(15, !(eng_flags & (EH_HALF | EH_BOOST)) && py_boosts == boosts);
+        {                                                           /* orange turn while playing: the row */
+            int was = py_list_pattern(t);                           /* shows the new pattern at once, */
+
+            turn(3, 1);                                             /* pending until the playing one ends */
+            CHECK(15, was >= 0 && !(was & PY_PAT_PENDING) && py_list_pattern(t) == ((was + 1) | PY_PAT_PENDING));
+            turn(3, -1);
+            CHECK(15, py_list_pattern(t) == was);
+        }
         press(TE_KEY_BLUE_PUSH);                                    /* mute (solo wins: unsolo too) */
         press(TE_KEY_GREEN_PUSH);
         calls = eng_calls;
@@ -1691,10 +1703,10 @@ int main(void)
         }
     }
 
-    /* 27: five SYNTH tracks on three engine instances */
+    /* 27: seven SYNTH tracks on five engine instances */
     {
         uint8_t *p = nr_pat;                                        /* NOTE ROLL pattern 0: A4, one step */
-        int t, r, starts, inst_seen = 0, starved = 0;
+        int t, r, pass, starts, inst_seen = 0, starved = 0;
 
         press(TE_KEY_STOP);
         py_main();
@@ -1722,21 +1734,21 @@ int main(void)
         turn(0, -9);
         turn(2, -9);
         turn(2, 1);                                                 /* AUDIO -> SYNTH */
-        for (t = 0; t < 5; t++) {
+        for (t = 0; t < 7; t++) {
             turn(0, 9);                                             /* the ADD row */
             press(TE_KEY_WHITE_PUSH);                               /* SYNTH stays the ADD row's type */
             mains(2);
         }
-        CHECK(27, ntracks() == 5);
-        for (t = 0; t < 5; t++) {
+        CHECK(27, ntracks() == 7);
+        for (t = 0; t < 7; t++) {
             ps_track *k = &py_song.trk[t];
 
             CHECK(27, k->type == PS_SYNTH);
             k->mute = k->solo = 0;
             k->voices = k->eco = 0;
             k->sound = 1;
-            for (r = 0; r < PS_ROWS; r++)                           /* one bar each, in turn */
-                py_song.cell[r][t] = r < 5 ? (r == t ? 0x10 : PS_REST) : PS_EMPTY;
+            for (r = 0; r < PS_ROWS; r++)                           /* one bar each, in turn (tracks 0-4) */
+                py_song.cell[r][t] = r < 5 && t < 5 ? (r == t ? 0x10 : PS_REST) : PS_EMPTY;
         }
         for (r = 0; r < PS_CROWS; r++) {
             py_song.chain[0x10][r].pat = r ? PS_EMPTY : 0;
@@ -1763,25 +1775,35 @@ int main(void)
         py_main();
         press(TE_KEY_STOP);
         py_main();
-        for (t = 0; t < 5; t++)                                     /* all five at once */
+        for (t = 0; t < 7; t++)                                     /* all seven at once */
             for (r = 0; r < 5; r++)
                 py_song.cell[r][t] = r ? PS_EMPTY : 0x10;
-        starts = env_starts;
-        eng_insts = starved = 0;
-        press(TE_KEY_PLAY);
-        py_main();
-        for (b = 0; b < 200; b++) {
-            hook_volume();
-            if (!(b % 4))
-                py_main();
+        for (pass = 0; pass < 2; pass++) {                          /* CPU fine, then over the guard */
+            if (pass)
+                py_inst_cyc = 0;
+            starts = env_starts;
+            eng_insts = starved = 0;
+            press(TE_KEY_PLAY);
+            py_main();
+            for (b = 0; b < 200; b++) {
+                hook_volume();
+                if (!(b % 4))
+                    py_main();
+            }
+            for (t = 0; t < 7; t++)
+                starved |= py_pat_starved(t) << t;
+            inst_seen = eng_insts;
+            if (!pass)
+                CHECK(27, env_starts - starts == 5 && inst_seen == (31 << 1) && starved == (3 << 5));
+            else
+                CHECK(27, env_starts - starts == 3 && inst_seen == (7 << 1) && starved == (15 << 3));
+            dbg[4 + pass] = (int32_t)((env_starts - starts) | (uint32_t)inst_seen << 8 | (uint32_t)starved << 16);
+            press(TE_KEY_STOP);
+            py_main();
+            press(TE_KEY_STOP);
+            py_main();
         }
-        for (t = 0; t < 5; t++)
-            starved |= py_pat_starved(t) << t;
-        inst_seen = eng_insts;
-        CHECK(27, env_starts - starts == 3 && inst_seen == (7 << 1) && starved == (3 << 3));
-        dbg[4] = env_starts - starts; dbg[5] = inst_seen | starved << 8;
-        press(TE_KEY_STOP);
-        py_main();
+        py_inst_cyc = 250000u;
     }
 
     CHECK(11, odd_io == 0);                                         /* TE's NAND driver: even buffers */

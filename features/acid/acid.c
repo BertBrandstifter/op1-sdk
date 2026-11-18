@@ -221,7 +221,7 @@ static void new_note(int vi, const uint32_t *inc, const volatile int16_t *s)
     pend_valid = 0;
 }
 
-/* PLAY's instances (enginehost: vi = instance x 6 + voice, instance 1..3): the same mono voice
+/* PLAY's instances (enginehost: vi = instance x 6 + voice, instance 1..5): the same mono voice
  * per instance, without TE's keys: slides ALL / OFF (LEGATO: off), accents ALL / every 2nd-4th
  * (VEL: off); the note ends by PLAY's envelope */
 typedef struct ac_inst {

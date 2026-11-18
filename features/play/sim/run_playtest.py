@@ -43,7 +43,7 @@ NEED = ["py_main", "py_mx", "py_blocks", "py_import_files", "py_import_errors", 
         "nr_loaded", "py_syn_notes", "py_cpu_trk", "py_cpu_all", "eh_register_multi", "dr_req_open", "dr_open",
         "dr_cur", "dr_via_play", "dr_ext_pat", "dr_ext_clock", "py_view", "py_pat_head", "py_pat_start_row",
         "py_pat_audition_track", "py_help_on", "py_pat_cued", "py_rd_busy", "py_pat_slot",
-        "py_pat_starved", "py_update_gains", "py_pat_set_start", "py_boosts"]
+        "py_pat_starved", "py_update_gains", "py_pat_set_start", "py_boosts", "py_inst_cyc", "py_list_pattern"]
 HOOKS = {"_hook_key": "__sdk_hook_019b6c74", "_hook_knob": "__sdk_hook_019b6c0c",
          "_hook_frame": "__sdk_hook_019ab8b2", "_hook_volume": "__sdk_hook_019de548",
          "_hook_cleanup": "__sdk_hook_01997584"}

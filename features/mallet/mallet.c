@@ -35,9 +35,9 @@
 #define TITLE_TIME      TE_SAMPLE_RATE          /* the sound's name over the instrument: 1 s */
 #define PAGES           3
 
-static ml_voice voices[EH_SLOTS];               /* every instance (PLAY: vi 6..23) */
+static ml_voice voices[EH_SLOTS];               /* every instance (PLAY: vi 6..35) */
 static uint32_t motor_ph[EH_INST];              /* the vibraphone motor per instance (render thread) */
-static int32_t motor_gain[EH_INST] = { 32768, 32768, 32768, 32768 };
+static int32_t motor_gain[EH_INST] = { [0 ... EH_INST - 1] = 32768 };
 volatile uint8_t ml_page;                       /* 0..2 = page 1..3 (bench reads) */
 static volatile uint8_t consumed;               /* pushes whose key-up we eat */
 volatile int8_t ml_bank = -1;                   /* last loaded bank entry (-1 none), bench reads */

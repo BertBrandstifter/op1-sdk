@@ -15,7 +15,8 @@
  *             SYNTH: py_synth plays them on an engine instance (1..3, enginehost) with the
  *             slot's knobs and TE's envelope code. The instances are a pool: a SYNTH track takes
  *             one for its first note and gives it back once its voices are silent, so up to 8
- *             SYNTH tracks take turns, at most 3 sounding at once (a note that finds none takes
+ *             SYNTH tracks take turns, at most 5 sounding at once, the 4th and 5th only while
+ *             PLAY's CPU allows it (PY_INST_CYC; a note that finds none takes
  *             an instance whose track only has release tails left, else it is dropped).
  *             DRUM blocks go into py_mx.pin[t];
  *             SYNTH tracks are summed with their gains at 88.2 kHz and decimated once
@@ -103,7 +104,7 @@ static volatile uint8_t cue_req[PS_TRACKS] = { PS_EMPTY, PS_EMPTY, PS_EMPTY, PS_
 static py_drums drums[PS_TRACKS];
 static py_syn syns[PS_TRACKS];
 /* the instance pool (audio interrupt; py_pat_start resets it with the interrupt not playing) */
-static volatile uint8_t inst_of[PS_TRACKS];     /* SYNTH track -> engine instance 1..3, 0 = none now */
+static volatile uint8_t inst_of[PS_TRACKS];     /* SYNTH track -> engine instance 1..5, 0 = none now */
 static uint8_t inst_busy;                       /* bit i: instance i is taken */
 static volatile uint16_t starved[PS_TRACKS];    /* blocks left of "a note found no instance" (GUI) */
 #define STARVED_BLOCKS  690                     /* ~1 s */
@@ -487,15 +488,40 @@ static void inst_free(int t)
     }
 }
 
-/* track t's instance, taken from the pool if it has none: a free one, else one whose track only
- * has release tails left (cut); 0 = every instance has a track with a note held */
+/* overload guard: instances 1..PY_INST_SAFE any time; the 4th and 5th only while PLAY's peak
+ * block (the last of either parity, at least PY_INST_EST per busy instance: at the song's start
+ * nothing is measured yet and every track's first note comes in the same block) plus one more
+ * instance's share stays under py_inst_cyc */
+#define PY_INST_SAFE    3
+#define PY_INST_EST     50000u                  /* CYCLES per sounding instance before any measure
+                                                 * (sim: ACID 3 45k, MONO 3 23..37k per voice) */
+#define PY_INST_CYC     250000u                 /* CYCLES per block: ~43 % of one (TE's own 25-30 %
+                                                 * on top; sim load bench, 3 ACID 3 ECO off: 201k) */
+volatile uint32_t py_inst_cyc = PY_INST_CYC;    /* (the sim lowers it) */
+
+static int inst_room(void)
+{
+    uint32_t peak = blk_cyc[0] > blk_cyc[1] ? blk_cyc[0] : blk_cyc[1];
+    int i, busy = 0;
+
+    for (i = 1; i < EH_INST; i++)
+        busy += (inst_busy >> i) & 1;
+    if (busy < PY_INST_SAFE || hd)              /* (a render to a file: no deadline) */
+        return 1;
+    if (peak < (uint32_t)busy * PY_INST_EST)
+        peak = (uint32_t)busy * PY_INST_EST;
+    return peak + peak / (uint32_t)busy <= py_inst_cyc;
+}
+
+/* track t's instance, taken from the pool if it has none: a free one (the 4th / 5th while the CPU
+ * allows: inst_room), else one whose track only has release tails left (cut); 0 = none (BUSY) */
 static int inst_take(int t)
 {
-    int i, u;
+    int i, u, room = inst_room();
 
     if (inst_of[t])
         return inst_of[t];
-    for (i = 1; i < EH_INST; i++)
+    for (i = 1; i < EH_INST && room; i++)
         if (!(inst_busy & (1u << i))) {
             inst_busy |= (uint8_t)(1u << i);
             inst_of[t] = (uint8_t)i;

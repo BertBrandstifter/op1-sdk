@@ -18,7 +18,7 @@
 #define TAG             4
 #define PAGES           4
 
-static tr_voice voices[EH_SLOTS];          /* every instance (PLAY: vi 6..23) */
+static tr_voice voices[EH_SLOTS];          /* every instance (PLAY: vi 6..35) */
 volatile uint8_t tr_page;                       /* 0..3 = page 1..4 (bench reads) */
 static volatile uint8_t consumed;
 volatile int8_t tr_bank = -1;                   /* bench reads */

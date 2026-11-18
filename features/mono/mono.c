@@ -68,7 +68,7 @@ static const struct { uint8_t c, sh, bits; } fields[NP + 1] = {
     [P_RANGE3] = { 7, 0, 3 }, [P_WAVE1] = { 7, 3, 3 }, [P_WAVE2] = { 7, 6, 3 }, [P_WAVE3] = { 7, 9, 3 },
 };
 
-static mo_voice voices[EH_SLOTS];               /* every instance (PLAY: vi 6..23) */
+static mo_voice voices[EH_SLOTS];               /* every instance (PLAY: vi 6..35) */
 static uint32_t order[EH_VOICES], notes;        /* note-on order per voice (render thread) */
 static uint8_t gone;                            /* voices past the newest 4: faded out (a bit each) */
 static int32_t last_pitch;                      /* the newest note's pitch now (log2, Q16): glides start there */
@@ -209,7 +209,7 @@ static const volatile int16_t *stored(const int16_t *k)
 
 /* ------------------------------------------------------------------ render thread */
 
-/* PLAY's instances (enginehost: vi = instance x 6 + voice, instance 1..3): the same voice per
+/* PLAY's instances (enginehost: vi = instance x 6 + voice, instance 1..5): the same voice per
  * instance without TE's keys (glide from the instance's last note, the newest MAX_SOUNDING
  * voices of the instance sound); a note ends by PLAY's envelope */
 static uint32_t i_order[EH_SLOTS], i_notes[EH_INST], i_gone;

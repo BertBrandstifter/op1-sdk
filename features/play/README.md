@@ -5,7 +5,8 @@ A second tape screen with one list of up to **8 tracks** in any order. Each trac
 - **AUDIO**: a WAV / AIF file from the set folder, looped or played once;
 - **SYNTH**: NOTE ROLL patterns, played on an instance of an SDK engine (ACID 3, MONO 3,
   STATION 1, PARTY, PALETTE, MALLET, WHEEL, WARP, TRIO) with one of the 8 synth sounds; up to 8
-  SYNTH tracks share 3 instances, so at most 3 sound at once (they take turns in the song);
+  SYNTH tracks share 5 instances, so at most 5 sound at once (the 4th and 5th while the CPU
+  allows; they take turns in the song);
 - **DRUM**: DRUM ROLL patterns, played from one of the 8 drum kits.
 
 Everything runs in sync from bar 1, with level, mute, solo, master and a bar counter. PLAY is the
@@ -40,7 +41,7 @@ MASTER 0 DB        PRESS: VOICES  SHIFT: ECO  SHIFT+BLUE: EDIT
 | join | the song view | the song view |
 | speech | the help page (blue turn: the other pages; any key: back) | |
 | shift + white press | SYNTH: ECO on / off | |
-| orange turn | SYNTH / DRUM: the pattern 1..14 (held at the ends); a track with a longer song shows `SNG` and is edited in the song view | |
+| orange turn | SYNTH / DRUM: the pattern 1..14 (held at the ends); while playing it shows at once in amber and starts when the playing pattern ends (white then); a track with a longer song shows `SNG` and is edited in the song view | |
 | shift + orange turn | master | master |
 | orange press | re-read the set folder | |
 | cut, cut again | remove the track | |
@@ -202,8 +203,8 @@ the tape come on top (cpuinfo's `load te`). Ways to keep it down, per SYNTH trac
   full engine render (ACID 3 is mono: it renders once per block whatever the setting).
 - **ECO:** the engine renders at 44.1 kHz instead of 88.2 kHz (every other block, 128 samples at
   twice the pitch step = two blocks) and skips the decimator: half the engine's cost. ECO tracks
-  take turns (instances 1 and 3 on one block, 2 on the next), so three ECO tracks cost at most two
-  renders in any block. ACID 3 knows ECO and keeps its cutoffs, envelopes and slide (its own
+  take turns (instances 1, 3 and 5 on one block, 2 and 4 on the next), so five ECO tracks cost at
+  most three renders in any block. ACID 3 knows ECO and keeps its cutoffs, envelopes and slide (its own
   44.1 kHz tables, resonance matched per resonance). **ECO boost** (v0.8.1): an ECO render
   carries `EH_BOOST` while PLAY's work in the last block of the same parity, the boosts already
   granted in this block and the track's own last render stay under 200k cycles (~35 % of a
@@ -218,8 +219,12 @@ decimator, and a new note renders before the voices already sounding (a mono eng
 ACID 3 then renders once in that block instead of twice: the CPU spikes that came with legato
 notes).
 
-Limits: up to 8 SYNTH tracks, at most 3 of them sounding at once (v0.8): the 3 engine
-instances are a pool. A track takes one for its first note and gives it back once its voices
+Limits: up to 8 SYNTH tracks, at most 5 of them sounding at once (v0.9; v0.8: 3): the 5 engine
+instances are a pool. The 4th and 5th are taken only while PLAY's CPU allows it: its peak block
+(the last of each block parity, at least 50k cycles per sounding instance before anything is
+measured) plus one more instance's share must stay under 250k cycles (~43 % of a block; TE's own
+25-30 % on top). Heavy engines without ECO then stop at 3 (`BUSY`), light ones and ECO tracks
+reach 5. A track takes one for its first note and gives it back once its voices
 are silent, so SYNTH tracks that take turns in the song (rest cells, later columns, live cues)
 can use 8 different sounds. A note that finds no free instance takes one whose track only has
 a release tail left (the tail is cut), else it is dropped and the track shows `BUSY` for ~1 s
@@ -227,7 +232,7 @@ a release tail left (the tail is cut), else it is dropped and the track shows `B
 whose engine is one of TE's own shows `NOT AN SDK ENGINE`: TE's engines exist once, as TE's six
 voices, and TE renders only the sound being played; running one a second time would need each
 engine's voice objects rebuilt (reverse engineering per engine). The SDK engines keep their state
-per voice slot (24: TE's 6 + 3 instances x 6) and per instance (MONO 3's voice order, ACID 3's mono
+per voice slot (36: TE's 6 + 5 instances x 6, ~7 KB of RAM per instance over all engines) and per instance (MONO 3's voice order, ACID 3's mono
 voice, MALLET's motor, WHEEL's rotor, PALETTE's budget); keyboard displays stay TE's. That state
 passes on with the instance to the next track that takes it.
 

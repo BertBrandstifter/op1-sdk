@@ -171,7 +171,7 @@ column's type). The chain view names the track it was opened from and the other 
   (rows without a sound), and written as PSN3 at the next save.
 - Limits: TE's 8 synth slots / 8 kits as they are in memory. No preset loading from flash.
 
-#### Up to 8 SYNTH tracks, 3 at once (v0.8)
+#### Up to 8 SYNTH tracks, 3 at once (v0.8), 5 at once (v0.9)
 
 SYNTH tracks no longer own an engine instance: the three instances (1..3, enginehost `EH_INST`)
 are a pool. A track takes one for its first note and gives it back once its voices are silent
@@ -187,6 +187,11 @@ engines, not 8 in parallel.
   voice order, ACID 3's mono voice, MALLET's motor, WHEEL's rotor) passes from one track to the
   next, as it already did when a chain row changed a track's sound.
 - DRUM tracks stay at 2 (CPU).
+- v0.9: 5 instances (enginehost `EH_INST` 6, ~7 KB of RAM per instance over all engines). The 4th
+  and 5th are an overload guard's: taken only while PLAY's peak block (the last of each parity,
+  at least 50k cycles per sounding instance while nothing is measured, e.g. every track's first
+  note at the song's start) plus one more instance's share stays under 250k cycles. Otherwise
+  the note is dropped (`BUSY`), as when all instances are taken.
 
 #### ECO boost (v0.8.1)
 
@@ -342,7 +347,7 @@ clipboards, the cursors, the view, the "last value" per column and the start row
 
 #### Render to a file (built, v0.6)
 
-Why: the CPU limits the SYNTH tracks (3 instances, ECO, voice caps). A render plays the song
+Why: the CPU limits the SYNTH tracks (5 instances with a CPU guard, ECO, voice caps). A render plays the song
 into a file, not in real time, at full quality; the file is then one AUDIO track.
 
 - **rec** in the song view or live mode asks `RENDER n BARS FROM ROW rr` (n = the longest

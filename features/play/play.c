@@ -806,6 +806,19 @@ static int pattern_now(int t)
     return pattern_of(t);
 }
 
+/* the pattern the list row shows: a one-pattern track (orange turn) the one chosen, at once (the
+ * head only takes it when the pattern playing ends: until then PY_PAT_PENDING, drawn amber; v0.9.1:
+ * before, the row kept the old number while playing or paused); else what plays now */
+int py_list_pattern(int t)
+{
+    int now = pattern_now(t), set;
+
+    if (!py_song_quick(&py_song, t))
+        return now;
+    set = pattern_of(t);
+    return set != now ? set | PY_PAT_PENDING : set;
+}
+
 /* orange turn: that pattern, --, 1..14 (the track gets a new unused chain the first time); only
  * while the track's song is that one pattern (py_song_quick), else the song view edits it */
 static void step_pattern(int t, int d)
@@ -914,7 +927,8 @@ int py_key_first(int key, int down)
             return 0;
         if (pattern_now(t) < 0)
             step_pattern(t, 1);                 /* no pattern yet: pattern 1 */
-        pat = pattern_now(t);
+        pat = py_list_pattern(t);               /* the one the row shows */
+        pat = pat < 0 ? pat : pat & ~PY_PAT_PENDING;
     }
     if (pat < 0)
         return take(key);
@@ -1238,15 +1252,16 @@ static void draw_track(int y, int row, int k, int sel)
         if (py_mx.underruns[k])
             gfx_text7(148, y, "!", C_RED);
     } else {
-        int pat = pattern_now(k);
+        int pat = py_list_pattern(k), pend = pat >= 0 && (pat & PY_PAT_PENDING);
         const ps_head *h = py_pat_head(k);
 
         x = gfx_text7(38, y, t->type == PS_DRUM ? "KIT " : "SND ", C_GREY);     /* white */
         gfx_dec7(x, y, py_pat_slot(k) + 1,      /* (amber: the chain row's sound, not the track's) */
                  py_mx.playing && py_pat_slot(k) != t->sound && t->sound < 8 ? C_AMBER : C_WHITE);
         x = gfx_text7(74, y, py_song_quick(&py_song, k) ? "PAT " : "SNG ", C_GREY);   /* orange */
+        pat = pat < 0 ? pat : pat & ~PY_PAT_PENDING;
         if (pat >= 0 && pat < PS_PATTERNS)
-            gfx_dec7(x, y, pat + 1, C_WHITE);
+            gfx_dec7(x, y, pat + 1, pend ? C_AMBER : C_WHITE);     /* amber: next, when this one ends */
         else
             gfx_text7(x, y, "--", C_DIM);
         if (t->type == PS_SYNTH) {

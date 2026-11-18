@@ -26,7 +26,7 @@
 #define OFF             (-1)
 #define TITLE_TIME      TE_SAMPLE_RATE          /* the sound's name over the voice list: 1 s */
 
-static pss_voice voices[EH_SLOTS];         /* every instance (PLAY: vi 6..23) */
+static pss_voice voices[EH_SLOTS];         /* every instance (PLAY: vi 6..35) */
 /* the sounding notes (the lamps under the LCD): a key held on the OP-1 (pss_note_key) is its note
  * (TE plays note index + 53 + 12 x octave); the next new voice tells the octave (its pitch rounded to the nearest octave of the
  * note: glide / LFO / bend at the start move it by less than 6 semitones). New voices no held key

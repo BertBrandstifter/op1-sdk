@@ -33,7 +33,7 @@
                                          * inner rate at 88.2 kHz where the sound needs it (ACID 3:
                                          * the filter while its cutoff is above 6 kHz) */
 #define EH_VOICES       6
-#define EH_INST         4               /* instances: 0 = TE's voices, 1..3 = PLAY's synth tracks */
+#define EH_INST         6               /* instances: 0 = TE's voices, 1..5 = PLAY's synth tracks */
 #define EH_SLOTS        (EH_INST * EH_VOICES)   /* voice index vi = instance x EH_VOICES + voice */
 
 /* render one voice: vi = voice 0..5, out = 128 samples at 88.2 kHz, knobs = the sound's 8 stored

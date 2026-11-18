@@ -23,7 +23,7 @@
 #define TAG             6
 #define PAGES           3
 
-static wp_voice voices[EH_SLOTS];          /* every instance (PLAY: vi 6..23) */
+static wp_voice voices[EH_SLOTS];          /* every instance (PLAY: vi 6..35) */
 volatile uint8_t wp_page;                       /* 0..2 = page 1..3 (bench reads) */
 static volatile uint8_t consumed;               /* pushes whose key-up we eat */
 volatile int8_t wp_bank = -1;                   /* last loaded bank entry (-1 none), bench reads */
