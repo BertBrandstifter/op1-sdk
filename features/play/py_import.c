@@ -9,11 +9,18 @@
  * its next pass and empties the old one. yaffs has no rename. Copied: every .WAV / .AIF / .AIFF
  * (short names), SET.TXT and SONG.BIN; hidden entries (macOS "._" files) and the rest are left. No
  * play/ folder = nothing happens, the last set stays. The image is read with the SDK's fat
- * library through an own read-only handle (TE keeps its own handle open). */
+ * library through an own read-only handle (TE keeps its own handle open).
+ *
+ * Shared songs (py_slots_import, the same moment): every whole .PSL file in the disk's play_s/
+ * folder (PLAY's slot files, written there by py_te.c when disk mode is entered, or one from
+ * someone else) that no slot holds already goes into a free slot: SONGnn.PSL into slot nn if that
+ * is free, else the first free one. A slot is never overwritten; a file that is damaged or of
+ * another PLAY version (other pattern sizes) is left. */
 #include <op1/te246.h>
 #include <op1/fat.h>
 #include "play.h"
 #include "py_yaffs.h"
+#include "py_slot.h"
 
 #define PY_IMAGE    "/yaffs2/user/tape_c.raw"
 #define COPY_CHUNK  (64u << 10)
@@ -238,4 +245,181 @@ void py_import_run(void)
 {
     pending = 0;
     py_clear_dir(dirs[!py_active()]);
+}
+
+/* ------------------------------------------------------------------ shared songs: play_s/ -> slots */
+
+#define MAXSONGS    32
+#define SONG_MAX    (512u << 10)                /* (a slot file: ~84 KB) */
+
+static fat_ent songs[MAXSONGS];
+static int nsongs;
+volatile uint32_t py_songs_imported, py_songs_left, py_songs_runs;    /* (bench, debug) */
+
+static int is_psl(const fat_ent *e)
+{
+    const char *n = e->name, *x = 0;
+
+    if (e->attr & 0x1e || e->size > SONG_MAX || n[0] == '_')
+        return 0;                               /* (macOS "._X.PSL" copies: short name "_X~1.PSL") */
+    for (; *n; n++)
+        if (*n == '.')
+            x = n + 1;
+    return x && up(x[0]) == 'P' && up(x[1]) == 'S' && up(x[2]) == 'L' && !x[3];
+}
+
+static void collect_songs(void *ctx, const fat_ent *e)
+{
+    (void)ctx;
+    if (is_psl(e) && nsongs < MAXSONGS)
+        songs[nsongs++] = *e;
+}
+
+static fat_file song_f;
+static int song_fd = -1;
+
+static int psl_fat_read(void *ctx, uint32_t off, void *buf, uint32_t n)
+{
+    (void)ctx;
+    return fat_read(&vol, &song_f, off, buf, n);
+}
+
+static int psl_yaffs_read(void *ctx, uint32_t off, void *buf, uint32_t n)
+{
+    (void)ctx;
+    return PY_PREAD(song_fd, buf, n, (int32_t)off);
+}
+
+/* a slot file's length and CRC (its last 4 bytes); 0 = no file */
+static uint32_t slot_tail(int n, uint32_t *crc, uint8_t *buf)
+{
+    static uint32_t st[32];
+    char path[64];
+    uint32_t len;
+    int fd;
+
+    py_pat_slot_path(path, n);
+    if (PY_STAT(path, st) < 0)
+        return 0;
+    len = st[0x1c / 4];
+    *crc = 0;
+    fd = TE_FILE_OPEN(path, TE_FILE_RDONLY, TE_FILE_MODE);
+    if (fd < 0)
+        return len ? len : 1;
+    if (len >= 4 && PY_PREAD(fd, buf, 4, (int32_t)(len - 4)) == 4)
+        *crc = (uint32_t)buf[0] | (uint32_t)buf[1] << 8 | (uint32_t)buf[2] << 16 | (uint32_t)buf[3] << 24;
+    TE_FILE_CLOSE(fd);
+    return len ? len : 1;
+}
+
+/* copy songs[i] into slot n; 1 = done and read back whole */
+static int import_song(int i, int n, psl_io *io, uint8_t *buf)
+{
+    char path[64];
+    psl_info info;
+    uint32_t off = 0, size = songs[i].size;
+    int out, ok = 1;
+
+    py_pat_slot_path(path, n);
+    PY_MKDIR(PY_DIR_S, 0);
+    out = TE_FILE_OPEN(path, TE_FILE_CREATE, TE_FILE_CREATE_MODE);
+    if (out < 0)
+        return 0;
+    fat_open(&song_f, &songs[i]);
+    while (ok && off < size) {
+        uint32_t k = size - off < COPY_CHUNK ? size - off : COPY_CHUNK;
+
+        ok = fat_read(&vol, &song_f, off, buf, k) == (int)k && TE_FILE_WRITE(out, buf, k) == (int)k;
+        off += k;
+    }
+    TE_FILE_CLOSE(out);
+    if (ok) {
+        song_fd = TE_FILE_OPEN(path, TE_FILE_RDONLY, TE_FILE_MODE);
+        io->read = psl_yaffs_read;
+        ok = song_fd >= 0 && py_slot_check(io, &info) == PSL_OK;
+        if (song_fd >= 0)
+            TE_FILE_CLOSE(song_fd);
+        song_fd = -1;
+    }
+    if (!ok)
+        PY_UNLINK(path);                        /* no half-written slot */
+    return ok;
+}
+
+int py_slots_import(void)
+{
+    static char line[48];
+    fat_ent dir;
+    psl_io io;
+    psl_info info;
+    uint8_t *buf;
+    uint16_t taken = 0;
+    uint32_t len[PSL_SLOTS], crc[PSL_SLOTS];
+    int i, n, r = 0;
+
+    nsongs = 0;
+    if (py_pat_slot_busy())
+        return 0;                               /* (the main loop writes a slot: next time) */
+    img_fd = TE_FILE_OPEN(PY_IMAGE, TE_FILE_RDONLY, TE_FILE_MODE);
+    if (img_fd < 0)
+        return 0;
+    if (fat_mount(&vol, img_read, 0) || fat_find(&vol, 0, "PLAY_S", &dir) || !(dir.attr & 0x10)
+        || fat_list(&vol, dir.clus, collect_songs, 0) < 0 || !nsongs)
+        goto done;
+    buf = TE_HEAP_MALLOC(TE_HEAP_SAMPLES, COPY_CHUNK);
+    if (!buf)
+        goto done;
+    py_songs_runs++;
+    py_songs_left = 0;
+    for (n = 0; n < PSL_SLOTS; n++) {
+        len[n] = slot_tail(n, &crc[n], buf);
+        if (len[n])
+            taken |= (uint16_t)(1u << n);
+    }
+    {
+        int k;
+
+        for (k = 0; k < (int)sizeof(io); k++)   /* (only size, pat and read are used by check) */
+            ((uint8_t *)&io)[k] = 0;
+    }
+    py_pat_slot_sizes(io.size);
+    io.pat = buf;                               /* (check: pattern-sized chunks) */
+    for (i = 0; i < nsongs; i++) {
+        uint16_t same_as = 0;
+        uint32_t c;
+        int to;
+
+        io.read = psl_fat_read;
+        fat_open(&song_f, &songs[i]);
+        if (fat_check(&vol, &songs[i]) != FAT_OK || py_slot_check(&io, &info) != PSL_OK
+            || fat_read(&vol, &song_f, songs[i].size - 4, buf, 4) != 4) {
+            py_songs_left++;                    /* damaged, cut short, another version */
+            continue;
+        }
+        c = (uint32_t)buf[0] | (uint32_t)buf[1] << 8 | (uint32_t)buf[2] << 16 | (uint32_t)buf[3] << 24;
+        for (n = 0; n < PSL_SLOTS; n++)
+            if (len[n] == songs[i].size && crc[n] == c)
+                same_as |= (uint16_t)(1u << n);
+        to = py_slot_pick(songs[i].name, taken, same_as);
+        if (to == -2)
+            continue;                           /* a slot holds it already (the export) */
+        if (to < 0 || !import_song(i, to, &io, buf)) {
+            py_songs_left++;
+            continue;
+        }
+        taken |= (uint16_t)(1u << to);
+        len[to] = songs[i].size;
+        crc[to] = c;
+        py_songs_imported++;
+        r++;
+    }
+    TE_FREE(buf);
+    if (r || py_songs_left) {
+        TE_SNPRINTF(line, sizeof(line), "PLAY: %d songs into slots (%d left)", r, (int)py_songs_left);
+        CONSOLE_PRINT(line);
+    }
+done:
+    TE_FILE_CLOSE(img_fd);
+    img_fd = -1;
+    return r;
 }

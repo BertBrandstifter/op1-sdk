@@ -307,13 +307,108 @@ static int sl_read(void *ctx, uint32_t off, void *buf, uint32_t n)
     return PY_PREAD(slot_fd, buf, n, (int32_t)off);
 }
 
+/* the synth sounds a slot stores (py_slot.h): TE type, octave, the SDK tag, knobs, envelope.
+ * Taken back only onto a drwave sound and only if the stored one is an SDK engine PLAY runs here
+ * (the slot keeps its sound otherwise: TE's engine type is not switched). Every value written is
+ * clamped into TE's ranges first (stored sounds are range-checked at boot: out of range = no
+ * boot): drwave's knob ranges, the envelope 0..32767 (play mode 0..3), the octave -4..4. TE's
+ * own setters write the patch's JSON and save it, as its screens do (knobs last: it saves). */
+#define TE_PATCH_SET_ADSR   ((void (*)(void *patch, int16_t *adsr))0x01a00c98)
+#define TE_PATCH_SET_OCTAVE ((void (*)(void *patch, int octave))0x019ff36c)
+
+static const int16_t drwave_max[8] = { 24575, 16383, 16383, 32767, 32767, 32767, 32767, 32767 };
+uint8_t py_snd_why[PSL_SOUNDS];                 /* sl_sok's last answer per slot: PY_SND_* */
+uint8_t py_snd_tag[PSL_SOUNDS];                 /* the stored sound's SDK tag (0: none) */
+
+static int16_t le16(const uint8_t *b) { return (int16_t)(b[0] | b[1] << 8); }
+
+static void unpack_knobs(const uint8_t *rec, int16_t *k)
+{
+    int i;
+
+    for (i = 0; i < 8; i++)
+        k[i] = le16(rec + 4 + 2 * i);
+}
+
+static int sl_sget(void *ctx, int s, uint8_t *rec)
+{
+    const volatile int16_t *k = TE_SYNTH_KNOBS + s * 8;
+    const volatile int16_t *a = (const volatile int16_t *)(TE_SYNTH_ADSR + (uint32_t)s * 16u);
+    int i;
+
+    (void)ctx;
+    rec[0] = (uint8_t)TE_SYNTH_TYPE[s];
+    rec[1] = (uint8_t)(int8_t)TE_SYNTH_OCTAVE[s];
+    rec[2] = (uint8_t)(TE_SYNTH_TYPE[s] == TE_INSTR_DRWAVE ? eh_tag(k) : 0);
+    rec[3] = 0;
+    for (i = 0; i < 8; i++) {
+        rec[4 + 2 * i] = (uint8_t)k[i];
+        rec[5 + 2 * i] = (uint8_t)((uint16_t)k[i] >> 8);
+        rec[20 + 2 * i] = (uint8_t)a[i];
+        rec[21 + 2 * i] = (uint8_t)((uint16_t)a[i] >> 8);
+    }
+    return 0;
+}
+
+static int sl_sok(void *ctx, int s, const uint8_t *rec)
+{
+    int16_t k[8];
+    int why;
+
+    (void)ctx;
+    unpack_knobs(rec, k);
+    py_snd_tag[s] = (uint8_t)(rec[0] == TE_INSTR_DRWAVE ? eh_tag(k) : 0);
+    why = !py_snd_tag[s] ? PY_SND_TE
+        : !eh_multi_ok(k) ? PY_SND_MISSING
+        : TE_SYNTH_TYPE[s] != TE_INSTR_DRWAVE ? PY_SND_OTHER : PY_SND_OK;
+    py_snd_why[s] = (uint8_t)why;
+    return why == PY_SND_OK;
+}
+
+static void sl_sput(void *ctx, int s, const uint8_t *rec)
+{
+    static int16_t k[8] __attribute__((aligned(4))), a[8] __attribute__((aligned(4)));
+    volatile int16_t *tk = TE_SYNTH_KNOBS + s * 8;
+    volatile int16_t *ta = (volatile int16_t *)(TE_SYNTH_ADSR + (uint32_t)s * 16u);
+    int i, o = (int8_t)rec[1];
+
+    (void)ctx;
+    unpack_knobs(rec, k);
+    for (i = 0; i < 8; i++) {
+        a[i] = le16(rec + 20 + 2 * i);
+        k[i] = k[i] < 0 ? 0 : k[i] > drwave_max[i] ? drwave_max[i] : k[i];
+        a[i] = a[i] < 0 ? 0 : a[i];
+    }
+    if (a[4] > 0x3fff)                          /* play mode (>> 12): 0..3 */
+        a[4] = 0x3fff;
+    o = o < -4 ? -4 : o > 4 ? 4 : o;
+    for (i = 0; i < 8; i++) {
+        ta[i] = a[i];
+        tk[i] = k[i];
+    }
+    TE_SYNTH_OCTAVE[s] = o;
+    TE_PATCH_SET_OCTAVE(TE_SYNTH_PATCH(s), o);
+    TE_PATCH_SET_ADSR(TE_SYNTH_PATCH(s), (int16_t *)ta);
+    TE_PATCH_SET_KNOBS(TE_SYNTH_PATCH(s), (int16_t *)tk);
+}
+
 static psl_io slot_io = { 0, { sizeof(nr_pattern), sizeof(dr_pattern) }, { &n_empty, &d_empty }, &scratch_pat,
-                          sl_get, sl_put, sl_write, sl_read };
+                          sl_get, sl_put, sl_write, sl_read, 0, sl_sget, sl_sput, sl_sok };
 
 static void slot_path(char *out, int n)
 {
     TE_SNPRINTF(out, 64, "%s/SONG%d%d.BIN", PY_DIR_S, (n + 1) / 10, (n + 1) % 10);
 }
+
+void py_pat_slot_path(char *out, int n) { slot_path(out, n); }
+
+void py_pat_slot_sizes(uint32_t size[2])
+{
+    size[0] = slot_io.size[0];
+    size[1] = slot_io.size[1];
+}
+
+int py_pat_slot_busy(void) { return slot_fd >= 0; }
 
 static void slot_open(int n, int write)
 {
@@ -382,6 +477,7 @@ int py_pat_slot_save(int n)
         return PSL_WAIT;
     swing[PSL_NR] = nr_swing;
     swing[PSL_DR] = dr_swing;
+    slot_io.cur_sound = (int)(*TE_SYNTH_SLOT & 7);
     slot_open(n, 1);
     if (slot_fd < 0)
         return PSL_IO;
@@ -405,8 +501,31 @@ int py_pat_slot_save(int n)
     return PSL_OK;
 }
 
-/* the interrupt not playing; the caller reopens the AUDIO tracks and the heads */
-int py_pat_slot_load(int n)
+/* which patterns / sounds of slot n differ from now (diff[3]), which patterns its song plays;
+ * *sbad: the stored sounds that cannot come back (why: py_snd_why, the engine: py_snd_tag) */
+int py_pat_slot_diff(int n, uint16_t diff[3], uint16_t used[2], uint8_t *sbad)
+{
+    psl_info info;
+    int r;
+
+    diff[0] = diff[1] = diff[2] = used[0] = used[1] = 0;
+    *sbad = 0;
+    if (!slots_ready())
+        return PSL_WAIT;
+    slot_open(n, 0);
+    r = slot_fd < 0 ? PSL_NOFILE : py_slot_diff(&slot_io, &info, diff);
+    slot_close();
+    if (r == PSL_OK) {
+        used[0] = info.used[0];
+        used[1] = info.used[1];
+        *sbad = info.sbad;
+    }
+    return r;
+}
+
+/* the interrupt not playing; the caller reopens the AUDIO tracks and the heads. keep: patterns
+ * left as they are (bit p of [PSL_NR] / [PSL_DR]), sounds ([2]) */
+int py_pat_slot_load(int n, const uint16_t keep[3])
 {
     uint8_t swing[2];
     int r, i;
@@ -414,7 +533,7 @@ int py_pat_slot_load(int n)
     if (!slots_ready())
         return PSL_WAIT;
     slot_open(n, 0);
-    r = slot_fd < 0 ? PSL_NOFILE : py_slot_load(&py_song, swing, &slot_io, songbuf);
+    r = slot_fd < 0 ? PSL_NOFILE : py_slot_load(&py_song, swing, &slot_io, songbuf, keep);
     slot_close();
     if (r != PSL_OK)
         return r;
@@ -424,7 +543,8 @@ int py_pat_slot_load(int n)
         refresh();                              /* every published copy anew before play */
     song_dirty = 1;                             /* SONG.BIN: the loaded song */
     cur_slot = (int8_t)n;
-    slot_edited = 0;
+    slot_edited = (keep[0] | keep[1]) != 0;     /* a pattern kept: not the slot's any more (a
+                                                 * sound kept: the song is still the slot's) */
     slot_hash = pat_hashes();
     return PSL_OK;
 }

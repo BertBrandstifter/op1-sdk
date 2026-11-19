@@ -147,7 +147,9 @@ the session; the song itself is in `SONG.BIN`.
 
 **shift + join** (song view or track list) opens the **songs page**: 16 slots, each holding a whole
 song: the track list with its settings, the song grid, the chains, **all 14 NOTE ROLL and 14 DRUM
-ROLL patterns** (as PLAY plays them, TE's own finger patterns included) and both editors' swing.
+ROLL patterns** (as PLAY plays them, TE's own finger patterns included), both editors' swing and
+**the synth sounds the song plays** (engine, its parameters, envelope and octave of every sound
+slot a SYNTH track or one of its chain rows uses).
 
 ```
 SONGS           BPM 120                  BAR 01.1      STOP
@@ -163,26 +165,89 @@ REC X2: SAVE  PLAY X2: LOAD  CUT X2: DELETE
 |---|---|
 | blue / white turn | the slot |
 | rec, rec again | save the song in the slot (the footer asks first; an existing slot is replaced) |
-| play, play again | load the slot: playback stops, the song **and all 28 patterns** are replaced, the song view opens at row 00 |
+| play, play again | load the slot: playback stops, the song is replaced, the song view opens at row 00. Patterns and sounds that differ from the ones now are asked about first (below) |
 | cut, cut again | delete the slot |
 | stop | stop / bar 1 as usual |
 | join / orange press | back to the song view (tape: the track list) |
 | speech | the help page |
 
+**Loading asks about patterns and sounds.** The slot keeps the patterns and sounds as they were
+when it was saved, so a song sounds as it did even if a pattern or a sound was edited since. Before
+a load, PLAY compares the slot's 28 patterns and its sounds with the ones now; if any differ, it
+lists them:
+
+```
+SONGS           BPM 120                  BAR 01.1      STOP
+LOAD SLOT 01: 3 PATTERNS, 2 SOUNDS DIFFER
+NOTE ROLL 03    IN THE SONG     FROM THE SLOT
+NOTE ROLL 07    NOT IN THE SONG KEEP NOW
+DRUM ROLL 04    IN THE SONG     FROM THE SLOT
+SOUND 2         ACID 3          FROM THE SLOT
+SOUND 6         MONO 3          KEPT: NOT HERE
+1 KEPT AS NOW, THE REST AS SAVED
+GREEN: CHANGE  WHITE PR: ALL  PLAY: LOAD  JOIN: NO
+```
+
+| Control | Load question |
+|---|---|
+| blue / white turn | the pattern or sound |
+| green turn right / left, green press | from the slot / keep the one now / the other one |
+| white press | all kept (if one is from the slot), else all from the slot |
+| play | load: the song, the patterns as chosen, the swings |
+| join / orange press | do not load |
+
+Patterns the song plays (its SYNTH / DRUM chains) start as FROM THE SLOT, the others as KEEP NOW.
+Sounds start as FROM THE SLOT. Nothing differs: loaded at once. A load with a kept pattern shows
+the slot as changed (amber). Slots saved by PLAY 0.10.0 do not know which patterns the song plays:
+every stored one counts.
+
+**A sound comes back** into its sound slot (TE's synth sound 1-8, the one the track names) with its
+engine's parameters, envelope and octave, saved as TE saves a sound edit. It stays as it is now
+(shown, not selectable) when:
+
+| Shown | Why |
+|---|---|
+| `KEPT: NOT HERE` | its SDK engine is not in this firmware (or cannot run in PLAY) |
+| `KEPT: OTHER ENGINE` | the sound slot holds one of TE's engines now (FM, string, ...): PLAY does not switch TE's engine type. Pick any SDK engine on that slot and load again |
+| `KEPT` | the stored sound is one of TE's engines (PLAY does not play those) |
+
+The track then plays whatever that slot holds now, as before. Every value written is clamped into
+TE's ranges first (TE checks stored sounds at boot). A track on `CUR` stores the sound that was
+current when the slot was saved. Slots of PLAY 0.10 / 0.11 have no sounds (the slots' own stay).
+
 `*` marks the slot the song came from (or was last saved to): green while nothing changed since,
 amber once the song or a pattern was edited. Loading asks with a warning when the song now is in no
 slot or has changed since.
 
-- Loaded patterns become NOTE ROLL's / DRUM ROLL's own (they write TE's copies and op1.db), so the
+- Loaded patterns (the ones not kept) become NOTE ROLL's / DRUM ROLL's own (they write TE's copies and op1.db), so the
   finger sequencer shows them too; the editors' undo history starts anew.
-- **Not in a slot:** the synth sounds and drum kits (TE's 8 slots each: the song only names the slot
-  numbers), the audio files (only their names: a slot loaded with another set shows `GONE`), the
-  tempo (set.txt / TE's), the master.
+- **Not in a slot:** the drum kits (the song only names the kit slots), TE's synth FX and LFO
+  (PLAY does not apply them), the audio files (only their names: a slot loaded with another set
+  shows `GONE`), the tempo (set.txt / TE's), the master.
 - Files: `/yaffs2/user/play_s/SONG01.BIN` .. `SONG16.BIN` (kept when a new set is imported). Empty
-  patterns are not stored: a small song is ~8 KB, all 28 patterns used ~84 KB. A file is read back
+  patterns are not stored: a small song is ~8 KB, all 28 patterns used ~84 KB (a sound: 36 bytes). A file is read back
   once after it is written; a damaged one shows `DAMAGED`, a file from an editor version with other
   pattern sizes `OTHER VERSION` (neither can be loaded).
 - The song you work on is still kept in `SONG.BIN` as before (a load writes the loaded song there).
+
+### Sharing songs
+
+Entering **disk mode** copies every slot to the disk's `play_s/` folder as `SONG01.PSL` ..
+`SONG16.PSL`: one file holds the whole slot (song, patterns, sounds), so it is what you share.
+To bring songs in, put `.PSL` files into `play_s/` (it is there even with no slots) while in disk
+mode; leaving disk mode takes every whole one that no slot holds already into a **free**
+slot: `SONG05.PSL` into slot 05 if that is free, any other name (or a taken number) into the first
+free slot. A slot is never overwritten: to replace one, delete it on the songs page first. A file
+that is damaged, cut short or from a PLAY version with other pattern sizes stays out, as do files
+beyond 16 slots; TE's console line after disk mode says how many came in and how many were left.
+Deleting a `.PSL` on the computer deletes nothing on the OP-1 (TE empties the folder anyway when
+disk mode is left).
+
+The `.PSL` format (`py_slot.h`): a 40-byte header (`PSL2`, pattern sizes, masks of the stored
+patterns and sounds, a summary for the slot list), the song (`PSN3`), the stored patterns, the
+stored sounds, a CRC-32 over everything. Little-endian, no compression; the patterns are NOTE
+ROLL's and DRUM ROLL's own structures, so a file only loads into a PLAY whose editors have the same
+pattern sizes.
 
 ## Live mode
 
@@ -233,8 +298,39 @@ muted or removed.
   An AUDIO track's level is -9 dB when added: set a rendered track to **0 dB** to hear it as
   loud as the tracks it replaces.
 - Renders live in their own folder (`/yaffs2/user/play_r`), so importing a new set from disk
-  mode keeps them. The file pool holds 16 files in all, the set's first. There is no way yet to
-  delete a render on the device or to copy it to disk mode.
+  mode keeps them. The file pool holds 16 files in all, the set's first.
+- **In disk mode** the renders show up in a folder **`play_r`** at the top of the disk, to copy
+  to the computer. PLAY copies them in each time disk mode is entered (after TE has written
+  synth/ and drum/, before the computer sees the disk), so entering takes longer the more you
+  have rendered. The folder is a copy: deleting or changing files there changes nothing on the
+  OP-1 (TE removes the folder again when disk mode is left; delete renders on the files page).
+  A render that does not fit is left out: the disk keeps TE's own 2 MB, the flash 16 MB. Not
+  while a render runs.
+
+### The files page: renders listed and deleted
+
+On the songs page, **shift + join** again opens the **files page**: every file of the render
+folder (all of them, not only the 16 in the pool) with its length, stereo / mono, size in MB and
+the AUDIO tracks of the song that play it.
+
+```
+FILES           BPM 120                  BAR 01.1      STOP
+RENDER          LENGTH     MB     PLAYED BY
+REND01.AIF      0:32 ST    5.6    3
+REND02.AIF      1:04 MO    5.6    -
+2 FILES, 11.2 MB
+CUT X2: DELETE  SHIFT+JOIN: SONGS  JOIN: BACK
+```
+
+| Control | Files page |
+|---|---|
+| blue / white turn | the file |
+| cut, cut again | delete it (the footer asks first, `PLAYED!` if a track uses it). Playback stops; a track that played it shows `GONE` |
+| shift + join | back to the songs page |
+| join / orange press | the song view |
+| speech | the help page |
+
+A deleted name is free again: the next render takes the first free `RENDnn`.
 - How: the audio interrupt renders in steps (one track of the next block per step) within a
   cycle budget instead of mixing into TE's bus; the main loop writes the captured blocks to
   flash. The engines run exactly as when playing, only not in real time.
@@ -325,11 +421,18 @@ track (`NOT 44.1 KHZ`, `NOT 16 BIT`, `SONG.WAV: GONE`); the rest plays on.
   the bus up ~x2.64), then per track gain, mute / solo, master, a soft knee, saturation.
 - **Import:** a hook before TE's disk cleanup copies `play/` from the disk image
   (`/yaffs2/user/tape_c.raw`, read with the SDK's `fat` library) into the folder PLAY is not
-  playing from; the main loop then switches over.
+  playing from; the main loop then switches over. The same hook takes new `.PSL` files from
+  `play_s/` into free slots.
+- **Sounds:** a slot stores TE's engine type, octave, knobs (`TE_SYNTH_KNOBS`) and envelope
+  (`0x01b60ef0`) of each sound the song uses; a load writes them back and calls TE's own patch
+  setters (octave `0x019ff36c`, envelope `0x01a00c98`, knobs `0x01a00d14`: the JSON and the save,
+  as TE's screens do), only onto a drwave sound and only for an SDK engine PLAY runs.
 
-Writes: `/yaffs2/user/play_r` (rendered files), `/yaffs2/user/play_s` (song slots), `/yaffs2/user/play_a` and `/yaffs2/user/play_b` (the copied set, which take turns;
-`ACTIVE` marks the current one) and `SONG.BIN` in the current one. PLAY never writes TE's tape,
-its databases or the disk image.
+Writes: the disk image's `play_r/` and `play_s/` folders (through TE's FatFs, on the way into disk mode),
+`/yaffs2/user/play_r` (rendered files), `/yaffs2/user/play_s` (song slots), `/yaffs2/user/play_a` and `/yaffs2/user/play_b` (the copied set, which take turns;
+`ACTIVE` marks the current one) and `SONG.BIN` in the current one; a slot load writes the synth
+sounds it takes back (TE's patch of that sound slot). PLAY never writes TE's tape or the disk image
+otherwise.
 
 ## Tests
 
@@ -346,7 +449,13 @@ its databases or the disk image.
 - `test_py_slot.c` (host): a song slot through a memory file: the round trip (song, swings, stored
   and empty patterns), size and masks, the header summary, every damaged byte refused with nothing
   changed, short / long files, other pattern sizes, no file, a pattern read inconsistently (retried,
-  BUSY), a failing write.
+  BUSY), a failing write; the patterns the song plays, which patterns differ from the ones now, a
+  load keeping some, a slot from 0.10.0; the sounds the song plays (the track's, a chain row's,
+  CUR's) stored, compared, put back, kept or refused; a PSL1 file (0.10 / 0.11) loaded; where an
+  imported file goes (its own number if free, else the first free slot, never a taken one).
+- `test_py_export.c` (host): renders into disk mode's volume: copied byte for byte (several
+  chunks, an empty file), a file without room on the volume or the flash skipped (the next still
+  tried), a read error / failing close: that file removed, a short write: removed and stopped.
 - `test_py_drum.c` (host): pitch maths, TE's position encoding, one-shot vs gate, reverse, loop
   while held, an octave up, the start delay, the level law, voice stealing, clamping.
 - `test_py_synth.c` (host): pitch increments, TE's halfband (DC, 1 kHz passes, 30 kHz gone), the
@@ -371,7 +480,12 @@ its databases or the disk image.
   in the pool; cancel deletes it; a DRUM track into a mono file; keys held off meanwhile),
   rest cells, sounds (keys 1-8, a chain row's SND, a key over it until the row ends), five
   SYNTH tracks on the 3 pooled instances (in turn: all play on instance 1; at once: three play,
-  two show BUSY); song slots (the songs page, save, the song and patterns changed, load: all back,
-  delete).
+  two show BUSY); song slots (the songs page, save, the song, patterns and sounds changed, load:
+  the question, cancelled, then one pattern kept and the rest back, a sound back through TE's
+  setter stand-ins, a sound on an FM slot kept, delete); the files page (a render deleted); renders
+  into disk mode (TE's FatFs stand-ins: every render copied byte for byte, every file closed, TE's
+  unmount still called; no room: nothing left behind); a slot into disk mode as SONG01.PSL and
+  shared files back (a FAT image with play_s/: the slot's own file skipped, taken back into its
+  free slot, into the next free slot when its own is taken, a damaged one left).
 
 License: MIT.

@@ -32,6 +32,7 @@
 #include "../enginehost/eh_host.h"
 #include "py_synth.h"                          /* PY_SYN_CAP_DEFAULT */
 #include "py_ui.h"
+#include "py_slot.h"
 
 #define RING_FRAMES     16384                   /* 372 ms */
 #define CHUNK_FRAMES    4096                    /* 16 KB stereo per read (~2.3 ms on the device) */
@@ -72,6 +73,8 @@ static volatile int8_t req_bar_step;
 static volatile uint8_t req_start, req_start_row, req_start_chain, req_segs, req_rescan;
 static volatile int8_t req_start_aud;           /* req_start: the track that auditions a chain, -1 */
 static volatile uint8_t req_slot, req_slot_n;   /* the songs page: PY_SL_* on slot n */
+static volatile uint32_t req_slot_keep;         /* PY_SL_LOAD: the patterns kept (NOTE ROLL bits, DRUM ROLL << 16) */
+static volatile uint8_t req_slot_skeep;         /* PY_SL_LOAD: the sounds kept */
 static volatile uint8_t req_cue_on[PS_TRACKS], req_cue_row[PS_TRACKS];   /* live: AUDIO tracks' cues */
 #define CUE_GUARD       4096                    /* frames a cue's switch lies ahead at least (93 ms) */
 
@@ -464,9 +467,84 @@ void py_req_rescan(void) { req_rescan = 1; }
 
 /* the songs page's request: scan the slots' headers, save, load (stops, the song and its
  * patterns replaced, the AUDIO tracks reopened, bar 1, song row 00) or delete a slot */
+/* ------------------------------------------------------------------ the render folder (files page) */
+py_rfile py_rfiles[PY_RFILES];
+volatile uint8_t py_nrfiles;
+
+static int name_lt(const char *a, const char *b)
+{
+    while (*a && *a == *b)
+        a++, b++;
+    return (uint8_t)*a < (uint8_t)*b;
+}
+
+/* main: every file of the render folder with its header, sorted by name */
+static void scan_renders(void)
+{
+    static uint32_t st[32];                     /* TE's stat buffer is 0x48 bytes */
+    char path[64];
+    void *d = PY_OPENDIR(PY_DIR_R);
+    uint8_t *de;
+    int n = 0, i, j, fd;
+
+    while (d && n < PY_RFILES && (de = PY_READDIR(d)) != 0) {
+        const char *name = (const char *)de + 11;
+        py_rfile f;
+        aud_info a;
+
+        if (name[0] == '.')
+            continue;
+        for (i = 0; name[i] && i < 12; i++)
+            f.name[i] = name[i];
+        f.name[i] = 0;
+        if (name[i])
+            continue;                           /* (not a short name: not PLAY's) */
+        TE_SNPRINTF(path, sizeof(path), "%s/%s", PY_DIR_R, f.name);
+        if (PY_STAT(path, st) < 0 || !(st[0x08 / 4] & 0x8000))
+            continue;
+        f.size = st[0x1c / 4];
+        f.ch = 0;
+        f.frames = f.rate = 0;
+        fd = TE_FILE_OPEN(path, TE_FILE_RDONLY, TE_FILE_MODE);
+        if (fd >= 0) {
+            if (aud_parse(yaffs_read, &fd, f.size, &a) == AUD_OK) {
+                f.ch = a.channels;
+                f.frames = a.frames;
+                f.rate = a.rate;
+            }
+            TE_FILE_CLOSE(fd);
+        }
+        for (j = n; j > 0 && name_lt(f.name, py_rfiles[j - 1].name); j--)
+            py_rfiles[j] = py_rfiles[j - 1];
+        py_rfiles[j] = f;
+        n++;
+    }
+    if (d)
+        PY_CLOSEDIR(d);
+    py_nrfiles = (uint8_t)n;
+}
+
+/* main: render n deleted (playback stops; an AUDIO track playing it shows GONE) */
+static int delete_render(int n)
+{
+    char path[64];
+    int r;
+
+    if (n >= py_nrfiles)
+        return -1;
+    TE_SNPRINTF(path, sizeof(path), "%s/%s", PY_DIR_R, py_rfiles[n].name);
+    close_audio();                              /* (stops; the file may be open) */
+    r = PY_UNLINK(path) < 0 ? -1 : 0;
+    load_set(0);                                /* the pool without it */
+    update_gains();
+    return r;
+}
+
 static void slot_op(void)
 {
     int op = req_slot, n = req_slot_n, r = 0;
+    uint32_t keep = req_slot_keep;
+    uint8_t skeep = req_slot_skeep;
 
     req_slot = 0;
     switch (op) {
@@ -476,19 +554,44 @@ static void slot_op(void)
     case PY_SL_SAVE:
         r = py_pat_slot_save(n);
         break;
-    case PY_SL_LOAD:
+    case PY_SL_DIFF: {                          /* before a load: patterns / sounds that would change */
+        uint16_t diff[3], used[2];
+        uint8_t sbad;
+
+        r = py_pat_slot_diff(n, diff, used, &sbad);
+        if (r != PSL_OK || diff[0] || diff[1] || diff[2]) {
+            py_v_slot_ask(n, r, diff, used, sbad);  /* the page asks (or says what went wrong) */
+            return;
+        }
+        op = PY_SL_LOAD;                        /* nothing would change: loaded at once */
+        keep = 0;
+        skeep = 0;
+    }   /* fall through */
+    case PY_SL_LOAD: {
+        uint16_t k[3];
+
+        k[0] = (uint16_t)keep;
+        k[1] = (uint16_t)(keep >> 16);
+        k[2] = skeep;
         close_audio();                          /* (stops) */
         py_pat_audition(-1, 0);
         py_pat_set_start(0);
-        r = py_pat_slot_load(n);
+        r = py_pat_slot_load(n, k);
         req_play = req_stop = req_bar = 0;
         open_audio();
         update_gains();
         seek_to(0, 0);
         break;
+    }
     case PY_SL_DELETE:
         r = py_pat_slot_delete(n);
         break;
+    case PY_SL_FSCAN:
+    case PY_SL_FDELETE:
+        r = op == PY_SL_FDELETE ? delete_render(n) : 0;
+        scan_renders();
+        py_v_files_done(op, n, r);
+        return;
     default:
         return;
     }
@@ -660,9 +763,11 @@ const char *py_note_now(void)                   /* GUI: the note to draw this fr
     return (const char *)note_msg;
 }
 
-void py_req_slot(int op, int n)
+void py_req_slot(int op, int n, uint32_t keep, int skeep)
 {
     req_slot_n = (uint8_t)n;
+    req_slot_keep = keep;
+    req_slot_skeep = (uint8_t)skeep;
     req_slot = (uint8_t)op;
 }
 

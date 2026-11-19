@@ -48,6 +48,16 @@ static volatile uint8_t sl_busy;                /* the main thread runs this PY_
 static psl_info sl_info[PSL_SLOTS];             /* main writes (scan), GUI reads */
 static volatile int8_t sl_state[PSL_SLOTS] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };   /* PSL_*, 1 = not read */
 static char sl_msg[64];
+/* the load question: patterns that differ from the ones now, each the slot's or kept */
+static volatile uint8_t sl_ask;                 /* 1 = shown, for slot sl_ask_n */
+static uint8_t sl_ask_n, sl_nlist, sl_acur, sl_atop;
+static uint8_t sl_list[2 * PSL_PATS + PSL_SOUNDS];  /* kind << 4 | pattern (kind 2: a sound slot) */
+static uint16_t sl_used[2];
+static uint8_t sl_bad;                          /* sounds that cannot come back (kept) */
+static volatile uint16_t sl_keep[3];            /* bit p: pattern / sound p stays as it is now */
+
+/* files page: the render folder (play.c: py_rfiles) */
+static volatile uint8_t rf_cur, rf_top, rf_armed;   /* rf_armed: cut pressed once on rf_cur */
 
 /* chain view */
 static volatile uint8_t c_track, c_chain, c_row, c_col;
@@ -82,6 +92,8 @@ void py_v_enter(void)
     rd_ask = 0;
     help = 0;
     sl_armed = 0;
+    sl_ask = 0;
+    rf_armed = 0;
     py_view = PY_V_SONG;
 }
 
@@ -94,6 +106,8 @@ void py_v_list(void)
     rd_ask = 0;
     help = 0;
     sl_armed = 0;
+    sl_ask = 0;
+    rf_armed = 0;
     py_view = PY_V_LIST;
 }
 
@@ -490,9 +504,11 @@ void py_v_slots(void)
     rd_ask = 0;
     help = 0;
     sl_armed = 0;
+    sl_ask = 0;
+    rf_armed = 0;
     py_view = PY_V_SLOTS;
     sl_busy = PY_SL_SCAN;
-    py_req_slot(PY_SL_SCAN, 0);
+    py_req_slot(PY_SL_SCAN, 0, 0, 0);
 }
 
 /* main thread: slot n's header (-1: all, the scan is done) */
@@ -535,13 +551,119 @@ void py_v_slot_done(int op, int n, int r)
     py_note(sl_msg);
 }
 
-static void slots_key(int key)
+/* main thread: the patterns / sounds a load of slot n would change; none: the main thread loads
+ * at once */
+void py_v_slot_ask(int n, int r, const uint16_t diff[3], const uint16_t used[2], int sbad)
+{
+    int k, p, i = 0;
+
+    if (r != PSL_OK) {
+        py_v_slot_done(PY_SL_LOAD, n, r);
+        return;
+    }
+    for (k = 0; k < 3; k++)
+        for (p = 0; p < (k < 2 ? PSL_PATS : PSL_SOUNDS); p++)
+            if ((diff[k] >> p) & 1)
+                sl_list[i++] = (uint8_t)(k << 4 | p);
+    sl_nlist = (uint8_t)i;
+    sl_ask_n = (uint8_t)n;
+    sl_acur = sl_atop = 0;
+    for (k = 0; k < 2; k++) {
+        sl_used[k] = used[k];
+        sl_keep[k] = (uint16_t)(diff[k] & ~used[k]);    /* the song's own: from the slot; the others: kept */
+    }
+    sl_bad = (uint8_t)sbad;
+    sl_keep[2] = (uint16_t)(diff[2] & sbad);    /* every sound from the slot, but the ones that cannot */
+    sl_ask = 1;
+    sl_busy = 0;
+}
+
+static int ask_keeps(int e)
+{
+    return (sl_keep[e >> 4] >> (e & 15)) & 1;
+}
+
+static void ask_set(int e, int keep)
+{
+    uint16_t b = (uint16_t)(1u << (e & 15));
+
+    if ((e >> 4) == 2 && ((sl_bad >> (e & 15)) & 1))
+        return;                                 /* cannot come back: stays */
+    sl_keep[e >> 4] = keep ? (uint16_t)(sl_keep[e >> 4] | b) : (uint16_t)(sl_keep[e >> 4] & ~b);
+}
+
+/* an SDK engine's name by its tag (eh_host.h) */
+static const char *engine_name(int tag)
+{
+    static const char *const names[] = { "", "PARTY", "MONO 3", "STATION 1", "TRIO", "WHEEL", "WARP",
+                                         "MALLET", "ACID 3", "PALETTE" };
+
+    return tag > 0 && tag < (int)(sizeof(names) / sizeof(names[0])) ? names[tag] : "SDK ENGINE";
+}
+
+static void ask_key(int key)
+{
+    int i, any = 0;
+
+    switch (key) {
+    case TE_KEY_PLAY:                           /* load: the choices */
+        sl_ask = 0;
+        sl_busy = PY_SL_LOAD;
+        py_req_slot(PY_SL_LOAD, sl_ask_n, (uint32_t)sl_keep[0] | (uint32_t)sl_keep[1] << 16, sl_keep[2]);
+        return;
+    case TE_KEY_JOIN:
+    case TE_KEY_ORANGE_PUSH:
+        sl_ask = 0;
+        py_note("NOT LOADED");
+        return;
+    case TE_KEY_STOP:
+        py_req_stop();
+        return;
+    case TE_KEY_GREEN_PUSH:                     /* the cursor pattern: the other choice */
+        if (sl_acur < sl_nlist)
+            ask_set(sl_list[sl_acur], !ask_keeps(sl_list[sl_acur]));
+        return;
+    case TE_KEY_WHITE_PUSH:                     /* all: kept if one is the slot's, else all the slot's */
+        for (i = 0; i < sl_nlist; i++)
+            any |= !ask_keeps(sl_list[i]);      /* (a sound that cannot come back: kept anyway) */
+        for (i = 0; i < sl_nlist; i++)
+            ask_set(sl_list[i], any);
+        return;
+    default:
+        return;
+    }
+}
+
+static void ask_knob(int knob, int d)
+{
+    int v;
+
+    if (knob == 1) {                            /* green: right the slot's, left kept */
+        if (sl_acur < sl_nlist)
+            ask_set(sl_list[sl_acur], d < 0);
+        return;
+    }
+    if (knob != 0 && knob != 2)
+        return;
+    v = sl_acur + d;
+    sl_acur = (uint8_t)(v < 0 ? 0 : v >= sl_nlist ? sl_nlist - 1 : v);
+}
+
+static void slots_key(int key, int shift)
 {
     int armed = sl_armed, st = sl_state[sl_cur], want = 0;
 
     if (sl_busy)
         return;                                 /* an operation runs: wait for it */
+    if (sl_ask) {
+        ask_key(key);
+        return;
+    }
     sl_armed = 0;
+    if (key == TE_KEY_JOIN && shift) {          /* the files page */
+        py_v_files();
+        return;
+    }
     switch (key) {
     case TE_KEY_JOIN:
     case TE_KEY_ORANGE_PUSH:
@@ -575,14 +697,114 @@ static void slots_key(int key)
         sl_armed = (uint8_t)want;
         return;
     }
+    if (want == PY_SL_LOAD)
+        want = PY_SL_DIFF;                      /* first: which patterns would change */
     sl_busy = (uint8_t)want;
-    py_req_slot(want, sl_cur);
+    py_req_slot(want, sl_cur, 0, 0);
+}
+
+/* ------------------------------------------------------------------ files page: keys + knobs
+ * The render folder: every RENDnn.AIF with its length and size; cut twice deletes the cursor
+ * file (the main thread: playback stops, the pool is read again). */
+
+void py_v_files(void)
+{
+    if (py_view == PY_V_CHAIN)
+        leave_chain();
+    del_armed = 0;
+    rd_ask = 0;
+    help = 0;
+    sl_armed = 0;
+    sl_ask = 0;
+    rf_armed = 0;
+    py_view = PY_V_FILES;
+    sl_busy = PY_SL_FSCAN;
+    py_req_slot(PY_SL_FSCAN, 0, 0, 0);
+}
+
+/* main thread: the folder read anew (after a delete: what came of it) */
+void py_v_files_done(int op, int n, int r)
+{
+    if (rf_cur >= py_nrfiles)
+        rf_cur = (uint8_t)(py_nrfiles ? py_nrfiles - 1 : 0);
+    sl_busy = 0;
+    (void)n;
+    if (op == PY_SL_FDELETE)
+        py_note(r < 0 ? "CANNOT DELETE THE FILE" : "FILE DELETED");
+}
+
+/* AUDIO tracks of the song that play file `name`: bit t */
+static int file_users(const char *name)
+{
+    int t, i, m = 0;
+
+    for (t = 0; t < PS_TRACKS; t++) {
+        if (py_song.trk[t].type != PS_AUDIO)
+            continue;
+        for (i = 0; i < PS_NAME && name[i] == py_song.trk[t].file[i] && name[i]; i++)
+            ;
+        if (i < PS_NAME && name[i] == py_song.trk[t].file[i])
+            m |= 1 << t;
+    }
+    return m;
+}
+
+static void files_key(int key, int shift)
+{
+    int armed = rf_armed;
+
+    if (sl_busy)
+        return;
+    rf_armed = 0;
+    switch (key) {
+    case TE_KEY_JOIN:
+        if (shift)
+            py_v_slots();                       /* shift + join: the songs page again */
+        else
+            py_view = PY_V_SONG;
+        return;
+    case TE_KEY_ORANGE_PUSH:
+        py_view = PY_V_SONG;
+        return;
+    case TE_KEY_STOP:
+        py_req_stop();
+        return;
+    case TE_KEY_CUT:
+        if (!py_nrfiles)
+            return;
+        if (!armed) {                           /* the first press asks */
+            rf_armed = 1;
+            return;
+        }
+        sl_busy = PY_SL_FDELETE;
+        py_req_slot(PY_SL_FDELETE, rf_cur, 0, 0);
+        return;
+    default:
+        return;
+    }
+}
+
+static void files_knob(int knob, int d)
+{
+    int v;
+
+    if (sl_busy || (knob != 0 && knob != 2) || !py_nrfiles)
+        return;
+    rf_armed = 0;
+    v = rf_cur + d;
+    rf_cur = (uint8_t)(v < 0 ? 0 : v >= py_nrfiles ? py_nrfiles - 1 : v);
 }
 
 static void slots_knob(int knob, int d)
 {
     int v;
 
+    if (sl_busy)
+        return;
+    if (sl_ask) {
+        ask_knob(knob, d);
+        return;
+    }
     if (knob != 0 && knob != 2)                 /* blue or white: the slot */
         return;
     sl_armed = 0;
@@ -603,7 +825,9 @@ void py_v_key(int key)
     int shift = *TE_SHIFT_HELD != 0;
 
     if (py_view == PY_V_SLOTS)
-        slots_key(key);
+        slots_key(key, shift);
+    else if (py_view == PY_V_FILES)
+        files_key(key, shift);
     else if (chain_ok())
         chain_key(key, shift);
     else
@@ -618,6 +842,8 @@ void py_v_knob(int knob, int d)
         return;
     if (py_view == PY_V_SLOTS)
         slots_knob(knob, d);
+    else if (py_view == PY_V_FILES)
+        files_knob(knob, d);
     else if (chain_ok())
         chain_knob(knob, d, shift);
     else
@@ -629,7 +855,7 @@ int py_v_pattern(int *t)
     int list[PS_TRACKS], n, c;
     const ps_head *h;
 
-    if (py_view == PY_V_SLOTS) {
+    if (py_view == PY_V_SLOTS || py_view == PY_V_FILES) {
         *t = -1;
         return -1;
     }
@@ -892,12 +1118,88 @@ static int bits(uint32_t m)
     return n;
 }
 
+static void two(char *out, int v)
+{
+    out[0] = (char)('0' + v / 10);
+    out[1] = (char)('0' + v % 10);
+    out[2] = 0;
+}
+
+/* the load question over the slot list */
+static void ask_frame(void)
+{
+    int r, x, n = sl_nlist, cur = sl_acur, top = sl_atop, keeps = 0, i, ns = 0;
+    char num[4];
+
+    for (i = 0; i < n; i++)
+        ns += (sl_list[i] >> 4) == 2;
+    py_draw_header("SONGS", -1, C_WHITE);
+    gfx_rect(0, PY_FOOT_LINE, gfx_w, 1, C_LINE);
+    top = cur < top ? cur : cur >= top + SL_VIS ? cur - SL_VIS + 1 : top;
+    sl_atop = (uint8_t)top;
+    two(num, sl_ask_n + 1);
+    x = gfx_text7(4, 22, "LOAD SLOT ", C_WHITE);
+    x = gfx_text7(x, 22, num, C_WHITE);
+    x = gfx_text7(x, 22, ": ", C_WHITE);
+    if (n > ns) {
+        x = gfx_dec7(x, 22, n - ns, C_AMBER);
+        x = gfx_text7(x, 22, n - ns == 1 ? " PATTERN" : " PATTERNS", C_AMBER);
+    }
+    if (ns) {
+        x = gfx_text7(x, 22, n > ns ? ", " : "", C_AMBER);
+        x = gfx_dec7(x, 22, ns, C_AMBER);
+        x = gfx_text7(x, 22, ns == 1 ? " SOUND" : " SOUNDS", C_AMBER);
+    }
+    gfx_text7(x, 22, n == 1 ? " DIFFERS" : " DIFFER", C_AMBER);
+    for (r = 0; r < SL_VIS && top + r < n; r++) {
+        int e = sl_list[top + r], k = e >> 4, p = e & 15, y = 34 + r * 10;
+        int keep = ask_keeps(e), used = k < 2 && ((sl_used[k] >> p) & 1);
+
+        if (top + r == cur)
+            gfx_rect(0, y - 2, gfx_w, 10, C_SEL);
+        if (k == 2) {                           /* a synth sound: its engine, or why it stays */
+            int why = py_snd_why[p];
+
+            x = gfx_text7(4, y, "SOUND ", C_WHITE);
+            gfx_dec7(x, y, p + 1, C_WHITE);
+            gfx_text7(100, y, why == PY_SND_TE ? "TE ENGINE" : engine_name(py_snd_tag[p]), C_WHITE);
+            if ((sl_bad >> p) & 1)
+                gfx_text7(200, y, why == PY_SND_MISSING ? "KEPT: NOT HERE" : why == PY_SND_OTHER
+                          ? "KEPT: OTHER ENGINE" : "KEPT", C_DIM);
+            else
+                gfx_text7(200, y, keep ? "KEEP NOW" : "FROM THE SLOT", keep ? C_AMBER : C_GREEN);
+            continue;
+        }
+        x = gfx_text7(4, y, k ? "DRUM ROLL " : "NOTE ROLL ", k ? C_RED : C_BLUE);
+        two(num, p + 1);
+        gfx_text7(x, y, num, k ? C_RED : C_BLUE);
+        gfx_text7(100, y, used ? "IN THE SONG" : "NOT IN THE SONG", used ? C_WHITE : C_DIM);
+        gfx_text7(200, y, keep ? "KEEP NOW" : "FROM THE SLOT", keep ? C_AMBER : C_GREEN);
+    }
+    for (i = 0; i < n; i++)
+        keeps += ask_keeps(sl_list[i]);
+    if (!footer_note("")) {
+        if (!keeps) {
+            gfx_text7(4, PY_FOOT_Y1, "ALL AS SAVED IN THE SLOT", C_GREEN);
+        } else {
+            x = gfx_dec7(4, PY_FOOT_Y1, keeps, C_AMBER);
+            gfx_text7(x, PY_FOOT_Y1, " KEPT AS NOW, THE REST AS SAVED", C_AMBER);
+        }
+        gfx_text7(232, PY_FOOT_Y1, "SPEECH: HELP", C_DIM);
+    }
+    gfx_text7(4, PY_FOOT_Y2, "GREEN: CHANGE  WHITE PR: ALL  PLAY: LOAD  JOIN: NO", C_GREY);
+}
+
 static void slots_frame(void)
 {
     int i, r, x, changed, now = py_pat_slot_now(&changed), cur = sl_cur, top = sl_top;
     int st = sl_state[cur];
     char num[4];
 
+    if (sl_ask) {
+        ask_frame();
+        return;
+    }
     py_draw_header("SONGS", -1, C_WHITE);
     gfx_rect(0, PY_FOOT_LINE, gfx_w, 1, C_LINE);
     top = cur < top ? cur : cur >= top + SL_VIS ? cur - SL_VIS + 1 : top;
@@ -941,7 +1243,8 @@ static void slots_frame(void)
     }
     if (sl_busy) {
         gfx_text7(4, PY_FOOT_Y1, sl_busy == PY_SL_SAVE ? "SAVING ..." : sl_busy == PY_SL_LOAD ? "LOADING ..."
-                  : sl_busy == PY_SL_DELETE ? "DELETING ..." : "READING THE SLOTS ...", C_AMBER);
+                  : sl_busy == PY_SL_DELETE ? "DELETING ..." : sl_busy == PY_SL_DIFF ? "COMPARING THE PATTERNS ..."
+                  : "READING THE SLOTS ...", C_AMBER);
     } else if (sl_armed) {
         x = gfx_text7(4, PY_FOOT_Y1, sl_armed == PY_SL_SAVE ? (st == PSL_NOFILE ? "REC AGAIN: SAVE IN SLOT " : "REC AGAIN: REPLACE SLOT ")
                       : sl_armed == PY_SL_LOAD ? "PLAY AGAIN: LOAD SLOT " : "CUT AGAIN: DELETE SLOT ", C_RED);
@@ -964,15 +1267,102 @@ static void slots_frame(void)
         gfx_text7(232, PY_FOOT_Y1, "SPEECH: HELP", C_DIM);
     }
     if (sl_armed == PY_SL_LOAD)
-        gfx_text7(4, PY_FOOT_Y2, now < 0 || changed ? "REPLACES THE SONG + ALL 28 PATTERNS - NOT SAVED!"
-                  : "REPLACES THE SONG + ALL 28 PATTERNS", now < 0 || changed ? C_AMBER : C_GREY);
+        gfx_text7(4, PY_FOOT_Y2, now < 0 || changed ? "REPLACES THE SONG - NOT SAVED! (ASKS ABOUT PATTERNS)"
+                  : "REPLACES THE SONG (ASKS ABOUT PATTERNS)", now < 0 || changed ? C_AMBER : C_GREY);
     else
-        gfx_text7(4, PY_FOOT_Y2, "REC X2: SAVE  PLAY X2: LOAD  CUT X2: DELETE", C_GREY);
+        gfx_text7(4, PY_FOOT_Y2, "REC/PLAY/CUT X2: SAVE/LOAD/DEL  SHIFT+JOIN: FILES", C_GREY);
+}
+
+/* m:ss of n frames at rate */
+static int draw_len(int x, int y, uint32_t frames, uint32_t rate, uint16_t c)
+{
+    uint32_t sec = rate ? frames / rate : 0;
+    char b[4];
+
+    x = gfx_dec7(x, y, (int32_t)(sec / 60u), c);
+    x = gfx_text7(x, y, ":", c);
+    two(b, (int)(sec % 60u));
+    return gfx_text7(x, y, b, c);
+}
+
+/* MB with one decimal */
+static int draw_mb(int x, int y, uint32_t bytes, uint16_t c)
+{
+    uint32_t t = (bytes + 52429u) / 104858u;    /* tenths of a MB */
+
+    x = gfx_dec7(x, y, (int32_t)(t / 10u), c);
+    x = gfx_text7(x, y, ".", c);
+    return gfx_dec7(x, y, (int32_t)(t % 10u), c);
+}
+
+static void files_frame(void)
+{
+    int r, x, n = py_nrfiles, cur = rf_cur, top = rf_top, i, users;
+    uint32_t total = 0;
+
+    py_draw_header("FILES", -1, C_WHITE);
+    gfx_rect(0, PY_FOOT_LINE, gfx_w, 1, C_LINE);
+    top = cur < top ? cur : cur >= top + SL_VIS ? cur - SL_VIS + 1 : top;
+    rf_top = (uint8_t)top;
+    gfx_text7(4, 22, "RENDER", C_DIM);
+    gfx_text7(100, 22, "LENGTH", C_DIM);
+    gfx_text7(160, 22, "MB", C_DIM);
+    gfx_text7(200, 22, "PLAYED BY", C_DIM);
+    if (sl_busy == PY_SL_FSCAN) {
+        gfx_text7(4, 34, "...", C_DIM);
+        n = 0;
+    } else if (!n) {
+        gfx_text7(4, 34, "NO RENDERS (REC IN THE SONG VIEW MAKES ONE)", C_GREY);
+    }
+    for (r = 0; r < SL_VIS && top + r < n; r++) {
+        const py_rfile *f = &py_rfiles[top + r];
+        int y = 34 + r * 10;
+
+        if (top + r == cur)
+            gfx_rect(0, y - 2, gfx_w, 10, C_SEL);
+        gfx_text7(4, y, f->name, top + r == cur ? C_WHITE : C_GREY);
+        if (f->ch) {
+            draw_len(100, y, f->frames, f->rate, C_WHITE);
+            gfx_text7(136, y, f->ch == 2 ? "ST" : "MO", C_DIM);
+        } else {
+            gfx_text7(100, y, "?", C_RED);
+        }
+        draw_mb(160, y, f->size, C_WHITE);
+        users = file_users(f->name);
+        if (!users) {
+            gfx_text7(200, y, "-", C_DIM);
+        } else {
+            for (i = 0, x = 200; i < PS_TRACKS; i++)
+                if ((users >> i) & 1)
+                    x = gfx_dec7(x, y, i + 1, C_AMBER) + 6;
+        }
+    }
+    for (i = 0; i < n; i++)
+        total += py_rfiles[i].size;
+    if (sl_busy) {
+        gfx_text7(4, PY_FOOT_Y1, sl_busy == PY_SL_FDELETE ? "DELETING ..." : "READING THE FOLDER ...", C_AMBER);
+    } else if (rf_armed && cur < n) {
+        users = file_users(py_rfiles[cur].name);
+        x = gfx_text7(4, PY_FOOT_Y1, "CUT AGAIN: DELETE ", C_RED);
+        x = gfx_text7(x, PY_FOOT_Y1, py_rfiles[cur].name, C_RED);
+        if (users)
+            gfx_text7(x, PY_FOOT_Y1, " (PLAYED!)", C_AMBER);
+    } else if (!footer_note("")) {
+        x = gfx_dec7(4, PY_FOOT_Y1, n, C_GREY);
+        x = gfx_text7(x, PY_FOOT_Y1, n == 1 ? " FILE, " : " FILES, ", C_GREY);
+        x = draw_mb(x, PY_FOOT_Y1, total, C_GREY);
+        gfx_text7(x, PY_FOOT_Y1, " MB", C_GREY);
+        gfx_text7(232, PY_FOOT_Y1, "SPEECH: HELP", C_DIM);
+    }
+    gfx_text7(4, PY_FOOT_Y2, rf_armed ? "DELETING STOPS PLAYBACK" : "CUT X2: DELETE  SHIFT+JOIN: SONGS  JOIN: BACK",
+              rf_armed ? C_AMBER : C_GREY);
 }
 
 void py_v_frame(void)
 {
-    if (py_view == PY_V_SLOTS)
+    if (py_view == PY_V_FILES)
+        files_frame();
+    else if (py_view == PY_V_SLOTS)
         slots_frame();
     else if (chain_ok())
         chain_frame();
@@ -984,11 +1374,11 @@ void py_v_frame(void)
 
 typedef struct help_line { const char *key, *text; } help_line;     /* key 0: text over the full width */
 
-#define HELP_PAGES  5
+#define HELP_PAGES  6
 #define HELP_LINES  12
 
 static const char *const help_title[HELP_PAGES] = { "HELP: PLAY", "HELP: SONG", "HELP: CHAIN", "HELP: LIVE",
-                                                       "HELP: SONGS" };
+                                                       "HELP: SONGS", "HELP: FILES" };
 
 static const help_line help_page[HELP_PAGES][HELP_LINES] = {
     {   /* the track list */
@@ -1048,18 +1438,27 @@ static const help_line help_page[HELP_PAGES][HELP_LINES] = {
         { "KEYS 1-8", "SOUND / KIT OF THE CURSOR TRACK, NOW" },
     },
     {   /* the songs page */
-        { 0, "16 SLOTS, EACH A SONG WITH ALL ITS PATTERNS" },
+        { 0, "16 SLOTS: SONG, PATTERNS, SYNTH SOUNDS" },
         { "SHIFT+JOIN", "THIS PAGE (SONG VIEW, TRACK LIST)" },
         { "BLUE / WHITE", "THE SLOT" },
         { "REC, REC", "SAVE THE SONG IN THE SLOT" },
-        { "PLAY, PLAY", "LOAD IT: SONG + ALL 28 PATTERNS" },
+        { "PLAY, PLAY", "LOAD IT - WHAT DIFFERS FROM NOW: ASKED" },
+        { "  GREEN", "FROM THE SLOT OR KEEP NOW" },
+        { "  WHITE PR", "ALL - PLAY: LOAD, JOIN: DO NOT" },
         { "CUT, CUT", "DELETE THE SLOT" },
         { "JOIN, ORANGE PR", "BACK TO THE SONG VIEW" },
-        { 0, "IN A SLOT: TRACKS, SONG, CHAINS, NOTE ROLL AND" },
-        { 0, "DRUM ROLL PATTERNS 1-14, SWING. NOT IN IT: THE" },
-        { 0, "SOUNDS, KITS, AUDIO FILES (ONLY THEIR NAMES)" },
+        { 0, "DISK MODE: THE SLOTS AS SONGNN.PSL FILES;" },
+        { 0, "NEW ONES PUT THERE GO INTO FREE SLOTS" },
         { 0, "GREEN * = THE SONG NOW, AMBER: CHANGED SINCE" },
-        { 0, "THE SONG NOW IS ALSO KEPT IN SONG.BIN AS BEFORE" },
+    },
+    {   /* the files page */
+        { 0, "THE RENDERED FILES (REC IN THE SONG VIEW)" },
+        { "SHIFT+JOIN", "THIS PAGE (FROM THE SONGS PAGE)" },
+        { "BLUE / WHITE", "THE FILE" },
+        { "CUT, CUT", "DELETE IT (PLAYBACK STOPS)" },
+        { "JOIN, ORANGE PR", "BACK TO THE SONG VIEW" },
+        { 0, "PLAYED BY: THE AUDIO TRACKS USING IT; THEY" },
+        { 0, "SHOW GONE ONCE IT IS DELETED" },
     },
 };
 
@@ -1076,7 +1475,7 @@ int py_help_key(int key)
     }
     if (key != TE_KEY_SPEECH)
         return 0;
-    help = (uint8_t)(1 + (py_view == PY_V_LIST ? 0 : py_view == PY_V_SLOTS ? 4 : chain_ok() ? 2 : live ? 3 : 1));
+    help = (uint8_t)(1 + (py_view == PY_V_LIST ? 0 : py_view == PY_V_SLOTS ? 4 : py_view == PY_V_FILES ? 5 : chain_ok() ? 2 : live ? 3 : 1));
     return 1;
 }
 

@@ -69,8 +69,16 @@
  *    tape press injected (TE_KEY_PUSH + wake), PLAY opens in the song view
  * 29 song slots (v0.10): shift + join opens the songs page (the headers read), rec twice saves slot
  *    01 (the song + all 28 patterns + swings); song, patterns and swings changed (one pattern TE's
- *    again); play twice loads slot 01: the song, every pattern (now the editors') and the swings as
- *    saved, the song view; cut twice deletes the slot
+ *    again); play twice asks (v0.11: the patterns that differ, NOTE ROLL 3 among them): join = not
+ *    loaded; again, green right on every row (from the slot), left on the first (NOTE ROLL 3 kept), play:
+ *    the song, every other pattern (now the editors') and the swings as saved, NOTE ROLL 3 as it
+ *    was, the slot shown changed, the song view; cut twice deletes the slot
+ * 30 files page (v0.11): shift + join twice (songs page, files page) lists the render folder;
+ *    cut once asks, twice deletes the first file (REND01.AIF): gone from the folder and the list
+ * 31 renders into disk mode (v0.11): the hook before TE's FatFs unmount on the way into disk
+ *    mode (TE's FatFs stand-ins here): with a FATFS pointer nothing; with NULL every render of
+ *    the folder in play_r/ byte for byte, every file closed, TE's unmount still called; a volume
+ *    without room: skipped, nothing left behind
  * Returns failed-check bits (0 = pass). */
 #include <stdarg.h>
 #include <op1/te246.h>
@@ -83,12 +91,13 @@ extern void hook_knob(int knob, int16_t *diff);
 extern void hook_frame(uint16_t *buf);
 extern void hook_volume(void);                  /* entry hook on 0x019de548 (TE's metronome mix) */
 extern void hook_cleanup(const char *dir, int depth);  /* call site 0x01997584 */
+extern void hook_disk_enter(void *vol, void *fs);       /* call site 0x019975fa */
 extern void py_main(void);
 extern py_mixer py_mx;
 extern volatile uint32_t py_blocks, py_import_files, py_import_errors, py_import_runs;
 extern char FB[], FB2[], FB3[], FB4[], FB5[], FB6[], FB7[];
 extern int py_help_on(void), py_pat_cued(int t), py_rd_busy(void);
-extern char FB8[], FB9[];
+extern char FB8[], FB9[], FB10[], FB11[], FB12[];
 extern int py_pat_slot(int t);
 extern int py_pat_starved(int t);
 extern volatile uint32_t py_boosts, py_inst_cyc;
@@ -112,6 +121,15 @@ extern ps_song py_song;
 extern volatile uint16_t py_cpu_trk[8], py_cpu_all;
 extern void eh_register_multi(int tag, void (*render)(int, int16_t *, const int16_t *, const uint32_t *, int));
 extern uint8_t IMG1[], IMG1_END[], IMG2[], IMG2_END[], IMG3[], IMG3_END[];
+extern uint8_t IMG4[], IMG4_END[];              /* play_s/SONG01.PSL: the driver writes the file in */
+extern uint8_t IMG4_FAT[], IMG4_FATSZ[], IMG4_CL[], IMG4_NCL[], IMG4_DATA[], IMG4_SIZE[];  /* (values) */
+extern volatile uint32_t py_export_songs, py_songs_imported, py_songs_left;
+extern uint8_t py_snd_why[8];
+
+#define SND_TYPE    ((volatile int32_t *)0xff8016e4)   /* TE's synth sounds: engine type, knobs, */
+#define SND_KNOBS   ((volatile int16_t *)0xff8013c4)   /* envelope, octave */
+#define SND_ADSR    ((volatile int16_t *)0x01b60ef0)
+#define SND_OCT     ((volatile int32_t *)0x01dfe4e0)
 
 #define E34     ((volatile int16_t *)0xff800d34)  /* TE's master bus L / R (int16) */
 #define F34     ((volatile int16_t *)0xff800db4)
@@ -439,6 +457,76 @@ void heap_free(void *p)
 
 void te_cleanup(const char *dir, int depth) { (void)dir; (void)depth; te_cleanups++; }
 void console_print(const char *s) { (void)s; }
+
+/* TE's patch setters (JSON + save): counted (check 29) */
+static int set_knobs_n, set_adsr_n, set_oct_n;
+void set_knobs_stub(void *patch, int16_t *k) { (void)patch; (void)k; set_knobs_n++; }
+void set_adsr_stub(void *patch, int16_t *a) { (void)patch; (void)a; set_adsr_n++; }
+void set_octave_stub(void *patch, int o) { (void)patch; (void)o; set_oct_n++; }
+
+/* TE's FatFs inside disk mode's volume (check 31): the files written, as lengths + hashes */
+#define VF 8
+static struct { char path[24]; uint32_t len, hash; uint8_t used; } vf[VF];
+static int vf_cur = -1, vf_mkdirs, vf_mounts, vf_open_now;
+static uint32_t vf_free = 100u << 20;
+static int32_t yf_free = 200 << 20;
+
+int f_open_stub(void *fil, const char *path, int mode)
+{
+    int i, e = -1;
+
+    (void)fil;
+    if (mode != 0x0a)
+        return 9;
+    for (i = 0; i < VF; i++)
+        if (vf[i].used && streq(vf[i].path, path))
+            e = i;
+    for (i = 0; e < 0 && i < VF; i++)
+        if (!vf[i].used)
+            e = i;
+    if (e < 0)
+        return 1;
+    vf[e].used = 1;
+    scpy(vf[e].path, path);
+    vf[e].len = vf[e].hash = 0;
+    vf_cur = e;
+    vf_open_now++;
+    return 0;
+}
+
+int f_write_stub(void *fil, const void *buf, uint32_t n, uint32_t *bw)
+{
+    const uint8_t *b = buf;
+    uint32_t i;
+
+    (void)fil;
+    if (vf_cur < 0)
+        return 9;
+    if (n > vf_free)
+        n = vf_free;
+    for (i = 0; i < n; i++)
+        vf[vf_cur].hash = vf[vf_cur].hash * 31u + b[i];
+    vf[vf_cur].len += n;
+    vf_free -= n;
+    *bw = n;
+    return 0;
+}
+
+int f_close_stub(void *fil) { (void)fil; vf_cur = -1; vf_open_now--; return 0; }
+int f_mkdir_stub(const char *p) { (void)p; vf_mkdirs++; return 0; }
+uint32_t fat_free_stub(void) { return vf_free; }
+int32_t yaffs_free_stub(const char *p) { (void)p; return yf_free; }
+int f_mount_stub(void *v, void *f) { (void)v; (void)f; vf_mounts++; return 0; }
+
+int f_unlink_stub(const char *path)
+{
+    int i;
+
+    for (i = 0; i < VF; i++)
+        if (vf[i].used && streq(vf[i].path, path))
+            vf[i].used = 0;
+    return 0;
+}
 void log_key(int key, int down) { (void)key; (void)down; keys_to_te++; }
 void log_knob(int knob, int16_t *diff) { (void)knob; (void)diff; knobs_to_te++; }
 void nop(void) {}
@@ -517,6 +605,27 @@ static void set_image(uint8_t *b, uint8_t *e)
 {
     mcpy(fs[image].data, b, (uint32_t)(e - b));  /* tape_c.raw: its own 3 MB at 0x02200000 */
     fs[image].size = (uint32_t)(e - b);
+}
+
+/* image 4: play_s/SONG01.PSL = d (n bytes): data, size, FAT chain (both FATs) */
+static uint32_t song_hash;
+
+static void song_image(const uint8_t *d, uint32_t n)
+{
+    uint32_t cl0 = (uint32_t)IMG4_CL, ncl = (uint32_t)IMG4_NCL, need = (n + 511) / 512, c, f, v, j;
+    uint8_t *sz = IMG4 + (uint32_t)IMG4_SIZE;
+
+    mcpy(IMG4 + (uint32_t)IMG4_DATA, d, n);
+    for (j = 0, song_hash = 0; j < n; j++)
+        song_hash = song_hash * 31u + d[j];
+    sz[0] = (uint8_t)n, sz[1] = (uint8_t)(n >> 8), sz[2] = (uint8_t)(n >> 16), sz[3] = (uint8_t)(n >> 24);
+    for (f = 0; f < 2; f++)
+        for (c = 0; c < ncl; c++) {
+            uint8_t *e = IMG4 + (uint32_t)IMG4_FAT + f * (uint32_t)IMG4_FATSZ + 2 * (cl0 + c);
+
+            v = c + 1 < need ? cl0 + c + 1 : c + 1 == need ? 0xffff : 0;
+            e[0] = (uint8_t)v, e[1] = (uint8_t)(v >> 8);
+        }
 }
 
 static void clear_master(void)
@@ -1813,8 +1922,9 @@ int main(void)
     {   /* 29: song slots */
         static ps_song keep;
         extern volatile uint8_t nr_swing, dr_swing;
+        extern int py_pat_slot_now(int *changed);
         uint32_t nsum = 0, dsum = 0, n2 = 0, d2 = 0, j;
-        int same = 1;
+        int same = 1, changed = 0, smask = 0, ns = 0, s0 = 8, snd_ok = 1;
 
         press(TE_KEY_STOP);
         py_main();
@@ -1825,6 +1935,22 @@ int main(void)
         dr_pat[3 * 3648 + 8] = 1;                                   /* DRUM ROLL pattern 4: lane 1, step 1 on */
         nr_swing = 20;
         dr_swing = 40;
+        for (j = 0; j < 8; j++) {                                   /* every synth sound: drwave, tag 1 */
+            uint32_t i2;
+
+            SND_TYPE[j] = 2;
+            for (i2 = 0; i2 < 8; i2++) {
+                SND_KNOBS[j * 8 + i2] = (int16_t)(i2 < 4 ? 1000 + j * 10 + i2 : 1 << 12 | (j * 7 + i2));
+                SND_ADSR[j * 8 + i2] = (int16_t)(2000 + j * 10 + i2);
+            }
+            SND_OCT[j] = 1;
+        }
+        for (j = 0; j < PS_TRACKS; j++)                             /* a chain row on its own sound 6 */
+            if (py_song.trk[j].type == PS_SYNTH && py_song.cell[0][j] < PS_CHAINS
+                && py_song.chain[py_song.cell[0][j]][0].pat < 14 && py_song.trk[j].sound != 5) {
+                py_song.chain[py_song.cell[0][j]][0].snd = 5;
+                break;
+            }
         mains(30);                                                  /* the published copies anew */
         press(TE_KEY_TAPE);
         shift_press(TE_KEY_JOIN);
@@ -1835,11 +1961,18 @@ int main(void)
         press(TE_KEY_REC);
         mains(2);
         CHECK(29, find("/yaffs2/user/play_s/SONG01.BIN") >= 0);
+        smask = find("/yaffs2/user/play_s/SONG01.BIN") >= 0 ? fs[find("/yaffs2/user/play_s/SONG01.BIN")].data[32] : 0;
+        for (j = 0; j < 8; j++)
+            ns += (smask >> j) & 1;
+        for (s0 = 0; s0 < 8 && !((smask >> s0) & 1); s0++)
+            ;
+        CHECK(29, ns >= 2 && s0 < 8 && ((smask >> 5) & 1));
         hook_frame((uint16_t *)FB9);                                /* the songs page: slot 01 = the song now */
         dbg[0] = find("/yaffs2/user/play_s/SONG01.BIN") >= 0 ? (int32_t)fs[find("/yaffs2/user/play_s/SONG01.BIN")].size : -1;
         mcpy((uint8_t *)&keep, (const uint8_t *)&py_song, sizeof(keep));
         for (j = 0; j < 14 * 1796; j++)
-            nsum = nsum * 31u + nr_pat[j];
+            if (j / 1796 != 2)                                      /* (NOTE ROLL 3: kept below) */
+                nsum = nsum * 31u + nr_pat[j];
         for (j = 0; j < 14 * 3648; j++)
             dsum = dsum * 31u + dr_pat[j];
         py_song.cell[0][0] = 0x55;                                  /* edits after the save */
@@ -1848,13 +1981,60 @@ int main(void)
         dr_pat[3 * 3648 + 8] = 0;
         dr_owned &= (uint16_t)~1u;
         nr_swing = dr_swing = 0;
+        for (j = 0; j < 8; j++)                                     /* the song's sounds edited */
+            if ((smask >> j) & 1) {
+                SND_KNOBS[j * 8] = (int16_t)(SND_KNOBS[j * 8] + 1);
+                SND_ADSR[j * 8 + 1] = (int16_t)(SND_ADSR[j * 8 + 1] + 1);
+                SND_OCT[j] = 2;
+            }
+        SND_TYPE[s0] = 0;                                           /* the first one an FM sound now */
+        set_knobs_n = set_adsr_n = set_oct_n = 0;
         press(TE_KEY_PLAY);                                         /* asks */
         mains(2);
         CHECK(29, py_song.trk[0].level == -33);
         press(TE_KEY_PLAY);
+        mains(3);                                                   /* compared: asks */
+        CHECK(29, py_song.trk[0].level == -33 && py_view == 3);
+        press(TE_KEY_JOIN);                                         /* not loaded */
+        mains(2);
+        CHECK(29, py_song.trk[0].level == -33 && py_view == 3 && nr_swing == 0);
+        press(TE_KEY_PLAY);
+        press(TE_KEY_PLAY);
         mains(3);
+        for (j = 0; j < 28; j++) {                                  /* every row: from the slot */
+            turn(1, 1);
+            turn(0, 1);
+        }
+        turn(0, -28);
+        turn(1, -1);                                                /* the first row: NOTE ROLL 3, kept */
+        hook_frame((uint16_t *)FB10);                               /* the load question */
+        turn(0, 40);                                                /* the last row: sound 6 */
+        turn(1, -1);                                                /* kept ... */
+        turn(1, 1);                                                 /* ... no: from the slot */
+        turn(0, -1);                                                /* sound 2, an FM sound now */
+        turn(1, 1);                                                 /* (cannot come back: kept anyway) */
+        hook_frame((uint16_t *)FB12);
+        turn(0, -40);
+        CHECK(29, py_song.trk[0].level == -33);
+        press(TE_KEY_PLAY);
+        mains(3);
+        for (j = 0; j < 8; j++) {                                   /* back as saved, the FM one kept */
+            int back = SND_KNOBS[j * 8] == (int16_t)(1000 + j * 10) && SND_ADSR[j * 8 + 1] == (int16_t)(2000 + j * 10 + 1)
+                       && SND_OCT[j] == 1;
+
+            if ((smask >> j) & 1)
+                snd_ok &= (int)j == s0 ? !back && SND_OCT[j] == 2 : back;
+        }
+        CHECK(29, snd_ok && set_knobs_n == ns - 1 && set_adsr_n == ns - 1 && set_oct_n == ns - 1
+                  && py_snd_why[s0] == 2 /* PY_SND_OTHER */);
+        dbg[4] = smask | ns << 8 | s0 << 12 | snd_ok << 16 | set_knobs_n << 20 | py_snd_why[s0] << 28;
+        SND_TYPE[s0] = 2;
+        CHECK(29, nr_pat[2 * 1796] == 8);                           /* kept as it was */
+        py_pat_slot_now(&changed);
+        CHECK(29, changed);
         for (j = 0; j < 14 * 1796; j++)
-            n2 = n2 * 31u + nr_pat[j];
+            if (j / 1796 != 2)
+                n2 = n2 * 31u + nr_pat[j];
         for (j = 0; j < 14 * 3648; j++)
             d2 = d2 * 31u + dr_pat[j];
         for (j = 0; j < sizeof(keep); j++)
@@ -1869,6 +2049,122 @@ int main(void)
         press(TE_KEY_CUT);
         mains(2);
         CHECK(29, find("/yaffs2/user/play_s/SONG01.BIN") < 0 && py_view == 3);
+        press(TE_KEY_JOIN);
+    }
+
+    {   /* 30: files page */
+        extern volatile uint8_t py_nrfiles;
+        uint32_t st[32];
+        int before;
+
+        press(TE_KEY_STOP);
+        mains(1);
+        shift_press(TE_KEY_JOIN);                                   /* the songs page */
+        mains(2);
+        shift_press(TE_KEY_JOIN);                                   /* the files page */
+        mains(2);
+        before = py_nrfiles;
+        CHECK(30, py_view == 4 && before >= 1 && file_stat("/yaffs2/user/play_r/REND01.AIF", st) == 0);
+        hook_frame((uint16_t *)FB11);                               /* the files page */
+        press(TE_KEY_CUT);                                          /* asks */
+        mains(2);
+        CHECK(30, file_stat("/yaffs2/user/play_r/REND01.AIF", st) == 0);
+        press(TE_KEY_CUT);
+        mains(3);
+        CHECK(30, file_stat("/yaffs2/user/play_r/REND01.AIF", st) < 0 && py_nrfiles == before - 1 && py_view == 4);
+        dbg[2] = before | py_nrfiles << 8 | py_view << 16;
+        press(TE_KEY_JOIN);
+    }
+
+    {   /* 31: renders into disk mode */
+        extern volatile uint32_t py_export_files, py_export_skipped;
+        int i, k, nr = 0, ok = 1, nv = 0;
+
+        for (i = 0; i < NF; i++)
+            nr += fs[i].used && !fs[i].dir && in_dir(fs[i].path, "/yaffs2/user/play_r");
+        hook_disk_enter(0, (void *)4);                              /* (mounting: not ours) */
+        CHECK(31, vf_mounts == 1 && !vf_mkdirs && !vf[0].used);
+        hook_disk_enter(0, 0);
+        for (i = 0; i < NF; i++) {
+            uint32_t h = 0, j;
+            char p[24];
+
+            if (!fs[i].used || fs[i].dir || !in_dir(fs[i].path, "/yaffs2/user/play_r"))
+                continue;
+            for (j = 0; j < fs[i].size; j++)
+                h = h * 31u + fs[i].data[j];
+            scpy(p, "/play_r/");
+            scpy(p + 8, fs[i].path + 20);                           /* "/yaffs2/user/play_r/" */
+            for (k = 0; k < VF && !(vf[k].used && streq(vf[k].path, p)); k++)
+                ;
+            ok &= k < VF && vf[k].len == fs[i].size && vf[k].hash == h;
+        }
+        for (k = 0; k < VF; k++)
+            nv += vf[k].used;
+        CHECK(31, nr >= 1 && ok && nv == nr && py_export_files == (uint32_t)nr && !vf_open_now && vf_mounts == 2);
+        dbg[3] = nr | nv << 8 | ok << 16 | (int)py_export_files << 24;
+        for (k = 0; k < VF; k++)                                    /* no room: skipped */
+            vf[k].used = 0;
+        vf_free = 2000000u + 1000u;
+        hook_disk_enter(0, 0);
+        for (k = nv = 0; k < VF; k++)
+            nv += vf[k].used;
+        CHECK(31, !nv && py_export_skipped == (uint32_t)nr && !vf_open_now);
+    }
+
+    {   /* 29 (cont.): a slot into disk mode (play_s/SONG01.PSL) and shared files back into slots */
+        static const char s1[] = "/yaffs2/user/play_s/SONG01.BIN", s2[] = "/yaffs2/user/play_s/SONG02.BIN";
+        uint32_t st[32], h = 0, j, imported;
+        int k, f, ok = 0;
+
+        vf_free = 100u << 20;
+        press(TE_KEY_STOP);
+        mains(1);
+        shift_press(TE_KEY_JOIN);                                   /* the songs page, slot 01 */
+        mains(2);
+        press(TE_KEY_REC);
+        press(TE_KEY_REC);
+        mains(2);
+        f = find(s1);
+        CHECK(29, f >= 0 && py_view == 3);
+        for (k = 0; k < VF; k++)
+            vf[k].used = 0;
+        hook_disk_enter(0, 0);
+        if (f >= 0)
+            for (j = 0; j < fs[f].size; j++)
+                h = h * 31u + fs[f].data[j];
+        for (k = 0; k < VF; k++)
+            ok |= vf[k].used && streq(vf[k].path, "/play_s/SONG01.PSL") && f >= 0 && vf[k].len == fs[f].size
+                  && vf[k].hash == h;
+        CHECK(29, ok && py_export_songs == 1 && !vf_open_now);
+        if (f >= 0)
+            song_image(fs[f].data, fs[f].size);                     /* the computer's copy */
+        set_image(IMG4, IMG4_END);
+        imported = py_songs_imported;
+        hook_cleanup("", 0);                                        /* slot 01 holds it: nothing */
+        CHECK(29, py_songs_imported == imported && find(s2) < 0 && !py_songs_left);
+        file_unlink(s1);                                            /* gone here: back into slot 01 */
+        hook_cleanup("", 0);
+        f = find(s1);
+        CHECK(29, f >= 0 && py_songs_imported == imported + 1);
+        for (j = 0, h = 0; f >= 0 && j < fs[f].size; j++)
+            h = h * 31u + fs[f].data[j];
+        CHECK(29, f >= 0 && h == song_hash);
+        py_song.trk[0].level = -20;                                 /* slot 01 another song now */
+        press(TE_KEY_REC);
+        press(TE_KEY_REC);
+        mains(2);
+        hook_cleanup("", 0);                                        /* the shared one: slot 02 */
+        f = find(s2);
+        for (j = 0, h = 0; f >= 0 && j < fs[f].size; j++)
+            h = h * 31u + fs[f].data[j];
+        CHECK(29, f >= 0 && h == song_hash && py_songs_imported == imported + 2);
+        file_unlink(s2);
+        IMG4[(uint32_t)IMG4_DATA + 100] ^= 1;                       /* damaged: left */
+        set_image(IMG4, IMG4_END);
+        hook_cleanup("", 0);
+        CHECK(29, file_stat(s2, st) < 0 && py_songs_left == 1 && py_songs_imported == imported + 2);
+        dbg[5] = (int)py_export_songs | (int)(py_songs_imported - imported) << 8 | (int)py_songs_left << 16;
         press(TE_KEY_JOIN);
     }
 

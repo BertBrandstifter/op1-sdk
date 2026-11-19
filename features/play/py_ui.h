@@ -21,7 +21,7 @@
 #define PY_FOOT_Y1      125
 #define PY_FOOT_Y2      138
 
-enum { PY_V_LIST, PY_V_SONG, PY_V_CHAIN, PY_V_SLOTS };
+enum { PY_V_LIST, PY_V_SONG, PY_V_CHAIN, PY_V_SLOTS, PY_V_FILES };
 extern volatile uint8_t py_view;                /* the view PLAY shows (session only) */
 extern py_mixer py_mx;
 
@@ -47,8 +47,22 @@ void py_update_gains(void);
 void py_seek_to(uint32_t g, int play);          /* main: stop, heads and rings at frame g, play or not */
 uint32_t py_clock_bar(void);                    /* frames per bar */
 void py_req_rescan(void);                       /* read the folders' files again (the song stays) */
-enum { PY_SL_NONE, PY_SL_SCAN, PY_SL_SAVE, PY_SL_LOAD, PY_SL_DELETE };
-void py_req_slot(int op, int n);                /* the songs page: a slot operation for the main thread */
+enum { PY_SL_NONE, PY_SL_SCAN, PY_SL_SAVE, PY_SL_LOAD, PY_SL_DELETE,
+       PY_SL_DIFF /* before a load: which patterns would change (then the page asks, or loads) */,
+       PY_SL_FSCAN /* the files page: the render folder read */, PY_SL_FDELETE /* render n deleted */ };
+
+/* the files page: the render folder (play.c reads it, sorted by name) */
+#define PY_RFILES   99
+typedef struct py_rfile {
+    char name[13];
+    uint8_t ch;                                 /* 1 / 2, 0 = not a readable audio file */
+    uint32_t size, frames, rate;
+} py_rfile;
+extern py_rfile py_rfiles[PY_RFILES];
+extern volatile uint8_t py_nrfiles;
+/* the songs page: a slot operation for the main thread; PY_SL_LOAD: keep = the patterns left as
+ * they are (NOTE ROLL bits, DRUM ROLL bits << 16) */
+void py_req_slot(int op, int n, uint32_t keep, int skeep);    /* keep: patterns, skeep: sounds */
 
 /* py_render.c */
 int py_rd_busy(void);                           /* a render runs or is about to */
@@ -71,7 +85,12 @@ void py_help_knob(int knob, int d);             /* blue turn: the page */
 void py_help_frame(void);
 int py_v_pattern(int *t);                       /* shift + blue press: the cursor's track and pattern (-1: none) */
 void py_v_slots(void);                          /* shift + join: the songs page (save / load) */
+void py_v_files(void);                          /* the songs page's shift + join: the files page */
+void py_v_files_done(int op, int n, int r);     /* main: the render folder read / a render deleted (r < 0: failed) */
 void py_v_slot_scan(int n);                     /* main: slot n's header into the page (-1: all) */
 void py_v_slot_done(int op, int n, int r);      /* main: an operation's result (py_slot.h code) */
+/* main: before loading slot n (r: py_slot.h code), these patterns would change (bit p of
+ * diff[0] NOTE ROLL, diff[1] DRUM ROLL), the song plays these: the page asks which to change */
+void py_v_slot_ask(int n, int r, const uint16_t diff[3], const uint16_t used[2], int sbad);
 
 #endif
