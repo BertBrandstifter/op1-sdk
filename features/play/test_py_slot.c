@@ -1,0 +1,204 @@
+/* host test for py_slot.c (tools/test_all.py builds it with its sibling py_slot.c; py_song.c is
+ * included here).
+ *
+ * A song with patterns through a memory file: the round trip (song, swings, stored and empty
+ * patterns), the file's size and masks, the header summary, every damaged byte refused with
+ * nothing changed, a short / long file, other pattern sizes, no file, a pattern that cannot be
+ * read at once (retried) or never (BUSY), a failing write. */
+#include <stdio.h>
+#include <string.h>
+#include "py_song.c"
+#include "py_slot.h"
+
+static int fails;
+#define CHECK(c) do { if (!(c)) { fails++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
+
+#define NSZ 20                                  /* stand-in pattern sizes */
+#define DSZ 36
+
+static uint8_t pats[2][PSL_PATS][DSZ];          /* the editors' patterns */
+static uint8_t empty[2][DSZ];
+static uint8_t file[200000];
+static uint32_t flen, fmax = sizeof(file);
+static int get_fail, put_n, write_fail_at = -1, writes;
+static uint32_t scratch[(DSZ + 3) / 4];
+static uint8_t songbuf[PS_FILE_BYTES];
+
+static int get(void *ctx, int kind, int p, void *out)
+{
+    (void)ctx;
+    if (get_fail) {
+        if (get_fail > 0)
+            get_fail--;
+        return -1;
+    }
+    memcpy(out, pats[kind][p], kind ? DSZ : NSZ);
+    return 0;
+}
+
+static void put(void *ctx, int kind, int p, const void *in)
+{
+    (void)ctx;
+    memcpy(pats[kind][p], in, kind ? DSZ : NSZ);
+    put_n++;
+}
+
+static int wr(void *ctx, const void *buf, uint32_t n)
+{
+    (void)ctx;
+    if (writes++ == write_fail_at || flen + n > fmax)
+        return -1;
+    memcpy(file + flen, buf, n);
+    flen += n;
+    return 0;
+}
+
+static int rd(void *ctx, uint32_t off, void *buf, uint32_t n)
+{
+    (void)ctx;
+    if (off >= flen)
+        return 0;
+    if (n > flen - off)
+        n = flen - off;
+    memcpy(buf, file + off, n);
+    return (int)n;
+}
+
+static psl_io io = { 0, { NSZ, DSZ }, { empty[0], empty[1] }, scratch, get, put, wr, rd };
+
+static ps_song song, back;
+
+static void make(void)
+{
+    int k, p, i;
+
+    py_song_clear(&song);
+    song.trk[0].type = PS_SYNTH;
+    song.trk[1].type = PS_DRUM;
+    song.trk[2].type = PS_AUDIO;
+    strcpy(song.trk[2].file, "SONG.WAV");
+    song.trk[0].level = -6;
+    song.cell[0][0] = 3;
+    song.cell[4][1] = 5;
+    song.cell[9][2] = PS_ON;
+    song.chain[3][0].pat = 2;
+    song.chain[5][0].pat = 7;
+    song.chain[5][1].pat = 8;
+    song.chain[5][1].tsp = -12;
+    memset(pats, 0, sizeof(pats));
+    memset(empty, 0, sizeof(empty));
+    empty[0][0] = 16;                           /* an empty pattern need not be zeros */
+    empty[1][1] = 16;
+    for (k = 0; k < 2; k++)
+        for (p = 0; p < PSL_PATS; p++)
+            memcpy(pats[k][p], empty[k], DSZ);
+    for (i = 0; i < NSZ; i++)                   /* NOTE ROLL 0 and 13, DRUM ROLL 2 */
+        pats[0][0][i] = (uint8_t)(i * 3 + 1), pats[0][13][i] = (uint8_t)(200 - i);
+    for (i = 0; i < DSZ; i++)
+        pats[1][2][i] = (uint8_t)(i ^ 0x5a);
+}
+
+static int save(void)
+{
+    static const uint8_t sw[2] = { 33, 66 };
+
+    flen = 0;
+    writes = 0;
+    return py_slot_save(&song, sw, &io, songbuf);
+}
+
+int main(void)
+{
+    static uint8_t keep[2][PSL_PATS][DSZ], good[sizeof(file)];
+    uint8_t sw[2] = { 0, 0 };
+    psl_info info;
+    uint32_t i, good_len;
+    int r;
+
+    /* round trip */
+    make();
+    CHECK(save() == PSL_OK);
+    CHECK(flen == PSL_HDR + PS_FILE_BYTES + 2 * NSZ + DSZ + 4);
+    memcpy(keep, pats, sizeof(pats));
+    CHECK(py_slot_peek(&io, &info) == PSL_OK);
+    CHECK(info.mask[0] == (1 | 1 << 13) && info.mask[1] == 1 << 2 && info.bytes == flen);
+    CHECK(info.type[0] == PS_SYNTH && info.type[1] == PS_DRUM && info.type[2] == PS_AUDIO && info.type[3] == PS_NONE);
+    CHECK(info.rows == 10 && info.chains == 2 && info.swing[0] == 33 && info.swing[1] == 66);
+    CHECK(py_slot_check(&io, &info) == PSL_OK);
+    memset(pats, 0xee, sizeof(pats));           /* the editors hold something else now */
+    py_song_clear(&back);
+    put_n = 0;
+    CHECK(py_slot_load(&back, sw, &io, songbuf) == PSL_OK);
+    CHECK(memcmp(&back, &song, sizeof(song)) == 0);
+    CHECK(sw[0] == 33 && sw[1] == 66);
+    CHECK(put_n == 2 * PSL_PATS);
+    r = 1;
+    for (i = 0; i < PSL_PATS; i++)
+        r &= memcmp(pats[0][i], keep[0][i], NSZ) == 0 && memcmp(pats[1][i], keep[1][i], DSZ) == 0;
+    CHECK(r);                                   /* stored ones back, the rest empty again */
+    CHECK(memcmp(pats[0][5], empty[0], NSZ) == 0);
+
+    /* every damaged byte: refused, nothing changed */
+    memcpy(good, file, flen);
+    good_len = flen;
+    for (i = 0; i < good_len; i++) {
+        file[i] ^= 0x10;
+        memset(pats, 0xee, sizeof(pats));
+        py_song_clear(&back);
+        put_n = 0;
+        r = py_slot_load(&back, sw, &io, songbuf);
+        if (r == PSL_OK || put_n || back.trk[0].type != PS_NONE) {
+            CHECK(!"a damaged byte was taken");
+            printf("  byte %u: r %d puts %d\n", i, r, put_n);
+            break;
+        }
+        file[i] ^= 0x10;
+    }
+    /* short, long */
+    flen = good_len - 1;
+    CHECK(py_slot_check(&io, &info) == PSL_BAD);
+    flen = good_len + 1;
+    file[good_len] = 0;
+    CHECK(py_slot_check(&io, &info) == PSL_BAD);
+    flen = good_len;
+    CHECK(py_slot_check(&io, &info) == PSL_OK);
+    flen = 10;
+    CHECK(py_slot_peek(&io, &info) == PSL_BAD);
+    flen = 0;
+    CHECK(py_slot_peek(&io, &info) == PSL_NOFILE);
+    CHECK(py_slot_load(&back, sw, &io, songbuf) == PSL_NOFILE);
+
+    /* other pattern sizes (another version of an editor) */
+    memcpy(file, good, good_len);
+    flen = good_len;
+    io.size[1] = DSZ - 4;
+    CHECK(py_slot_peek(&io, &info) == PSL_OTHER);
+    io.size[1] = DSZ;
+
+    /* a pattern read inconsistently a few times: retried; always: BUSY, a failing write: IO */
+    memcpy(pats, keep, sizeof(pats));
+    get_fail = 3;
+    CHECK(save() == PSL_OK && flen == good_len && memcmp(file, good, flen) == 0);
+    get_fail = -1;
+    CHECK(save() == PSL_BUSY);
+    get_fail = 0;
+    write_fail_at = 2;
+    CHECK(save() == PSL_IO);
+    write_fail_at = -1;
+
+    /* nothing but empty patterns, no song */
+    make();
+    py_song_clear(&song);
+    for (i = 0; i < NSZ; i++)
+        pats[0][0][i] = pats[0][13][i] = empty[0][i];
+    memcpy(pats[1][2], empty[1], DSZ);
+    CHECK(save() == PSL_OK && flen == PSL_HDR + PS_FILE_BYTES + 4);
+    CHECK(py_slot_peek(&io, &info) == PSL_OK && info.rows == 0 && info.chains == 0 && !info.mask[0] && !info.mask[1]);
+    CHECK(py_slot_load(&back, sw, &io, songbuf) == PSL_OK && back.trk[0].type == PS_NONE);
+
+    if (fails)
+        printf("%d checks failed\n", fails);
+    else
+        printf("py_slot: all checks passed\n");
+    return fails != 0;
+}

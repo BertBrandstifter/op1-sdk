@@ -1460,6 +1460,33 @@ void dr_open_from_play(int p)
     open_at(p);
 }
 
+/* PLAY's song load (main thread, the editor closed): pattern p becomes DRUM ROLL's with these
+ * notes; TE's copy gets its summary and length, op1.db the row (~3 s later) */
+void dr_put_pattern(int p, const dr_pattern *in)
+{
+    if (!inited || p < 0 || p >= DR_PATTERNS)
+        return;
+    dr_pat[p] = *in;
+    dr_owned |= (uint16_t)(1 << p);
+    summary(p);
+    te_length(p);
+    if (FS_LOADED)
+        te_len_seen[p] = (int8_t)FS_LEN(p);    /* (our length, not an edit of TE's) */
+    dirty = 1;
+}
+
+/* after the patterns: the swing; the undo history is gone (its steps belong to the old patterns) */
+void dr_put_done(int swing)
+{
+    if (!inited)
+        return;
+    dr_swing = (uint8_t)(swing < 0 ? 0 : swing > 100 ? 100 : swing);
+    h_start = h_len = h_pos = 0;
+    hist_counts();
+    refresh_gains();
+    dirty = 1;
+}
+
 int dr_key(int key, int down)
 {
     int k = key - KEY_PUSH, p, cleared = 0;

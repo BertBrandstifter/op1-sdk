@@ -7,6 +7,7 @@
 #define PY_DIR_A "/yaffs2/user/play_a"          /* the imported set: two folders take turns */
 #define PY_DIR_B "/yaffs2/user/play_b"
 #define PY_DIR_R "/yaffs2/user/play_r"          /* rendered files (py_render.c): kept across imports */
+#define PY_DIR_S "/yaffs2/user/play_s"          /* song slots SONG01..16.BIN (py_slot.c): kept across imports */
 
 const char *py_dir(void);                       /* the active set folder (py_import.c) */
 int py_active(void);
@@ -42,6 +43,14 @@ uint32_t py_pat_song_frames(int row);           /* the longest pattern column pl
 void py_pat_idle(void);                         /* audio interrupt, not playing */
 void py_pat_dirty(void);                        /* the song was edited */
 int py_pat_starved(int t);
+/* song slots (main thread; py_slot.h codes): a slot's header, save the song + patterns there,
+ * load it (not playing: the caller reopens the tracks), delete it; GUI: the current slot */
+struct psl_info;
+int py_pat_slot_peek(int n, struct psl_info *info);
+int py_pat_slot_save(int n);
+int py_pat_slot_load(int n);
+int py_pat_slot_delete(int n);
+int py_pat_slot_now(int *changed);
 
 #define PY_PAT_PENDING  0x100                   /* py_list_pattern: chosen, starts when the playing one ends */
 int py_list_pattern(int t);                     /* the list row's pattern (0..13, -1 none) | PY_PAT_PENDING */                      /* a note of SYNTH track t found no engine instance (~1 s) */

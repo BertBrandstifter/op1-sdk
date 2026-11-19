@@ -8,7 +8,7 @@ cleanup call (import hook), TE's volume setup (entry hook, the mix into TE's mas
 keys, knobs, frames; the mix lands in TE's master bus (metronome-mix hook). Three FAT16 disk images are built here: 1 = A1.WAV (2 bars stereo) +
 A2.AIF (1 bar mono, big-endian) + SET.TXT + a hidden "._" file, 2 = A1.WAV only (mono),
 3 = A2.AIF only (A1 gone). Saves build/demo/play_screen*.png (the list three times, the song view playing, the chain view
-during an audition, a help page, live mode with a cue pending).
+during an audition, a help page, live mode with a cue pending, the songs page).
 HLT = exit 0 = pass, ABORT = exit 1 = fail (R7 = failed check bits, see driver.c)."""
 
 import os, struct, sys
@@ -23,7 +23,7 @@ from build import compile_project  # noqa: E402
 
 DRIVER_AT, STACK = 0x01F40000, 0x01F7FFFC
 IMGS = [0x02500000, 0x02800000, 0x02B00000]               # images 1..3 (the driver copies one
-FB = [0x03000000, 0x03030000, 0x03060000, 0x030C0000, 0x03090000, 0x02E00000, 0x02E40000, 0x02E80000]   # the 5th: also the driver's scratch frame                 # into tape_c.raw at 0x02200000)
+FB = [0x03000000, 0x03030000, 0x03060000, 0x030C0000, 0x03090000, 0x02E00000, 0x02E40000, 0x02E80000, 0x02EC0000]   # the 5th: also the driver's scratch frame                 # into tape_c.raw at 0x02200000)
 STUBS = {                                                 # TE address: (driver function, entry bytes)
     0x01A997F4: ("file_open", 0), 0x01A99908: ("file_close", 0), 0x01A99CA8: ("file_pread", 0),
     0x01A99F84: ("file_write", 0), 0x01A9A69C: ("file_stat", 0), 0x01A9A886: ("file_mkdir", 0),
@@ -33,7 +33,7 @@ STUBS = {                                                 # TE address: (driver 
     0x019D2BF0: ("console_print", 0), 0x019B6C74: ("log_key", 1), 0x019B6C0C: ("log_knob", 1),
     0x019B2674: ("nop", 0), 0x0191211A: ("env_start", 0), 0x019120D0: ("env_release", 0),
     0x01912128: ("env_render", 0), 0x019C2F24: ("key_push", 0), 0x019C2F04: ("key_wake", 0),
-    0x0196DD44: ("db_op1", 0), 0x019ED238: ("fs_get", 0),
+    0x0196DD44: ("db_op1", 0), 0x019ED238: ("fs_get", 0), 0x0193EF3C: ("nop", 0),
 }
 
 
@@ -43,7 +43,8 @@ NEED = ["py_main", "py_mx", "py_blocks", "py_import_files", "py_import_errors", 
         "nr_loaded", "py_syn_notes", "py_cpu_trk", "py_cpu_all", "eh_register_multi", "dr_req_open", "dr_open",
         "dr_cur", "dr_via_play", "dr_ext_pat", "dr_ext_clock", "py_view", "py_pat_head", "py_pat_start_row",
         "py_pat_audition_track", "py_help_on", "py_pat_cued", "py_rd_busy", "py_pat_slot",
-        "py_pat_starved", "py_update_gains", "py_pat_set_start", "py_boosts", "py_inst_cyc", "py_list_pattern"]
+        "py_pat_starved", "py_update_gains", "py_pat_set_start", "py_boosts", "py_inst_cyc", "py_list_pattern",
+        "nr_swing", "dr_swing"]
 HOOKS = {"_hook_key": "__sdk_hook_019b6c74", "_hook_knob": "__sdk_hook_019b6c0c",
          "_hook_frame": "__sdk_hook_019ab8b2", "_hook_volume": "__sdk_hook_019de548",
          "_hook_cleanup": "__sdk_hook_01997584"}
@@ -175,7 +176,7 @@ def main():
                    [("play_screen", FB[0]), ("play_screen_gone", FB[1]), ("play_screen_tracks", FB[2]),
                     ("play_screen_song", FB[3]), ("play_screen_chain", FB[4]),
                     ("play_screen_help", FB[5]), ("play_screen_live", FB[6]),
-                    ("play_screen_render", FB[7])],
+                    ("play_screen_render", FB[7]), ("play_screen_songs", FB[8])],
                    timeout=600)
     if r.returncode and vals:
         print(f"failed check bits: {vals[0]}  first mismatch block/frame/gotL/wantL/gotR/wantR/pos: {vals[1:8]}  blocks {vals[8:]}")

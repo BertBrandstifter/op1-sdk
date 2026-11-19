@@ -1,0 +1,205 @@
+/* py_slot: PLAY's song slots, the file format (py_slot.h). */
+#include "py_slot.h"
+
+#define ALIGN4      __attribute__((aligned(4)))     /* yaffs reads / writes: even addresses */
+#define GET_TRIES   8                           /* a pattern being edited while it is copied: again */
+
+static const uint8_t magic[4] = { 'P', 'S', 'L', '1' };
+
+static uint32_t crc_add(uint32_t c, const uint8_t *p, uint32_t n)
+{
+    int k;
+
+    while (n--) {
+        c ^= *p++;
+        for (k = 0; k < 8; k++)
+            c = (c >> 1) ^ (0xedb88320u & (0u - (c & 1u)));
+    }
+    return c;
+}
+
+static void put16(uint8_t *b, uint32_t v) { b[0] = (uint8_t)v; b[1] = (uint8_t)(v >> 8); }
+static void put32(uint8_t *b, uint32_t v) { put16(b, v); put16(b + 2, v >> 16); }
+static uint32_t get16(const uint8_t *b) { return (uint32_t)b[0] | (uint32_t)b[1] << 8; }
+static uint32_t get32(const uint8_t *b) { return get16(b) | get16(b + 2) << 16; }
+
+static int same(const void *a, const void *b, uint32_t n)
+{
+    const uint8_t *x = a, *y = b;
+
+    while (n--)
+        if (*x++ != *y++)
+            return 0;
+    return 1;
+}
+
+static int bits(uint32_t m)
+{
+    int n = 0;
+
+    for (; m; m >>= 1)
+        n += (int)(m & 1);
+    return n;
+}
+
+static uint32_t file_bytes(const psl_io *io, const uint16_t mask[2])
+{
+    return PSL_HDR + PS_FILE_BYTES + (uint32_t)bits(mask[0]) * io->size[0]
+           + (uint32_t)bits(mask[1]) * io->size[1] + 4;
+}
+
+void py_slot_summary(const ps_song *s, psl_info *info)
+{
+    int r, t, c, k;
+
+    for (t = 0; t < PS_TRACKS; t++)
+        info->type[t] = s->trk[t].type <= PS_DRUM ? s->trk[t].type : PS_NONE;
+    info->rows = 0;
+    for (r = 0; r < PS_ROWS; r++)
+        for (t = 0; t < PS_TRACKS; t++)
+            if (s->trk[t].type != PS_NONE && s->cell[r][t] != PS_EMPTY)
+                info->rows = (uint8_t)(r + 1);
+    for (c = k = 0; c < PS_CHAINS; c++)
+        k += !py_song_chain_empty(s, c);
+    info->chains = (uint8_t)k;
+}
+
+int py_slot_save(const ps_song *s, const uint8_t swing[2], psl_io *io, uint8_t *songbuf)
+{
+    uint8_t hdr[PSL_HDR] ALIGN4, tail[4] ALIGN4;
+    psl_info info;
+    uint16_t mask[2] = { 0, 0 };
+    uint32_t crc = 0xffffffffu;
+    int kind, p, i;
+
+    /* first pass: which patterns are not empty (the second pass writes what it reads then: a
+     * pattern that changes in between is written as it is then, the mask stays) */
+    for (kind = 0; kind < 2; kind++)
+        for (p = 0; p < PSL_PATS; p++) {
+            for (i = 0; i < GET_TRIES && io->get(io->ctx, kind, p, io->pat); i++)
+                ;
+            if (i == GET_TRIES)
+                return PSL_BUSY;
+            if (!same(io->pat, io->empty[kind], io->size[kind]))
+                mask[kind] |= (uint16_t)(1u << p);
+        }
+    py_slot_summary(s, &info);
+    for (i = 0; i < PSL_HDR; i++)
+        hdr[i] = 0;
+    for (i = 0; i < 4; i++)
+        hdr[i] = magic[i];
+    put16(hdr + 4, io->size[0]);
+    put16(hdr + 6, io->size[1]);
+    put32(hdr + 8, file_bytes(io, mask));
+    put16(hdr + 12, mask[0]);
+    put16(hdr + 14, mask[1]);
+    for (i = 0; i < PS_TRACKS; i++)
+        hdr[16 + i] = info.type[i];
+    hdr[24] = info.rows;
+    hdr[25] = info.chains;
+    hdr[26] = swing[0];
+    hdr[27] = swing[1];
+    py_song_save(s, songbuf);
+    crc = crc_add(crc, hdr, PSL_HDR);
+    crc = crc_add(crc, songbuf, PS_FILE_BYTES);
+    if (io->write(io->ctx, hdr, PSL_HDR) || io->write(io->ctx, songbuf, PS_FILE_BYTES))
+        return PSL_IO;
+    for (kind = 0; kind < 2; kind++)
+        for (p = 0; p < PSL_PATS; p++) {
+            if (!((mask[kind] >> p) & 1))
+                continue;
+            for (i = 0; i < GET_TRIES && io->get(io->ctx, kind, p, io->pat); i++)
+                ;
+            if (i == GET_TRIES)
+                return PSL_BUSY;
+            crc = crc_add(crc, io->pat, io->size[kind]);
+            if (io->write(io->ctx, io->pat, io->size[kind]))
+                return PSL_IO;
+        }
+    put32(tail, ~crc);
+    return io->write(io->ctx, tail, 4) ? PSL_IO : PSL_OK;
+}
+
+static int parse(const uint8_t *hdr, int n, const psl_io *io, psl_info *info)
+{
+    int i;
+
+    if (n <= 0)
+        return PSL_NOFILE;
+    if (n < PSL_HDR || !same(hdr, magic, 4))
+        return PSL_BAD;
+    if (get16(hdr + 4) != io->size[0] || get16(hdr + 6) != io->size[1])
+        return PSL_OTHER;                       /* written by another version of the editors */
+    info->mask[0] = (uint16_t)get16(hdr + 12);
+    info->mask[1] = (uint16_t)get16(hdr + 14);
+    info->bytes = get32(hdr + 8);
+    if ((info->mask[0] | info->mask[1]) >> PSL_PATS || info->bytes != file_bytes(io, info->mask))
+        return PSL_BAD;
+    for (i = 0; i < PS_TRACKS; i++)
+        info->type[i] = hdr[16 + i] <= PS_DRUM ? hdr[16 + i] : PS_NONE;
+    info->rows = hdr[24];
+    info->chains = hdr[25];
+    info->swing[0] = hdr[26] > 100 ? 100 : hdr[26];
+    info->swing[1] = hdr[27] > 100 ? 100 : hdr[27];
+    return PSL_OK;
+}
+
+int py_slot_peek(psl_io *io, psl_info *info)
+{
+    uint8_t hdr[PSL_HDR] ALIGN4;
+
+    return parse(hdr, io->read(io->ctx, 0, hdr, PSL_HDR), io, info);
+}
+
+int py_slot_check(psl_io *io, psl_info *info)
+{
+    uint8_t hdr[PSL_HDR] ALIGN4, tail[4] ALIGN4;
+    uint32_t crc = 0xffffffffu, off, chunk = io->size[0] < io->size[1] ? io->size[1] : io->size[0];
+    int r = py_slot_peek(io, info);
+
+    if (r)
+        return r;
+    if (io->read(io->ctx, 0, hdr, PSL_HDR) != PSL_HDR)
+        return PSL_BAD;
+    crc = crc_add(crc, hdr, PSL_HDR);
+    for (off = PSL_HDR; off < info->bytes - 4; off += chunk) {
+        uint32_t n = info->bytes - 4 - off < chunk ? info->bytes - 4 - off : chunk;
+
+        if ((uint32_t)io->read(io->ctx, off, io->pat, n) != n)
+            return PSL_BAD;
+        crc = crc_add(crc, io->pat, n);
+    }
+    if (io->read(io->ctx, info->bytes - 4, tail, 4) != 4 || get32(tail) != ~crc)
+        return PSL_BAD;
+    if (io->read(io->ctx, info->bytes, tail, 1) > 0)
+        return PSL_BAD;                         /* longer than it says */
+    return PSL_OK;
+}
+
+int py_slot_load(ps_song *s, uint8_t swing[2], psl_io *io, uint8_t *songbuf)
+{
+    psl_info info;
+    uint32_t off = PSL_HDR;
+    int r = py_slot_check(io, &info), kind, p;
+
+    if (r)
+        return r;
+    if (io->read(io->ctx, off, songbuf, PS_FILE_BYTES) != (int)PS_FILE_BYTES
+        || py_song_load(s, songbuf, PS_FILE_BYTES))
+        return PSL_BAD;
+    off += PS_FILE_BYTES;
+    swing[0] = info.swing[0];
+    swing[1] = info.swing[1];
+    for (kind = 0; kind < 2; kind++)
+        for (p = 0; p < PSL_PATS; p++) {
+            if ((info.mask[kind] >> p) & 1) {
+                if ((uint32_t)io->read(io->ctx, off, io->pat, io->size[kind]) != io->size[kind])
+                    return PSL_IO;              /* (checked a moment ago: the flash failed now) */
+                off += io->size[kind];
+                io->put(io->ctx, kind, p, io->pat);
+            } else {
+                io->put(io->ctx, kind, p, io->empty[kind]);
+            }
+        }
+    return PSL_OK;
+}

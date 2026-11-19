@@ -71,6 +71,7 @@ static volatile uint8_t req_load = 1, req_tracks, req_resume, req_play, req_stop
 static volatile int8_t req_bar_step;
 static volatile uint8_t req_start, req_start_row, req_start_chain, req_segs, req_rescan;
 static volatile int8_t req_start_aud;           /* req_start: the track that auditions a chain, -1 */
+static volatile uint8_t req_slot, req_slot_n;   /* the songs page: PY_SL_* on slot n */
 static volatile uint8_t req_cue_on[PS_TRACKS], req_cue_row[PS_TRACKS];   /* live: AUDIO tracks' cues */
 #define CUE_GUARD       4096                    /* frames a cue's switch lies ahead at least (93 ms) */
 
@@ -461,6 +462,40 @@ void py_seek_to(uint32_t g, int play) { seek_to(g, play); }
 uint32_t py_clock_bar(void) { return clock_bar(); }
 void py_req_rescan(void) { req_rescan = 1; }
 
+/* the songs page's request: scan the slots' headers, save, load (stops, the song and its
+ * patterns replaced, the AUDIO tracks reopened, bar 1, song row 00) or delete a slot */
+static void slot_op(void)
+{
+    int op = req_slot, n = req_slot_n, r = 0;
+
+    req_slot = 0;
+    switch (op) {
+    case PY_SL_SCAN:
+        py_v_slot_scan(-1);
+        return;
+    case PY_SL_SAVE:
+        r = py_pat_slot_save(n);
+        break;
+    case PY_SL_LOAD:
+        close_audio();                          /* (stops) */
+        py_pat_audition(-1, 0);
+        py_pat_set_start(0);
+        r = py_pat_slot_load(n);
+        req_play = req_stop = req_bar = 0;
+        open_audio();
+        update_gains();
+        seek_to(0, 0);
+        break;
+    case PY_SL_DELETE:
+        r = py_pat_slot_delete(n);
+        break;
+    default:
+        return;
+    }
+    py_v_slot_scan(n);
+    py_v_slot_done(op, n, r);
+}
+
 void py_main(void)
 {
     if (py_rd_main()) {                         /* a render runs: only its read-ahead and the patterns */
@@ -485,6 +520,8 @@ void py_main(void)
         load_set(1);
         update_gains();
     }
+    if (req_slot)
+        slot_op();
     if (req_tracks) {                           /* a track added, removed or changed */
         int playing = py_mx.playing || req_resume;
 
@@ -621,6 +658,12 @@ const char *py_note_now(void)                   /* GUI: the note to draw this fr
         return 0;
     note_frames--;
     return (const char *)note_msg;
+}
+
+void py_req_slot(int op, int n)
+{
+    req_slot_n = (uint8_t)n;
+    req_slot = (uint8_t)op;
 }
 
 void py_req_pause(void) { req_play = 1; }
@@ -1081,8 +1124,11 @@ int py_key(int key, int down)
     case TE_KEY_ORANGE_PUSH:
         req_load = 1;                           /* re-read the set folder (stops first) */
         break;
-    case TE_KEY_JOIN:                           /* the song view */
-        py_v_enter();
+    case TE_KEY_JOIN:                           /* the song view; shift: the songs page */
+        if (*TE_SHIFT_HELD)
+            py_v_slots();
+        else
+            py_v_enter();
         break;
     default:                                    /* keys 1-8: the track's sound / kit; rec: nothing */
         if (py_sound_key(key) >= 0)

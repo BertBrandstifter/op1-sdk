@@ -39,6 +39,7 @@ MASTER 0 DB        PRESS: VOICES  SHIFT: ECO  SHIFT+BLUE: EDIT
 | white press | AUDIO: LOOP / ONCE (not with song cells: `SONG`); SYNTH: voices 2 -> 4 -> 1 | add the track |
 | keys 1..8 | SYNTH / DRUM: sound / kit 1..8, at once | |
 | join | the song view | the song view |
+| shift + join | the songs page (save / load, see Songs) | the songs page |
 | speech | the help page (blue turn: the other pages; any key: back) | |
 | shift + white press | SYNTH: ECO on / off | |
 | orange turn | SYNTH / DRUM: the pattern 1..14 (held at the ends); while playing it shows at once in amber and starts when the playing pattern ends (white then); a track with a longer song shows `SNG` and is edited in the song view | |
@@ -93,6 +94,7 @@ CHAIN 02 ALSO ON TRACK 4        WHITE PRESS: OPEN  SHIFT: CLONE
 | keys 1..8 | sound / kit 1..8 of the cursor column's track, at once |
 | shift + orange turn | master |
 | tape / orange press | back to the track list (join stays: join always opens the song view) |
+| shift + join | the songs page: save / load the song with its patterns (see Songs) |
 
 **Gaps.** An empty cell is the column's end, not a pause. For a pause put `OF` cells in the
 column: each is one bar of silence, in SYNTH / DRUM columns (white turn, one step below `00`)
@@ -140,6 +142,47 @@ presets are loaded from flash.
 The first empty row ends a chain. Chains are shared: the same chain in a SYNTH column plays NOTE
 ROLL's patterns, in a DRUM column DRUM ROLL's. Clipboards, cursors and the start row are kept for
 the session; the song itself is in `SONG.BIN`.
+
+## Songs: save and load
+
+**shift + join** (song view or track list) opens the **songs page**: 16 slots, each holding a whole
+song: the track list with its settings, the song grid, the chains, **all 14 NOTE ROLL and 14 DRUM
+ROLL patterns** (as PLAY plays them, TE's own finger patterns included) and both editors' swing.
+
+```
+SONGS           BPM 120                  BAR 01.1      STOP
+SLOT  TRACKS                             ROWS   PAT
+01 *  SYN DRM AUD SYN                     12     9
+02    DRM SYN                              4     3
+03    --
+SAVED IN SLOT 01
+REC X2: SAVE  PLAY X2: LOAD  CUT X2: DELETE
+```
+
+| Control | Songs page |
+|---|---|
+| blue / white turn | the slot |
+| rec, rec again | save the song in the slot (the footer asks first; an existing slot is replaced) |
+| play, play again | load the slot: playback stops, the song **and all 28 patterns** are replaced, the song view opens at row 00 |
+| cut, cut again | delete the slot |
+| stop | stop / bar 1 as usual |
+| join / orange press | back to the song view (tape: the track list) |
+| speech | the help page |
+
+`*` marks the slot the song came from (or was last saved to): green while nothing changed since,
+amber once the song or a pattern was edited. Loading asks with a warning when the song now is in no
+slot or has changed since.
+
+- Loaded patterns become NOTE ROLL's / DRUM ROLL's own (they write TE's copies and op1.db), so the
+  finger sequencer shows them too; the editors' undo history starts anew.
+- **Not in a slot:** the synth sounds and drum kits (TE's 8 slots each: the song only names the slot
+  numbers), the audio files (only their names: a slot loaded with another set shows `GONE`), the
+  tempo (set.txt / TE's), the master.
+- Files: `/yaffs2/user/play_s/SONG01.BIN` .. `SONG16.BIN` (kept when a new set is imported). Empty
+  patterns are not stored: a small song is ~8 KB, all 28 patterns used ~84 KB. A file is read back
+  once after it is written; a damaged one shows `DAMAGED`, a file from an editor version with other
+  pattern sizes `OTHER VERSION` (neither can be loaded).
+- The song you work on is still kept in `SONG.BIN` as before (a load writes the loaded song there).
 
 ## Live mode
 
@@ -284,7 +327,7 @@ track (`NOT 44.1 KHZ`, `NOT 16 BIT`, `SONG.WAV: GONE`); the rest plays on.
   (`/yaffs2/user/tape_c.raw`, read with the SDK's `fat` library) into the folder PLAY is not
   playing from; the main loop then switches over.
 
-Writes: `/yaffs2/user/play_r` (rendered files), `/yaffs2/user/play_a` and `/yaffs2/user/play_b` (the copied set, which take turns;
+Writes: `/yaffs2/user/play_r` (rendered files), `/yaffs2/user/play_s` (song slots), `/yaffs2/user/play_a` and `/yaffs2/user/play_b` (the copied set, which take turns;
 `ACTIVE` marks the current one) and `SONG.BIN` in the current one. PLAY never writes TE's tape,
 its databases or the disk image.
 
@@ -300,6 +343,10 @@ its databases or the disk image.
   save / load; for the views: a chain played alone, chain users, the list's quick-edit rule,
   song / chain row insert and delete, AUDIO segments from a start row, a cued row at the
   chain's end, rest cells, a chain row's sound, an older `SONG.BIN` (PSN2) read.
+- `test_py_slot.c` (host): a song slot through a memory file: the round trip (song, swings, stored
+  and empty patterns), size and masks, the header summary, every damaged byte refused with nothing
+  changed, short / long files, other pattern sizes, no file, a pattern read inconsistently (retried,
+  BUSY), a failing write.
 - `test_py_drum.c` (host): pitch maths, TE's position encoding, one-shot vs gate, reverse, loop
   while held, an octave up, the start delay, the level law, voice stealing, clamping.
 - `test_py_synth.c` (host): pitch increments, TE's halfband (DC, 1 kHz passes, 30 kHz gone), the
@@ -324,6 +371,7 @@ its databases or the disk image.
   in the pool; cancel deletes it; a DRUM track into a mono file; keys held off meanwhile),
   rest cells, sounds (keys 1-8, a chain row's SND, a key over it until the row ends), five
   SYNTH tracks on the 3 pooled instances (in turn: all play on instance 1; at once: three play,
-  two show BUSY).
+  two show BUSY); song slots (the songs page, save, the song and patterns changed, load: all back,
+  delete).
 
 License: MIT.

@@ -67,6 +67,10 @@
  * 28 views (v0.8.2): join stays in the song view (plain and live), tape on PLAY: the list; tape
  *    from another screen: the list (not the view left there); join on another screen: taken, a
  *    tape press injected (TE_KEY_PUSH + wake), PLAY opens in the song view
+ * 29 song slots (v0.10): shift + join opens the songs page (the headers read), rec twice saves slot
+ *    01 (the song + all 28 patterns + swings); song, patterns and swings changed (one pattern TE's
+ *    again); play twice loads slot 01: the song, every pattern (now the editors') and the swings as
+ *    saved, the song view; cut twice deletes the slot
  * Returns failed-check bits (0 = pass). */
 #include <stdarg.h>
 #include <op1/te246.h>
@@ -84,7 +88,7 @@ extern py_mixer py_mx;
 extern volatile uint32_t py_blocks, py_import_files, py_import_errors, py_import_runs;
 extern char FB[], FB2[], FB3[], FB4[], FB5[], FB6[], FB7[];
 extern int py_help_on(void), py_pat_cued(int t), py_rd_busy(void);
-extern char FB8[];
+extern char FB8[], FB9[];
 extern int py_pat_slot(int t);
 extern int py_pat_starved(int t);
 extern volatile uint32_t py_boosts, py_inst_cyc;
@@ -1804,6 +1808,68 @@ int main(void)
             py_main();
         }
         py_inst_cyc = 250000u;
+    }
+
+    {   /* 29: song slots */
+        static ps_song keep;
+        extern volatile uint8_t nr_swing, dr_swing;
+        uint32_t nsum = 0, dsum = 0, n2 = 0, d2 = 0, j;
+        int same = 1;
+
+        press(TE_KEY_STOP);
+        py_main();
+        press(TE_KEY_STOP);
+        py_main();
+        nr_owned = dr_owned = 0x3fff;                               /* every pattern the editors': its bytes play */
+        nr_pat[2 * 1796] = 32;                                      /* NOTE ROLL pattern 3: 32 steps */
+        dr_pat[3 * 3648 + 8] = 1;                                   /* DRUM ROLL pattern 4: lane 1, step 1 on */
+        nr_swing = 20;
+        dr_swing = 40;
+        mains(30);                                                  /* the published copies anew */
+        press(TE_KEY_TAPE);
+        shift_press(TE_KEY_JOIN);
+        CHECK(29, py_view == 3);
+        mains(2);                                                   /* the headers */
+        press(TE_KEY_REC);                                          /* asks */
+        CHECK(29, find("/yaffs2/user/play_s/SONG01.BIN") < 0);
+        press(TE_KEY_REC);
+        mains(2);
+        CHECK(29, find("/yaffs2/user/play_s/SONG01.BIN") >= 0);
+        hook_frame((uint16_t *)FB9);                                /* the songs page: slot 01 = the song now */
+        dbg[0] = find("/yaffs2/user/play_s/SONG01.BIN") >= 0 ? (int32_t)fs[find("/yaffs2/user/play_s/SONG01.BIN")].size : -1;
+        mcpy((uint8_t *)&keep, (const uint8_t *)&py_song, sizeof(keep));
+        for (j = 0; j < 14 * 1796; j++)
+            nsum = nsum * 31u + nr_pat[j];
+        for (j = 0; j < 14 * 3648; j++)
+            dsum = dsum * 31u + dr_pat[j];
+        py_song.cell[0][0] = 0x55;                                  /* edits after the save */
+        py_song.trk[0].level = -33;
+        nr_pat[2 * 1796] = 8;
+        dr_pat[3 * 3648 + 8] = 0;
+        dr_owned &= (uint16_t)~1u;
+        nr_swing = dr_swing = 0;
+        press(TE_KEY_PLAY);                                         /* asks */
+        mains(2);
+        CHECK(29, py_song.trk[0].level == -33);
+        press(TE_KEY_PLAY);
+        mains(3);
+        for (j = 0; j < 14 * 1796; j++)
+            n2 = n2 * 31u + nr_pat[j];
+        for (j = 0; j < 14 * 3648; j++)
+            d2 = d2 * 31u + dr_pat[j];
+        for (j = 0; j < sizeof(keep); j++)
+            same &= ((const uint8_t *)&keep)[j] == ((const uint8_t *)&py_song)[j];
+        CHECK(29, same && n2 == nsum && d2 == dsum && nr_owned == 0x3fff && dr_owned == 0x3fff);
+        CHECK(29, nr_swing == 20 && dr_swing == 40 && py_view == 1 && !py_mx.playing);
+        dbg[1] = same | (n2 == nsum) << 1 | (d2 == dsum) << 2 | (nr_owned == 0x3fff) << 3 | (dr_owned == 0x3fff) << 4
+                 | nr_swing << 8 | dr_swing << 16 | py_view << 24;
+        shift_press(TE_KEY_JOIN);                                   /* cut twice: deleted */
+        mains(2);
+        press(TE_KEY_CUT);
+        press(TE_KEY_CUT);
+        mains(2);
+        CHECK(29, find("/yaffs2/user/play_s/SONG01.BIN") < 0 && py_view == 3);
+        press(TE_KEY_JOIN);
     }
 
     CHECK(11, odd_io == 0);                                         /* TE's NAND driver: even buffers */

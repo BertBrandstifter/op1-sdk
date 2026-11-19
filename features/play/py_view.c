@@ -23,6 +23,7 @@
 #include "py_song.h"
 #include "play.h"
 #include "py_ui.h"
+#include "py_slot.h"
 
 #define VIS         7                           /* song rows on screen */
 #define COL_X(i)    (28 + (i) * 36)
@@ -38,6 +39,15 @@ static volatile uint8_t live;                   /* the song view is in live mode
 static volatile uint8_t rd_ask;                 /* rec pressed once: the render's bars are asked */
 static volatile uint16_t rd_bars;
 static volatile uint8_t help;                   /* the help page shown + 1, 0 = none */
+
+/* songs page */
+#define SL_VIS      8                           /* slots on screen */
+static volatile uint8_t sl_cur, sl_top;
+static volatile uint8_t sl_armed;               /* PY_SL_SAVE / LOAD / DELETE pressed once on sl_cur */
+static volatile uint8_t sl_busy;                /* the main thread runs this PY_SL_* operation */
+static psl_info sl_info[PSL_SLOTS];             /* main writes (scan), GUI reads */
+static volatile int8_t sl_state[PSL_SLOTS] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };   /* PSL_*, 1 = not read */
+static char sl_msg[64];
 
 /* chain view */
 static volatile uint8_t c_track, c_chain, c_row, c_col;
@@ -71,6 +81,7 @@ void py_v_enter(void)
     del_armed = 0;
     rd_ask = 0;
     help = 0;
+    sl_armed = 0;
     py_view = PY_V_SONG;
 }
 
@@ -82,6 +93,7 @@ void py_v_list(void)
     del_armed = 0;
     rd_ask = 0;
     help = 0;
+    sl_armed = 0;
     py_view = PY_V_LIST;
 }
 
@@ -186,7 +198,9 @@ static void song_key(int key, int shift)
     if (live && live_key(key, shift, list, n, t))
         return;
     switch (key) {
-    case TE_KEY_JOIN:                           /* join always means the song view: stay */
+    case TE_KEY_JOIN:                           /* join always means the song view: stay; shift: the songs page */
+        if (shift)
+            py_v_slots();
         break;
     case TE_KEY_ORANGE_PUSH:                    /* (and the tape key, play.c) */
         py_view = PY_V_LIST;
@@ -464,6 +478,118 @@ static void chain_knob(int knob, int d, int shift)
     }
 }
 
+/* ------------------------------------------------------------------ songs page: keys + knobs
+ * 16 slots, each a song with all its patterns (py_slot.c, py_pattern.c). rec / play / cut twice:
+ * save / load / delete the cursor slot; the main thread does it (py_req_slot) and reports back. */
+
+void py_v_slots(void)
+{
+    if (py_view == PY_V_CHAIN)
+        leave_chain();
+    del_armed = 0;
+    rd_ask = 0;
+    help = 0;
+    sl_armed = 0;
+    py_view = PY_V_SLOTS;
+    sl_busy = PY_SL_SCAN;
+    py_req_slot(PY_SL_SCAN, 0);
+}
+
+/* main thread: slot n's header (-1: all, the scan is done) */
+void py_v_slot_scan(int n)
+{
+    int i;
+
+    for (i = n < 0 ? 0 : n; i < (n < 0 ? PSL_SLOTS : n + 1); i++)
+        sl_state[i] = (int8_t)py_pat_slot_peek(i, &sl_info[i]);
+    if (n < 0)
+        sl_busy = 0;
+}
+
+/* main thread: what came of an operation on slot n */
+void py_v_slot_done(int op, int n, int r)
+{
+    const char *what;
+
+    sl_busy = 0;
+    if (r == PSL_OK) {
+        what = op == PY_SL_SAVE ? "SAVED IN SLOT" : op == PY_SL_LOAD ? "LOADED SLOT" : "DELETED SLOT";
+        if (op == PY_SL_LOAD) {                 /* the song view, from its top */
+            int t;
+
+            s_row = s_top = s_col = 0;
+            live = 0;
+            for (t = 0; t < PS_TRACKS; t++)
+                last_chain[t] = 0;
+            py_view = PY_V_SONG;
+        }
+    } else {
+        what = r == PSL_WAIT ? "PATTERNS NOT READ YET - TRY AGAIN: SLOT"
+             : r == PSL_BUSY ? "A PATTERN CHANGED MEANWHILE - TRY AGAIN: SLOT"
+             : r == PSL_NOFILE ? "EMPTY: SLOT"
+             : r == PSL_OTHER ? "OTHER VERSION, CANNOT LOAD: SLOT"
+             : r == PSL_BAD ? "DAMAGED, CANNOT LOAD: SLOT"
+             : op == PY_SL_SAVE ? "CANNOT WRITE: SLOT" : op == PY_SL_LOAD ? "CANNOT READ: SLOT" : "CANNOT DELETE: SLOT";
+    }
+    TE_SNPRINTF(sl_msg, sizeof(sl_msg), "%s %d%d", what, (n + 1) / 10, (n + 1) % 10);
+    py_note(sl_msg);
+}
+
+static void slots_key(int key)
+{
+    int armed = sl_armed, st = sl_state[sl_cur], want = 0;
+
+    if (sl_busy)
+        return;                                 /* an operation runs: wait for it */
+    sl_armed = 0;
+    switch (key) {
+    case TE_KEY_JOIN:
+    case TE_KEY_ORANGE_PUSH:
+        py_view = PY_V_SONG;
+        return;
+    case TE_KEY_STOP:
+        py_req_stop();
+        return;
+    case TE_KEY_REC:
+        want = PY_SL_SAVE;
+        break;
+    case TE_KEY_PLAY:
+        want = PY_SL_LOAD;
+        break;
+    case TE_KEY_CUT:
+        want = PY_SL_DELETE;
+        break;
+    default:
+        return;                                 /* (and an armed operation is off) */
+    }
+    if (want == PY_SL_LOAD && st != PSL_OK) {
+        py_note(st == PSL_NOFILE ? "THIS SLOT IS EMPTY" : st == PSL_OTHER ? "OTHER VERSION: CANNOT LOAD IT"
+                : "THIS SLOT IS DAMAGED");
+        return;
+    }
+    if (want == PY_SL_DELETE && st == PSL_NOFILE) {
+        py_note("THIS SLOT IS EMPTY");
+        return;
+    }
+    if (armed != want) {                        /* the first press asks */
+        sl_armed = (uint8_t)want;
+        return;
+    }
+    sl_busy = (uint8_t)want;
+    py_req_slot(want, sl_cur);
+}
+
+static void slots_knob(int knob, int d)
+{
+    int v;
+
+    if (knob != 0 && knob != 2)                 /* blue or white: the slot */
+        return;
+    sl_armed = 0;
+    v = sl_cur + d;
+    sl_cur = (uint8_t)(v < 0 ? 0 : v >= PSL_SLOTS ? PSL_SLOTS - 1 : v);
+}
+
 /* the chain view only makes sense on a SYNTH / DRUM track (the list may have changed: a new set) */
 static int chain_ok(void)
 {
@@ -476,7 +602,9 @@ void py_v_key(int key)
 {
     int shift = *TE_SHIFT_HELD != 0;
 
-    if (chain_ok())
+    if (py_view == PY_V_SLOTS)
+        slots_key(key);
+    else if (chain_ok())
         chain_key(key, shift);
     else
         song_key(key, shift);
@@ -488,7 +616,9 @@ void py_v_knob(int knob, int d)
 
     if (!d)
         return;
-    if (chain_ok())
+    if (py_view == PY_V_SLOTS)
+        slots_knob(knob, d);
+    else if (chain_ok())
         chain_knob(knob, d, shift);
     else
         song_knob(knob, d, shift);
@@ -499,6 +629,10 @@ int py_v_pattern(int *t)
     int list[PS_TRACKS], n, c;
     const ps_head *h;
 
+    if (py_view == PY_V_SLOTS) {
+        *t = -1;
+        return -1;
+    }
     if (chain_ok()) {
         *t = c_track;
         c = py_song.chain[c_chain][c_row].pat;
@@ -749,9 +883,98 @@ static void chain_frame(void)
     gfx_text7(4, PY_FOOT_Y2, "PLAY: AUDITION  SHIFT+BLUE: EDIT  ORANGE PRESS: BACK", C_GREY);
 }
 
+static int bits(uint32_t m)
+{
+    int n = 0;
+
+    for (; m; m >>= 1)
+        n += (int)(m & 1);
+    return n;
+}
+
+static void slots_frame(void)
+{
+    int i, r, x, changed, now = py_pat_slot_now(&changed), cur = sl_cur, top = sl_top;
+    int st = sl_state[cur];
+    char num[4];
+
+    py_draw_header("SONGS", -1, C_WHITE);
+    gfx_rect(0, PY_FOOT_LINE, gfx_w, 1, C_LINE);
+    top = cur < top ? cur : cur >= top + SL_VIS ? cur - SL_VIS + 1 : top;
+    sl_top = (uint8_t)top;
+    gfx_text7(4, 22, "SLOT", C_DIM);
+    gfx_text7(40, 22, "TRACKS", C_DIM);
+    gfx_text7(232, 22, "ROWS", C_DIM);
+    gfx_text7(274, 22, "PAT", C_DIM);
+    for (r = 0; r < SL_VIS; r++) {
+        int n = top + r, y = 34 + r * 10, k = sl_state[n];
+        const psl_info *in = &sl_info[n];
+
+        if (n == cur)
+            gfx_rect(0, y - 2, gfx_w, 10, C_SEL);
+        num[0] = (char)('0' + (n + 1) / 10);
+        num[1] = (char)('0' + (n + 1) % 10);
+        num[2] = 0;
+        gfx_text7(4, y, num, n == now ? (changed ? C_AMBER : C_GREEN) : n == cur ? C_WHITE : C_GREY);
+        if (n == now)
+            gfx_text7(18, y, "*", changed ? C_AMBER : C_GREEN);
+        if (k == 1 || (sl_busy == PY_SL_SCAN)) {
+            gfx_text7(40, y, "...", C_DIM);
+        } else if (k == PSL_NOFILE) {
+            gfx_text7(40, y, "--", C_DIM);
+        } else if (k == PSL_OTHER) {
+            gfx_text7(40, y, "OTHER VERSION", C_AMBER);
+        } else if (k != PSL_OK) {
+            gfx_text7(40, y, "DAMAGED", C_RED);
+        } else {
+            for (i = x = 0; i < PS_TRACKS; i++)
+                if (in->type[i] != PS_NONE) {
+                    gfx_text7(40 + x * 22, y, in->type[i] == PS_AUDIO ? "AUD" : in->type[i] == PS_SYNTH ? "SYN" : "DRM",
+                              colour(in->type[i]));
+                    x++;
+                }
+            if (!x)
+                gfx_text7(40, y, "NO TRACKS", C_GREY);
+            gfx_dec7(232, y, in->rows, C_WHITE);
+            gfx_dec7(274, y, bits(in->mask[0]) + bits(in->mask[1]), C_WHITE);
+        }
+    }
+    if (sl_busy) {
+        gfx_text7(4, PY_FOOT_Y1, sl_busy == PY_SL_SAVE ? "SAVING ..." : sl_busy == PY_SL_LOAD ? "LOADING ..."
+                  : sl_busy == PY_SL_DELETE ? "DELETING ..." : "READING THE SLOTS ...", C_AMBER);
+    } else if (sl_armed) {
+        x = gfx_text7(4, PY_FOOT_Y1, sl_armed == PY_SL_SAVE ? (st == PSL_NOFILE ? "REC AGAIN: SAVE IN SLOT " : "REC AGAIN: REPLACE SLOT ")
+                      : sl_armed == PY_SL_LOAD ? "PLAY AGAIN: LOAD SLOT " : "CUT AGAIN: DELETE SLOT ", C_RED);
+        num[0] = (char)('0' + (cur + 1) / 10);
+        num[1] = (char)('0' + (cur + 1) % 10);
+        num[2] = 0;
+        gfx_text7(x, PY_FOOT_Y1, num, C_RED);
+    } else if (!footer_note("")) {
+        if (now < 0) {
+            gfx_text7(4, PY_FOOT_Y1, "THE SONG NOW IS NOT IN A SLOT", C_GREY);
+        } else {
+            num[0] = (char)('0' + (now + 1) / 10);
+            num[1] = (char)('0' + (now + 1) % 10);
+            num[2] = 0;
+            x = gfx_text7(4, PY_FOOT_Y1, "THE SONG NOW: SLOT ", C_GREY);
+            x = gfx_text7(x, PY_FOOT_Y1, num, changed ? C_AMBER : C_GREEN);
+            if (changed)
+                gfx_text7(x, PY_FOOT_Y1, ", CHANGED SINCE", C_AMBER);
+        }
+        gfx_text7(232, PY_FOOT_Y1, "SPEECH: HELP", C_DIM);
+    }
+    if (sl_armed == PY_SL_LOAD)
+        gfx_text7(4, PY_FOOT_Y2, now < 0 || changed ? "REPLACES THE SONG + ALL 28 PATTERNS - NOT SAVED!"
+                  : "REPLACES THE SONG + ALL 28 PATTERNS", now < 0 || changed ? C_AMBER : C_GREY);
+    else
+        gfx_text7(4, PY_FOOT_Y2, "REC X2: SAVE  PLAY X2: LOAD  CUT X2: DELETE", C_GREY);
+}
+
 void py_v_frame(void)
 {
-    if (chain_ok())
+    if (py_view == PY_V_SLOTS)
+        slots_frame();
+    else if (chain_ok())
         chain_frame();
     else
         song_frame();
@@ -761,10 +984,11 @@ void py_v_frame(void)
 
 typedef struct help_line { const char *key, *text; } help_line;     /* key 0: text over the full width */
 
-#define HELP_PAGES  4
+#define HELP_PAGES  5
 #define HELP_LINES  12
 
-static const char *const help_title[HELP_PAGES] = { "HELP: PLAY", "HELP: SONG", "HELP: CHAIN", "HELP: LIVE" };
+static const char *const help_title[HELP_PAGES] = { "HELP: PLAY", "HELP: SONG", "HELP: CHAIN", "HELP: LIVE",
+                                                       "HELP: SONGS" };
 
 static const help_line help_page[HELP_PAGES][HELP_LINES] = {
     {   /* the track list */
@@ -823,6 +1047,20 @@ static const help_line help_page[HELP_PAGES][HELP_LINES] = {
         { "REC, REC", "RENDER FROM THE CURSOR ROW (NO CUES)" },
         { "KEYS 1-8", "SOUND / KIT OF THE CURSOR TRACK, NOW" },
     },
+    {   /* the songs page */
+        { 0, "16 SLOTS, EACH A SONG WITH ALL ITS PATTERNS" },
+        { "SHIFT+JOIN", "THIS PAGE (SONG VIEW, TRACK LIST)" },
+        { "BLUE / WHITE", "THE SLOT" },
+        { "REC, REC", "SAVE THE SONG IN THE SLOT" },
+        { "PLAY, PLAY", "LOAD IT: SONG + ALL 28 PATTERNS" },
+        { "CUT, CUT", "DELETE THE SLOT" },
+        { "JOIN, ORANGE PR", "BACK TO THE SONG VIEW" },
+        { 0, "IN A SLOT: TRACKS, SONG, CHAINS, NOTE ROLL AND" },
+        { 0, "DRUM ROLL PATTERNS 1-14, SWING. NOT IN IT: THE" },
+        { 0, "SOUNDS, KITS, AUDIO FILES (ONLY THEIR NAMES)" },
+        { 0, "GREEN * = THE SONG NOW, AMBER: CHANGED SINCE" },
+        { 0, "THE SONG NOW IS ALSO KEPT IN SONG.BIN AS BEFORE" },
+    },
 };
 
 int py_help_on(void)
@@ -838,7 +1076,7 @@ int py_help_key(int key)
     }
     if (key != TE_KEY_SPEECH)
         return 0;
-    help = (uint8_t)(1 + (py_view == PY_V_LIST ? 0 : chain_ok() ? 2 : live ? 3 : 1));
+    help = (uint8_t)(1 + (py_view == PY_V_LIST ? 0 : py_view == PY_V_SLOTS ? 4 : chain_ok() ? 2 : live ? 3 : 1));
     return 1;
 }
 
@@ -863,7 +1101,7 @@ void py_help_frame(void)
         if (l->key) {
             gfx_text7(4, y, l->key, C_WHITE);
             gfx_text7(100, y, l->text, C_GREY);
-        } else {
+        } else if (l->text) {
             gfx_text7(4, y, l->text, C_AMBER);
         }
     }

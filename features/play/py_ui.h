@@ -21,7 +21,7 @@
 #define PY_FOOT_Y1      125
 #define PY_FOOT_Y2      138
 
-enum { PY_V_LIST, PY_V_SONG, PY_V_CHAIN };
+enum { PY_V_LIST, PY_V_SONG, PY_V_CHAIN, PY_V_SLOTS };
 extern volatile uint8_t py_view;                /* the view PLAY shows (session only) */
 extern py_mixer py_mx;
 
@@ -47,6 +47,8 @@ void py_update_gains(void);
 void py_seek_to(uint32_t g, int play);          /* main: stop, heads and rings at frame g, play or not */
 uint32_t py_clock_bar(void);                    /* frames per bar */
 void py_req_rescan(void);                       /* read the folders' files again (the song stays) */
+enum { PY_SL_NONE, PY_SL_SCAN, PY_SL_SAVE, PY_SL_LOAD, PY_SL_DELETE };
+void py_req_slot(int op, int n);                /* the songs page: a slot operation for the main thread */
 
 /* py_render.c */
 int py_rd_busy(void);                           /* a render runs or is about to */
@@ -68,5 +70,8 @@ int py_help_key(int key);                       /* speech: help on / off; any ot
 void py_help_knob(int knob, int d);             /* blue turn: the page */
 void py_help_frame(void);
 int py_v_pattern(int *t);                       /* shift + blue press: the cursor's track and pattern (-1: none) */
+void py_v_slots(void);                          /* shift + join: the songs page (save / load) */
+void py_v_slot_scan(int n);                     /* main: slot n's header into the page (-1: all) */
+void py_v_slot_done(int op, int n, int r);      /* main: an operation's result (py_slot.h code) */
 
 #endif

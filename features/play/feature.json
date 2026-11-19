@@ -2,9 +2,9 @@
   "schema": 1,
   "name": "play",
   "title": "PLAY tape screen",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "status": "experimental",
-  "summary": "The tape key opens PLAY instead of TE's tape screen (which is not reachable in an image with play; TE's tape data stays untouched): one list of up to 8 tracks, each AUDIO (a WAV / AIF from disk mode's play/ folder, looped or once, streamed from flash), SYNTH (NOTE ROLL patterns on an SDK engine with one of the 8 synth sounds; up to 8 SYNTH tracks share 5 engine instances, at most 5 sound at once (the 4th and 5th while the CPU allows), TE's envelope, PLAY's decimator) or DRUM (DRUM ROLL patterns on PLAY's own sample player from TE's kits, in place), all sample-locked from bar 1, with level, mute, solo, master and a bar counter; the mix joins TE's master bus like the tape (master EQ, master FX, mixer drive and volume act on it). A tracker song arranges the tracks (join: song view, 128 rows x one column per track, each column with its own playhead; chain view: 16 rows of pattern + transpose, audition; AUDIO cells ON / OF; live mode: rows and cells cued while playing); it lives in SONG.BIN with the track list. When disk mode is left, a hook in TE's disk sync copies play/ into /yaffs2/user/play_a|play_b before TE clears the disk (the only writes, with SONG.BIN and the rendered files in /yaffs2/user/play_r).",
+  "summary": "The tape key opens PLAY instead of TE's tape screen (which is not reachable in an image with play; TE's tape data stays untouched): one list of up to 8 tracks, each AUDIO (a WAV / AIF from disk mode's play/ folder, looped or once, streamed from flash), SYNTH (NOTE ROLL patterns on an SDK engine with one of the 8 synth sounds; up to 8 SYNTH tracks share 5 engine instances, at most 5 sound at once (the 4th and 5th while the CPU allows), TE's envelope, PLAY's decimator) or DRUM (DRUM ROLL patterns on PLAY's own sample player from TE's kits, in place), all sample-locked from bar 1, with level, mute, solo, master and a bar counter; the mix joins TE's master bus like the tape (master EQ, master FX, mixer drive and volume act on it). A tracker song arranges the tracks (join: song view, 128 rows x one column per track, each column with its own playhead; chain view: 16 rows of pattern + transpose, audition; AUDIO cells ON / OF; live mode: rows and cells cued while playing); it lives in SONG.BIN with the track list; shift + join opens 16 song slots that keep a song with all its patterns (save / load / delete). When disk mode is left, a hook in TE's disk sync copies play/ into /yaffs2/user/play_a|play_b before TE clears the disk (the only writes, with SONG.BIN, the rendered files in /yaffs2/user/play_r and the song slots in /yaffs2/user/play_s).",
   "license": "MIT",
   "authors": [
     "unknown"
@@ -20,6 +20,7 @@
     "py_import.c",
     "py_te.c",
     "py_song.c",
+    "py_slot.c",
     "py_drum.c",
     "py_synth.c",
     "py_pattern.c",
@@ -415,11 +416,13 @@
     "PLAY: keys 1-8 = sound / kit 1-8 of the cursor track at once (list, song view, live, chain view); chain view: a third column SND = the slot the track plays while that row plays (-: the track's own)",
     "PLAY: speech = a help page for the current view (blue turn: pages, any key: back)",
     "PLAY: chain view: blue turn row, green turn PAT / TSP / SND, white turn the value (shift: octaves), white press = last pattern, cut / insert = row clipboard, shift + insert / shift + cut twice = insert / delete a row, play = audition the chain alone, join / orange press = back to the song view",
-    "PLAY: while playing, CPU in the header = PLAY's share of the audio time, the number on a SYNTH / DRUM row = that track's share"
+    "PLAY: while playing, CPU in the header = PLAY's share of the audio time, the number on a SYNTH / DRUM row = that track's share",
+    "PLAY: shift + join (song view or track list) = the songs page: 16 slots, each the song with all 14 NOTE ROLL and 14 DRUM ROLL patterns and both swings (SONGnn.BIN in /yaffs2/user/play_s); blue / white turn the slot, rec twice = save, play twice = load (stops; the song and all 28 patterns replaced), cut twice = delete, join / orange press = back"
   ],
   "tests": [
     "test_py_core.c",
     "test_py_song.c",
+    "test_py_slot.c",
     "test_py_drum.c",
     "test_py_synth.c",
     "sim/run_playtest.py"

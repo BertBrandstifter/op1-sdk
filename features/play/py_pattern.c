@@ -38,6 +38,7 @@
 #include "py_synth.h"
 #include "play.h"
 #include "py_yaffs.h"
+#include "py_slot.h"
 
 /* drum kits: [8] holder -> SampleBuffer -> +0 int16 *m_buffer (8 samples of padding first) */
 #define TE_DRUM_HOLDERS     ((void **volatile *)0x01cc10cc)  /* [8] */
@@ -71,6 +72,7 @@ extern py_mixer py_mx;                          /* play.c */
 
 ps_song py_song;                                /* the GUI and keys edit it */
 static volatile uint8_t song_dirty;
+static volatile uint8_t slot_edited;            /* the song was edited since the last slot save / load */
 static uint16_t quiet;
 static const char *song_dir;
 
@@ -82,7 +84,7 @@ static uint32_t dhash[DR_PATTERNS];
 static nr_pattern ncopy[NR_PATTERNS][2];
 static const nr_pattern *volatile npub[NR_PATTERNS];
 static uint32_t nhash[NR_PATTERNS];
-static union { dr_pattern d; nr_pattern n; } scratch_pat;
+static union { dr_pattern d; nr_pattern n; } scratch_pat __attribute__((aligned(4)));
 static union { dr_fs_notes d; nr_fs_notes n; } te_notes;
 static uint8_t next_d, next_n;
 static uint8_t fs_asked;                        /* TE_FS_GET called (once) */
@@ -115,6 +117,7 @@ volatile uint32_t py_drum_hits, py_syn_notes;   /* bench, debug */
 void py_pat_dirty(void)
 {
     song_dirty = 1;
+    slot_edited = 1;
 }
 
 /* GUI: a note of SYNTH track t found no free engine instance in the last second */
@@ -134,9 +137,11 @@ int py_pat_any(void)
     return 0;
 }
 
+static uint8_t songbuf[PS_FILE_BYTES] __attribute__((aligned(4)));   /* SONG.BIN, slots (main; yaffs: even addresses) */
+
 void py_pat_load(const char *dir)
 {
-    static uint8_t buf[PS_FILE_BYTES] __attribute__((aligned(4)));   /* yaffs: even addresses */
+    uint8_t *buf = songbuf;
     char path[64];
     int fd, n = -1;
 
@@ -144,7 +149,7 @@ void py_pat_load(const char *dir)
     TE_SNPRINTF(path, sizeof(path), "%s/%s", dir, SONG_FILE);
     fd = TE_FILE_OPEN(path, TE_FILE_RDONLY, TE_FILE_MODE);
     if (fd >= 0) {
-        n = PY_PREAD(fd, buf, sizeof(buf), 0);
+        n = PY_PREAD(fd, buf, PS_FILE_BYTES, 0);
         TE_FILE_CLOSE(fd);
     }
     if (n < 8 || py_song_load(&py_song, buf, (uint32_t)n))      /* (an older, shorter file is read too) */
@@ -154,7 +159,7 @@ void py_pat_load(const char *dir)
 
 static void save_song(void)
 {
-    static uint8_t buf[PS_FILE_BYTES] __attribute__((aligned(4)));   /* yaffs: even addresses */
+    uint8_t *buf = songbuf;
     char path[64];
     int fd;
 
@@ -166,7 +171,7 @@ static void save_song(void)
     fd = TE_FILE_OPEN(path, TE_FILE_CREATE, TE_FILE_CREATE_MODE);
     if (fd < 0)
         return;
-    TE_FILE_WRITE(fd, buf, sizeof(buf));
+    TE_FILE_WRITE(fd, buf, PS_FILE_BYTES);
     TE_FILE_CLOSE(fd);
 }
 
@@ -260,6 +265,185 @@ static void refresh(void)
             nhash[p] = h;
         }
     }
+}
+
+/* ------------------------------------------------------------------ song slots (main thread)
+ * SONGnn.BIN in PY_DIR_S: the song with all 28 patterns as PLAY plays them (py_slot.c). A load
+ * makes every pattern the editors' (NOTE ROLL / DRUM ROLL write TE's copies and op1.db). */
+extern void nr_put_pattern(int p, const nr_pattern *in), nr_put_done(int swing);
+extern void dr_put_pattern(int p, const dr_pattern *in), dr_put_done(int swing);
+
+static nr_pattern n_empty;
+static dr_pattern d_empty;
+static uint8_t empties;
+static int slot_fd = -1;
+static volatile int8_t cur_slot = -1;           /* the slot last saved or loaded, -1 = none */
+static uint32_t slot_hash;                      /* the patterns' hashes then */
+
+static int sl_get(void *ctx, int kind, int p, void *out)
+{
+    (void)ctx;
+    return kind == PSL_DR ? !dsource(p, out) : !nsource(p, out);
+}
+
+static void sl_put(void *ctx, int kind, int p, const void *in)
+{
+    (void)ctx;
+    if (kind == PSL_DR)
+        dr_put_pattern(p, in);
+    else
+        nr_put_pattern(p, in);
+}
+
+static int sl_write(void *ctx, const void *buf, uint32_t n)
+{
+    (void)ctx;
+    return TE_FILE_WRITE(slot_fd, buf, n) == (int)n ? 0 : -1;
+}
+
+static int sl_read(void *ctx, uint32_t off, void *buf, uint32_t n)
+{
+    (void)ctx;
+    return PY_PREAD(slot_fd, buf, n, (int32_t)off);
+}
+
+static psl_io slot_io = { 0, { sizeof(nr_pattern), sizeof(dr_pattern) }, { &n_empty, &d_empty }, &scratch_pat,
+                          sl_get, sl_put, sl_write, sl_read };
+
+static void slot_path(char *out, int n)
+{
+    TE_SNPRINTF(out, 64, "%s/SONG%d%d.BIN", PY_DIR_S, (n + 1) / 10, (n + 1) % 10);
+}
+
+static void slot_open(int n, int write)
+{
+    char path[64];
+
+    if (!empties) {
+        nr_pattern_init(&n_empty);
+        dr_pattern_init(&d_empty);
+        empties = 1;
+    }
+    slot_path(path, n);
+    if (write)
+        PY_MKDIR(PY_DIR_S, 0);
+    slot_fd = write ? TE_FILE_OPEN(path, TE_FILE_CREATE, TE_FILE_CREATE_MODE)
+                    : TE_FILE_OPEN(path, TE_FILE_RDONLY, TE_FILE_MODE);
+}
+
+static void slot_close(void)
+{
+    if (slot_fd >= 0)
+        TE_FILE_CLOSE(slot_fd);
+    slot_fd = -1;
+}
+
+/* the published patterns' hashes in one number (what plays: an edit in an editor changes it) */
+static uint32_t pat_hashes(void)
+{
+    uint32_t h = 0;
+    int p;
+
+    for (p = 0; p < PSL_PATS; p++)
+        h = (h * 31u + dhash[p]) * 31u + nhash[p];
+    return h;
+}
+
+/* both editors have read op1.db (else their load would replace ours later) and TE's own
+ * patterns are in RAM (else an unedited pattern would read empty) */
+static int slots_ready(void)
+{
+    if (!nr_loaded || !dr_loaded)
+        return 0;
+    if (!FS_LOADED && TE_DB_OP1() && *TE_DB_LOCK && !fs_asked) {
+        fs_asked = 1;
+        TE_FS_GET();
+    }
+    return FS_LOADED || ((nr_owned & dr_owned) & 0x3fff) == 0x3fff;
+}
+
+int py_pat_slot_peek(int n, psl_info *info)
+{
+    int r;
+
+    slot_open(n, 0);
+    r = slot_fd < 0 ? PSL_NOFILE : py_slot_peek(&slot_io, info);
+    slot_close();
+    return r;
+}
+
+int py_pat_slot_save(int n)
+{
+    uint8_t swing[2];
+    psl_info info;
+    int r;
+
+    if (!slots_ready())
+        return PSL_WAIT;
+    swing[PSL_NR] = nr_swing;
+    swing[PSL_DR] = dr_swing;
+    slot_open(n, 1);
+    if (slot_fd < 0)
+        return PSL_IO;
+    r = py_slot_save(&py_song, swing, &slot_io, songbuf);
+    slot_close();
+    if (r == PSL_OK) {                          /* read it back once */
+        slot_open(n, 0);
+        r = slot_fd < 0 ? PSL_IO : py_slot_check(&slot_io, &info) ? PSL_IO : PSL_OK;
+        slot_close();
+    }
+    if (r != PSL_OK) {
+        char path[64];
+
+        slot_path(path, n);
+        PY_UNLINK(path);                        /* no half-written slot */
+        return r;
+    }
+    cur_slot = (int8_t)n;
+    slot_edited = 0;
+    slot_hash = pat_hashes();
+    return PSL_OK;
+}
+
+/* the interrupt not playing; the caller reopens the AUDIO tracks and the heads */
+int py_pat_slot_load(int n)
+{
+    uint8_t swing[2];
+    int r, i;
+
+    if (!slots_ready())
+        return PSL_WAIT;
+    slot_open(n, 0);
+    r = slot_fd < 0 ? PSL_NOFILE : py_slot_load(&py_song, swing, &slot_io, songbuf);
+    slot_close();
+    if (r != PSL_OK)
+        return r;
+    nr_put_done(swing[PSL_NR]);
+    dr_put_done(swing[PSL_DR]);
+    for (i = 0; i < PSL_PATS; i++)
+        refresh();                              /* every published copy anew before play */
+    song_dirty = 1;                             /* SONG.BIN: the loaded song */
+    cur_slot = (int8_t)n;
+    slot_edited = 0;
+    slot_hash = pat_hashes();
+    return PSL_OK;
+}
+
+int py_pat_slot_delete(int n)
+{
+    char path[64];
+
+    slot_path(path, n);
+    if (cur_slot == n)
+        cur_slot = -1;
+    return PY_UNLINK(path) < 0 ? PSL_IO : PSL_OK;
+}
+
+/* GUI: the slot last saved or loaded (-1: none); *changed: the song or a pattern changed since */
+int py_pat_slot_now(int *changed)
+{
+    *changed = slot_edited || pat_hashes() != slot_hash;
+    return cur_slot;
 }
 
 void py_pat_main(uint32_t bar, uint32_t bpm_x100)

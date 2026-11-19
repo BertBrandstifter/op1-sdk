@@ -163,6 +163,13 @@ Live recording into NOTE ROLL patterns, TE's play modes / step order for NOTE RO
 pitch bend / glide, the synth octave shown in the note names (the roll shows stored notes, as TE's
 finger screen keys them), MIDI out of anything but what VoiceCtl echoes.
 
+## For PLAY's song slots
+
+`nr_put_pattern(p, pattern)` (main thread, the editor closed) makes pattern p NOTE ROLL's with the
+given notes: TE's copy gets its summary, op1.db the row about 3 s later. `nr_put_done(swing)`
+after the patterns sets the swing and clears the undo history (its steps belong to the patterns
+before). PLAY's songs page loads a slot this way (features/play, README "Songs").
+
 ## Code
 
 - `nr_core.h/.c` (`test_nr_core.c`): data model, chords, inversions, the scheduler.

@@ -263,6 +263,13 @@ Following TE's reverse / random step order or TE's swing for DRUM ROLL patterns,
 sequencer, live recording into DRUM ROLL patterns (TE's finger sequencer only step-records), pattern
 copy / chaining, MIDI out of the sequence.
 
+## For PLAY's song slots
+
+`dr_put_pattern(p, pattern)` (main thread, the editor closed) makes pattern p DRUM ROLL's with the
+given notes: TE's copy gets its summary, op1.db the row about 3 s later. `dr_put_done(swing)`
+after the patterns sets the swing and clears the undo history (its steps belong to the patterns
+before). PLAY's songs page loads a slot this way (features/play, README "Songs").
+
 ## Code
 
 - `dr_core.h/.c` (pure C, `test_dr_core.c`): data model, ranges, the scheduler `dr_schedule`.

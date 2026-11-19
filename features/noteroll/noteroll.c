@@ -1113,6 +1113,35 @@ void nr_open_from_play(int p)
     open_at(p);
 }
 
+/* PLAY's song load (main thread, the editor closed): pattern p becomes NOTE ROLL's with these notes;
+ * TE's copy gets its summary (sync_te), op1.db the row (~3 s later) */
+void nr_put_pattern(int p, const nr_pattern *in)
+{
+    uint16_t bit = (uint16_t)(1 << p);
+
+    if (!inited || p < 0 || p >= NR_PATTERNS)
+        return;
+    nr_pat[p] = *in;
+    nr_owned |= bit;
+    want_summary |= bit;
+    dirty = 1;
+}
+
+/* after the patterns: the swing; the undo history is gone (its steps belong to the old patterns) */
+void nr_put_done(int swing)
+{
+    if (!inited)
+        return;
+    nr_swing = (uint8_t)clampi(swing, 0, 100);
+    if (!h_busy) {
+        h_start = h_len = h_pos = 0;
+        hist_counts();
+    }
+    if (nr_cursor >= pat()->len)
+        nr_cursor = 0;
+    dirty = 1;
+}
+
 int nr_key(int key, int down)
 {
     int k = key - KEY_PUSH, p, cleared = 0;
