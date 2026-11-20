@@ -27,6 +27,7 @@ struct ps_head;
 extern struct ps_song py_song;
 void py_pat_load(const char *dir);              /* main: SONG.BIN of the set folder (or empty) */
 void py_pat_main(uint32_t bar, uint32_t bpm_x100);  /* main, every pass */
+void py_pat_retime(uint32_t bar, uint32_t bpm_x100);    /* main: the tempo changed, playing or not */
 void py_pat_start(uint32_t g);                  /* main, not playing: heads at global frame g */
 void py_pat_set_start(int row);                 /* main, not playing: the song row play starts from */
 int py_pat_start_row(void);

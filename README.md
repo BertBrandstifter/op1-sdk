@@ -7,6 +7,9 @@ then flash it to your Teenage Engineering OP-1 (firmware R246) in minutes.
 Everything here runs on real hardware: the build pipeline is verified byte for byte, and the
 features below have been flashed and played on a real OP-1.
 
+**New: [PLAY](#new-play--songs-you-can-still-change)** — a tape screen that keeps your whole song
+as notes and sound settings instead of audio: tweak it any time, share it as a small editable file.
+
 ## First: check out what's already built
 
 One image ("op1plus"), composed from the feature library — build it, flash it, have fun.
@@ -34,6 +37,8 @@ oscillators are band-limited (no aliasing whine on high notes) and its filter st
 setting; STATION 1 plays a sound library at 31.25 kHz, with its key splits
 and tuning. Their simulator tests sweep every
 parameter through its full range, so each knob moves its sound one way, as the screen says.
+They are light, too: measured on the device, an SDK engine takes 10-19 % of the CPU while
+playing, about what TE's light engines cost (voices that went silent are not rendered).
 
 **Effects** — new rows in TE's FX list (synth, drum and master):
 
@@ -52,15 +57,73 @@ parameter through its full range, so each knob moves its sound one way, as the s
 | **SYNTH ROLL** (requantize) | shift + blue knob press (tape screen) | fix a recorded take on a piano roll in DRUM ROLL's look: by default every note snaps clean to the grid (start and length), single notes or the whole take, grids to 1/32T |
 | **CHORD+** | shift + insert | chord keyboard: white keys play scale chords, held black keys modify (lower octave: min/maj, 7th, sus4, 9th, inversion; upper: power, sus2, open / wide voicing, more inversion) |
 
-**Content:**
+**Leaner firmware** — room (flash, code, CPU) for everything above:
 
 | | |
 |---|---|
 | **drumtrim** | TE's 14 factory drum kits without their silent tails: −1.43 MB of flash, every hit bit-identical up to the cut (made from your own firmware file, nothing of TE's is committed) |
+| **slotlink** | six default slot sounds that are byte-identical copies of factory sounds leave the update and are recreated from the factory files when TE fills the slots: update 2.1 MB smaller |
+| **nophysics** | TE's Box2D physics library out, with its only users, the Tombola sequencer (picking it gives pattern) and the hidden Lander game: no physics worlds built at boot, 145 KB of code freed for SDK code; a static reachability proof (`prove.py`) shows nothing else can reach it |
+| **nodsynth** | dsynth (TE's most CPU-hungry engine, about 50 % on its own) leaves the engine list and preset browser; its code stays, so sounds saved with it still play |
 
-Two more recipes build on op1plus: `recipes/op1disk.json` adds **noalbum** (album sides cut to
-1 s, ~128 MB more free flash) and the **diskinfo** flash usage panel; `recipes/op1mem.json` adds the
-**meminfo** SDRAM panel (debug).
+## New: PLAY — songs you can still change
+
+On a stock OP-1 a song ends up on the tape as audio: once a part is recorded, its notes and its
+sound are baked in. **PLAY** keeps the whole song **as parameters** instead: the notes (NOTE ROLL /
+DRUM ROLL patterns), the arrangement, and every synth sound (engine, knob values, envelope, octave).
+So nothing is ever final:
+
+- **Tweak anything, any time** — change a note in bar 37, swap the bass sound, turn a filter
+  knob, re-arrange the chorus: the whole song plays the change at once. No re-recording.
+- **Optimize** — try another engine on a part, thin out a pattern, move a section; compare by
+  loading slots back and forth.
+- **Share it editable** — a song slot is one small `.PSL` file (~8 KB for a small song, ~84 KB
+  with all 28 patterns used; a minute of stereo audio is ~10 MB). Whoever loads it gets every
+  note and every sound, not a mixdown: remix it, fix it, send it back.
+- **Audio only when you want it** — **rec** renders the song into an AIFF in one go, for the
+  computer or as one cheap AUDIO track.
+
+<table>
+<tr>
+<td><img src="images/play/song_live.png" alt="PLAY song view in live mode: one column per track, a cue pending"><br><sub><b>Song view</b> (join): one column per track, live mode cues rows and cells while playing</sub></td>
+<td><img src="images/play/songs.png" alt="PLAY songs page with 16 slots"><br><sub><b>Song slots</b> (shift + join): save / load / delete a whole song with its patterns and sounds</sub></td>
+</tr>
+<tr>
+<td><img src="images/play/load_ask.png" alt="PLAY load question: per pattern and sound, keep now or take from the slot"><br><sub><b>Loading asks</b>: per pattern and per sound, keep yours or take the slot's</sub></td>
+<td><img src="images/play/render.png" alt="PLAY rendering the song into an AIFF file"><br><sub><b>Render</b> (rec): the song into an AIFF, when you want audio</sub></td>
+</tr>
+</table>
+
+**How it plays:** the tape key opens a list of up to **8 tracks**, all sample-locked from bar 1,
+with level, mute, solo and master. Play and stop drive PLAY from every screen (album excepted), and the tempo is TE's tempo page, followed live:
+
+- **SYNTH** — NOTE ROLL patterns on any synth engine: TE's own (FM, digital, string, cluster,
+  pulse, sampler, phase, dna, dsynth, voltage, iter) or the SDK's (ACID 3, MONO 3, STATION 1,
+  PARTY, PALETTE, MALLET, WHEEL, WARP, TRIO), each track on its own instance, so two tracks can
+  play two FM sounds at once; up to 5 sound at once, the 4th and 5th while the CPU allows;
+- **DRUM** — DRUM ROLL patterns on TE's drum kits;
+- **AUDIO** — a WAV / AIFF from disk mode's `play/` folder, looped or once, streamed from flash.
+
+A **tracker song** arranges the tracks: 128 rows x one column per track, chains of pattern +
+transpose, live mode. **16 song slots** keep songs on the OP-1. Disk mode shows the slots as
+`.PSL` files and the renders as AIFF, and `.PSL` files you put there land in free slots. Drum
+kits and audio files are named, not stored, so share them alongside. The mix joins TE's master bus
+like the tape does.
+
+PLAY replaces TE's tape screen in its image (`recipes/op1play.json`, op1plus + PLAY); TE's tape
+data is never touched. Status: **experimental**, on-device tests ongoing. Controls and details:
+[`features/play/README.md`](features/play/README.md).
+
+## More recipes
+
+Variants of op1plus; for the debug ones, flash op1plus again when done:
+
+| recipe | |
+|---|---|
+| `recipes/op1play.json` | op1plus + **PLAY** tape screen (above) + its debug probe |
+| `recipes/op1cpu.json` | op1plus + **cpuinfo** (debug): shift + speech shows the audio CPU load measured on the device, and our engines' share of it |
+| `recipes/op1disk.json` | **noalbum** (album sides cut to 1 s, ~128 MB more free flash) and the **diskinfo** flash usage panel, on an older op1plus feature set |
+| `recipes/op1mem.json` | **meminfo** SDRAM panel (debug), on an older op1plus feature set |
 
 Controls and internals per feature: `features/<name>/README.md`. Full catalog:
 [`docs/features.md`](docs/features.md), or `python3 tools/features.py list`.
@@ -160,4 +223,5 @@ And thanks to Teenage Engineering for building the OP-1.
 | [`docs/features.md`](docs/features.md) | feature library, manifests, shared hook points |
 | [`docs/feature-package.md`](docs/feature-package.md) | the packaging standard for sharing features |
 | [`docs/internals.md`](docs/internals.md) | under the hood: R246 reverse-engineering notes, flashing internals, simulator benches |
+| [`docs/performance.md`](docs/performance.md) | CPU measured on the device: clock, audio load per engine, where the cycles go |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | pull-request rules |

@@ -35,8 +35,11 @@
 #define PY_ENV_FLOOR    33                      /* -60 dB of full scale: a released voice ends */
 
 typedef struct py_syn_api {
-    /* eh_render_inst: 0 = no engine (silence) */
-    int (*render)(int inst, int v, int16_t *out, const int16_t *knobs, const uint32_t *inc, int flags);
+    /* the engine (an SDK engine's instance or TE's voices, py_tev.h): 0 = no engine (silence).
+     * env: the voice's envelope of this block (rendered first; TE's dsynth reads it) */
+    int (*render)(int inst, int v, int16_t *out, const int16_t *knobs, const uint32_t *inc,
+                  const int16_t *env, int flags);
+    void (*key_up)(int inst, int v, const int16_t *knobs);    /* the note-off, or 0 */
     void (*env_start)(void *obj);
     void (*env_release)(void *obj, int slot);
     int (*env_render)(void *obj, int16_t *env, const int16_t *adsr, const int16_t *vel);  /* 1 = done */
@@ -44,7 +47,7 @@ typedef struct py_syn_api {
 
 typedef struct py_sv {
     uint32_t env[6];                            /* TE's Adsr object (24 bytes, word-aligned) */
-    uint8_t on, started, released, pad;
+    uint8_t on, started, released, key_up;     /* key_up: the note-off is due at the engine */
     int16_t vel;                                /* velocity << 8 */
     uint32_t inc;                               /* phase increment per 88.2 kHz sample */
     uint32_t gate;                              /* output samples until the note-off */
@@ -85,5 +88,6 @@ int py_syn_tail(const py_syn *s);
 void py_syn_decimate(int32_t *hist, const int32_t *in, int32_t *out);
 
 void py_syn_reset(py_syn *s);                   /* every voice off, ECO phase back */
+void py_syn_restart(py_syn *s);                 /* the sounding notes start again (a new engine) */
 
 #endif

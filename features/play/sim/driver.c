@@ -17,7 +17,11 @@
  *    expected samples, the second hit inside a block; the pattern loops
  *  9 a SYNTH track (NOTE ROLL pattern 1, one note A4 for one step) on a test engine registered as
  *    a multi-instance engine: rendered by instance 1 at A4's increment, TE's envelope stand-ins
- *    started / released after the hold, the decimated level as expected, silent after the release
+ *    started / released after the hold, the decimated level as expected, silent after the release;
+ *    then the same track on one of TE's own engines (a stand-in factory and voices at 0xffb00000):
+ *    the prototype built once in the main loop, note_on / render / release on the voices in the
+ *    scratchpad in that order, A4's increment and the envelope in TE's per-voice buffers, the same
+ *    level, TE's own voices in the scratchpad untouched, no SDK engine called
  * 10 the song is saved to SONG.BIN and read back when the set is re-read (as at boot)
  * 11 every buffer handed to yaffs starts at an even address (TE's NAND driver asserts
  *    te_yflash2.c:600 otherwise: the cause of a boot failure on 2026-11-15)
@@ -660,6 +664,76 @@ static void test_engine(int vi, int16_t *out, const int16_t *knobs, const uint32
         out[i] = 1000;
 }
 
+/* a stand-in for one of TE's own engines (py_tev.h): TE's factory builds 6 voices at 0xffb00000 +
+ * 0x20 vi with a vtable of {delta, fn} slots (render +0x14, note_on +0x1c, release +0x2c) and
+ * engine-wide state after them */
+typedef struct { int32_t delta; void *fn; } te_vs;
+static int tev_new_calls, tev_new_type = -1, tev_notes, tev_releases, tev_renders, tev_bad, tev_env0;
+static uint32_t tev_inc;
+volatile int32_t tevdbg[12];
+#define TEV_O(self) ((volatile uint32_t *)(self))
+#define TEV_SHARED (*(volatile uint32_t *)0xffb000c0)
+
+static int tev_ok(void *self)
+{
+    uint32_t a = (uint32_t)self;
+
+    return a >= 0xffb00000u && a < 0xffb000c0u && !(a & 0x1f) && TEV_O(self)[2] == 0x5a5a
+           && TEV_SHARED == 0x600d;
+}
+
+static void tev_note_on(void *self, int16_t *knobs, void *b)
+{
+    (void)knobs;
+    (void)b;
+    tev_bad |= !tev_ok(self);
+    TEV_O(self)[1] = 1;
+    tev_notes++;
+}
+
+static void tev_render(void *self, int16_t *out, int16_t *knobs)
+{
+    int i;
+
+    (void)knobs;
+    tev_bad |= !tev_ok(self) || !TEV_O(self)[1];               /* (render before note_on) */
+    tev_renders++;
+    tev_inc = *(volatile uint32_t *)0xff801950;
+    tev_env0 = *(volatile int16_t *)0xff801d50;
+    for (i = 0; i < 128; i++)
+        out[i] = TEV_O(self)[1] ? 1000 : 0;
+}
+
+static void tev_release(void *self, int16_t *knobs, void *b)
+{
+    (void)knobs;
+    (void)b;
+    tev_bad |= !tev_ok(self) || TEV_O(self)[1] != 1;
+    tev_releases++;
+}
+
+static const te_vs tev_vt[6] = {
+    { 0, 0 }, { 0, 0 }, { 0, (void *)tev_render }, { 0, (void *)tev_note_on }, { 0, 0 }, { 0, (void *)tev_release },
+};
+
+void te_engine_new(int type, void **voices, int slot)
+{
+    int vi;
+
+    (void)slot;
+    tev_new_calls++;
+    tev_new_type = type;
+    for (vi = 0; vi < 6; vi++) {
+        volatile uint32_t *o = (uint32_t *)(0xffb00000u + 0x20u * (uint32_t)vi);
+
+        o[0] = (uint32_t)tev_vt;
+        o[1] = 0;
+        o[2] = 0x5a5a;
+        voices[vi] = (void *)o;
+    }
+    TEV_SHARED = 0x600d;
+}
+
 void env_start(void *o) { ((uint32_t *)o)[0] = 1; env_starts++; }
 void env_release(void *o, int slot) { ((uint32_t *)o)[0] = 10; env_releases++; env_slot = slot; }
 
@@ -727,6 +801,8 @@ int main(void)
 
     *TE_EDIT_MODE = TE_EDIT_MODE_TAPE;
     *TE_BPM = 120.0f;
+    for (i = 0; i < 8; i++)
+        TE_SYNTH_TYPE[i] = TE_INSTR_DRWAVE;     /* (zero would be fm: one of TE's engines, check 9) */
     image = add("/yaffs2/user/tape_c.raw", 0);
     fs[image].data = (uint8_t *)0x02200000;     /* its own 3 MB area */
 
@@ -849,6 +925,29 @@ int main(void)
         CHECK(7, knobs_to_te == 1 && py_song.trk[0].level == -8);
         *TE_EDIT_MODE = TE_EDIT_MODE_TAPE;
     }
+    {                                           /* play / stop on another screen: PLAY's transport */
+        int k0 = keys_to_te;
+
+        *TE_EDIT_MODE = 0;                      /* synth screen */
+        press(TE_KEY_PLAY);
+        py_main();
+        CHECK(7, keys_to_te == k0 && py_mx.playing);
+        press(TE_KEY_STOP);
+        py_main();
+        CHECK(7, keys_to_te == k0 && !py_mx.playing);
+        shift_press(TE_KEY_PLAY);               /* shift + play: TE's */
+        hook_key(TE_KEY_REC, 1);                /* rec + play: TE's tape records */
+        press(TE_KEY_PLAY);
+        hook_key(TE_KEY_REC, 0);
+        *TE_EDIT_MODE = TE_EDIT_MODE_ALBUM;     /* album screen: TE's album playback */
+        press(TE_KEY_PLAY);
+        py_main();
+        CHECK(7, keys_to_te == k0 + 8 && !py_mx.playing);
+        *TE_EDIT_MODE = TE_EDIT_MODE_TAPE;
+        press(TE_KEY_STOP);                     /* paused: again, bar 1 */
+        py_main();
+        CHECK(7, py_mx.pos == 0);
+    }
 
     /* 8: a DRUM track */
     {
@@ -925,11 +1024,40 @@ int main(void)
                 py_main();
         }
         CHECK(8, ok && py_drum_hits == 3);
+        {   /* TE's tempo page: 120 -> 180 while playing. AUDIO tracks in the set: it waits for the
+             * tempo to rest, then the position scales (1.016 bars stay 1.016 bars) and the next
+             * hit (step 9 of bar 2) comes at 1.5 bars of 58800 frames = frame 88200 */
+            uint32_t p0 = py_mx.pos, first = 0;
+            int pass;
+
+            *TE_BPM = 180.0f;
+            py_main();
+            CHECK(8, py_mx.set->bpm_x100 == 12000 && py_mx.pos == p0);      /* not yet */
+            for (pass = 0; pass < 11; pass++)
+                py_main();
+            CHECK(8, py_mx.set->bpm_x100 == 18000 && py_mx.set->bar_frames == 58800 && py_mx.playing
+                  && py_mx.pos == (uint32_t)(((uint64_t)p0 * 58800 + 44100) / 88200));
+            for (b = 0; b < 460; b++) {
+                g = py_mx.pos;
+                clear_master();
+                hook_volume();
+                for (i = 0; i < 64 && !first; i++)
+                    if (E34[i])
+                        first = g + (uint32_t)i;
+                if (!(b % 4))
+                    py_main();
+            }
+            dbg[7] = (int32_t)first;
+            CHECK(8, py_drum_hits == 4 && first == 88200);
+        }
         press(TE_KEY_GREEN_PUSH);                                   /* unsolo */
         press(TE_KEY_STOP);
         py_main();
         press(TE_KEY_STOP);
         py_main();
+        *TE_BPM = 120.0f;                                           /* stopped: at once */
+        py_main();
+        CHECK(8, py_mx.set->bpm_x100 == 12000 && py_mx.set->bar_frames == 88200 && py_mx.pos == 0);
     }
 
     /* 9: a SYNTH track on a test engine (tag 1 as a multi-instance engine) */
@@ -988,6 +1116,44 @@ int main(void)
         }
         press(TE_KEY_STOP);
         py_main();
+
+        /* the same track on one of TE's own engines */
+        {
+            volatile uint32_t *scr = (uint32_t *)0xffb00000;
+            int same = 1, calls = eng_calls;
+            int32_t want = bus_of((int32_t)((uint32_t)soft(((((999 * 32765) >> 15) * 11627) >> 15) * 32766 >> 15) << 16));
+
+            for (i = 0; i < 0x300 / 4; i++)
+                scr[i] = 0xa5000000u + (uint32_t)i;                 /* TE's own voices */
+            TE_SYNTH_TYPE[1] = TE_INSTR_FM;
+            mains(4);
+            CHECK(9, tev_new_calls == 1 && tev_new_type == TE_INSTR_FM);
+            press(TE_KEY_STOP);                                     /* paused: again, bar 1 */
+            py_main();
+            press(TE_KEY_PLAY);
+            py_main();
+            got = 0;
+            for (b = 0; b < 120; b++) {
+                clear_master();
+                hook_volume();
+                if (b == 4)
+                    got = E34[0];
+                if (!(b % 4))
+                    py_main();
+            }
+            for (i = 0; i < 0x300 / 4; i++)
+                same &= scr[i] == 0xa5000000u + (uint32_t)i;
+            CHECK(9, same && tev_new_calls == 1 && eng_calls == calls);
+            CHECK(9, tev_notes == 1 && tev_releases == 1 && tev_renders > 4 && !tev_bad
+                  && tev_inc == 21426141u && tev_env0 > 30000);
+            CHECK(9, got >= want - 2 && got <= want + 2 && E34[0] == 0);
+            tevdbg[0] = tev_new_calls; tevdbg[1] = tev_new_type; tevdbg[2] = tev_notes; tevdbg[3] = tev_releases;
+            tevdbg[4] = tev_renders; tevdbg[5] = tev_bad; tevdbg[6] = (int32_t)tev_inc; tevdbg[7] = tev_env0;
+            tevdbg[8] = same; tevdbg[9] = eng_calls - calls; tevdbg[10] = got; tevdbg[11] = want;
+            press(TE_KEY_STOP);
+            py_main();
+            TE_SYNTH_TYPE[1] = TE_INSTR_DRWAVE;
+        }
     }
 
     /* 10: SONG.BIN saved, read back when the set is re-read (as at boot) */

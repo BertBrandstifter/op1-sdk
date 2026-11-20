@@ -2,9 +2,9 @@
   "schema": 1,
   "name": "play",
   "title": "PLAY tape screen",
-  "version": "0.12.0",
+  "version": "0.14.0",
   "status": "experimental",
-  "summary": "The tape key opens PLAY instead of TE's tape screen (which is not reachable in an image with play; TE's tape data stays untouched): one list of up to 8 tracks, each AUDIO (a WAV / AIF from disk mode's play/ folder, looped or once, streamed from flash), SYNTH (NOTE ROLL patterns on an SDK engine with one of the 8 synth sounds; up to 8 SYNTH tracks share 5 engine instances, at most 5 sound at once (the 4th and 5th while the CPU allows), TE's envelope, PLAY's decimator) or DRUM (DRUM ROLL patterns on PLAY's own sample player from TE's kits, in place), all sample-locked from bar 1, with level, mute, solo, master and a bar counter; the mix joins TE's master bus like the tape (master EQ, master FX, mixer drive and volume act on it). A tracker song arranges the tracks (join: song view, 128 rows x one column per track, each column with its own playhead; chain view: 16 rows of pattern + transpose, audition; AUDIO cells ON / OF; live mode: rows and cells cued while playing); it lives in SONG.BIN with the track list; shift + join opens 16 song slots that keep a song with all its patterns and the synth sounds it plays (engine, parameters, envelope, octave; save / load / delete; a load asks which patterns and sounds that differ from now to take from the slot; a sound whose SDK engine is missing or whose slot holds a TE engine now stays as it is). When disk mode is entered, PLAY copies its slots (play_s/SONGnn.PSL, the file to share) and renders (play_r/) into the disk through TE's FatFs; when it is left, a hook in TE's disk sync copies play/ into /yaffs2/user/play_a|play_b and new .PSL files from play_s/ into free slots before TE clears the disk (the only writes, with SONG.BIN, the rendered files in /yaffs2/user/play_r, the song slots in /yaffs2/user/play_s and the synth sounds a slot load takes back).",
+  "summary": "The tape key opens PLAY instead of TE's tape screen (which is not reachable in an image with play; TE's tape data stays untouched): one list of up to 8 tracks, each AUDIO (a WAV / AIF from disk mode's play/ folder, looped or once, streamed from flash), SYNTH (NOTE ROLL patterns with one of the 8 synth sounds on any synth engine: TE's own, each track on its own copy of the engine's voices swapped into TE's scratchpad for its block, or an SDK engine; up to 8 SYNTH tracks share 5 engine instances, at most 5 sound at once (the 4th and 5th while the CPU allows), TE's envelope, PLAY's decimator) or DRUM (DRUM ROLL patterns on PLAY's own sample player from TE's kits, in place), all sample-locked from bar 1, with level, mute, solo, master and a bar counter; the mix joins TE's master bus like the tape (master EQ, master FX, mixer drive and volume act on it). A tracker song arranges the tracks (join: song view, 128 rows x one column per track, each column with its own playhead; chain view: 16 rows of pattern + transpose, audition; AUDIO cells ON / OF; live mode: rows and cells cued while playing); it lives in SONG.BIN with the track list; shift + join opens 16 song slots that keep a song with all its patterns and the synth sounds it plays (engine, parameters, envelope, octave; save / load / delete; a load asks which patterns and sounds that differ from now to take from the slot; a sound whose SDK engine is missing or whose slot holds a TE engine now stays as it is). When disk mode is entered, PLAY copies its slots (play_s/SONGnn.PSL, the file to share) and renders (play_r/) into the disk through TE's FatFs; when it is left, a hook in TE's disk sync copies play/ into /yaffs2/user/play_a|play_b and new .PSL files from play_s/ into free slots before TE clears the disk (the only writes, with SONG.BIN, the rendered files in /yaffs2/user/play_r, the song slots in /yaffs2/user/play_s and the synth sounds a slot load takes back).",
   "license": "MIT",
   "authors": [
     "unknown"
@@ -24,6 +24,7 @@
     "py_slot.c",
     "py_drum.c",
     "py_synth.c",
+    "py_tev.c",
     "py_pattern.c",
     "py_view.c",
     "py_render.c"
@@ -274,6 +275,28 @@
       "modal": true
     },
     {
+      "input": "play_press",
+      "shift": "no",
+      "screen": [
+        "synth",
+        "drum",
+        "mixer",
+        "tempo",
+        "sequencer"
+      ]
+    },
+    {
+      "input": "stop_press",
+      "shift": "no",
+      "screen": [
+        "synth",
+        "drum",
+        "mixer",
+        "tempo",
+        "sequencer"
+      ]
+    },
+    {
       "input": "back_press",
       "shift": "no",
       "screen": "tape"
@@ -415,7 +438,9 @@
     "PLAY: white turn = the track's file (AUDIO) or sound / kit slot 1-8 (held at the ends), white press = LOOP / ONCE (AUDIO) or voices 2 / 4 / 1 (SYNTH), shift + white press = ECO (SYNTH: the engine at 44.1 kHz, half the cost); orange turn = pattern 1-14, held at the ends (SYNTH: NOTE ROLL, DRUM: DRUM ROLL; a track with a longer song: SNG, edited in the song view); shift + orange turn = master",
     "PLAY: + ADD row: white turn the type, white press adds; insert twice = a new track before the cursor's; cut twice = remove the track",
     "PLAY: play start / pause, stop pause / again back to bar 1, back / forward one bar, T1-T4 cursor (shift: mute), orange press re-read the set folder",
-    "disk mode: WAV / AIF files (+ set.txt with bpm) in a play/ folder are imported when disk mode is left",
+    "every other screen (synth, drum, mixer, tempo, sequencer): play / stop are PLAY's transport too (play start / pause, stop pause / again bar 1; a render: stop cancels); TE keeps them on the album screen, with shift or rec held (rec + play records TE's tape), while TE's tape runs and while REQUANTIZE drives it",
+    "disk mode: WAV / AIF files in a play/ folder are imported when disk mode is left",
+    "tempo: TE's tempo page (metronome key; blue BPM, shift + blue fine) is PLAY's clock, followed live while playing (tracks keep their place in the bar, patterns at the new tempo; AUDIO files not stretched, re-read at the scaled position once the knob rests ~0.1 s); set.txt's bpm is no longer read",
     "PLAY: shift + blue press on a SYNTH / DRUM track: its pattern in NOTE ROLL / DRUM ROLL over PLAY, the playhead follows PLAY; shift + blue press closes it",
     "PLAY: join = the song view (one column per track): blue turn row, green turn column, white turn the cell (chain 00-7F or OF = a rest of one bar; AUDIO: ON / OF), white press = last chain / open the chain view / ON-OF, shift + white press = new chain / clone, cut / insert = cell clipboard, shift + insert = new song row, shift + cut twice = delete it, play = from the cursor row, orange press / tape = back (join stays: join always means the song view, live mode too)",
     "PLAY: live mode (shift + rec in the song view): play = cue the cursor row on every column, white press = cue the cursor cell, T1-T4 = mute (shift: solo); a column jumps to its cue when its chain (AUDIO: its ON / OF segment) ends; shift + play cues a row in the song view too",

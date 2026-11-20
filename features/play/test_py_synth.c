@@ -19,8 +19,10 @@ static int fails;
 /* stand-ins */
 static int renders, last_inst, last_v, last_flags, first_v, first_flags, no_engine, releases, rel_slot, env_calls, quiet_tail;
 static uint32_t last_inc;
+static int key_ups, key_up_v, key_up_after_render, last_env0, seq;
 
-static int st_render(int inst, int v, int16_t *out, const int16_t *knobs, const uint32_t *inc, int flags)
+static int st_render(int inst, int v, int16_t *out, const int16_t *knobs, const uint32_t *inc,
+                     const int16_t *env, int flags)
 {
     int i;
 
@@ -28,6 +30,8 @@ static int st_render(int inst, int v, int16_t *out, const int16_t *knobs, const 
     if (no_engine)
         return 0;
     renders++;
+    seq = 1;                                    /* a key-up after this: after the render */
+    last_env0 = env ? env[0] : -1;
     if (flags & PY_SYN_BLOCK) {
         first_v = v;
         first_flags = flags;
@@ -39,6 +43,15 @@ static int st_render(int inst, int v, int16_t *out, const int16_t *knobs, const 
     for (i = 0; i < 128; i++)
         out[i] = 1000;
     return 1;
+}
+
+static void st_key_up(int inst, int v, const int16_t *knobs)
+{
+    (void)inst;
+    (void)knobs;
+    key_ups++;
+    key_up_v = v;
+    key_up_after_render = seq;
 }
 
 static void st_start(void *o) { ((uint32_t *)o)[0] = 1; }
@@ -65,7 +78,7 @@ static int st_env(void *o, int16_t *env, const int16_t *adsr, const int16_t *vel
     return st[0] >= 12;
 }
 
-static const py_syn_api api = { st_render, st_start, st_release, st_env };
+static const py_syn_api api = { st_render, st_key_up, st_start, st_release, st_env };
 
 static void test_decimator(void)
 {
@@ -162,15 +175,36 @@ int main(void)
     CHECK(renders == 1 && last_inst == 2 && last_v == 0 && last_flags == (PY_SYN_FRESH | PY_SYN_BLOCK)
           && last_inc == 2 * PY_INC_A4 && !releases && s.v[0].vel == (100 << 8));
     CHECK(!py_syn_tail(&s));                                            /* held */
+    seq = 0;
     blk(&s, 2, 5, 32767, bus, out);                                     /* 36 left: release now */
     CHECK(last_flags == PY_SYN_BLOCK && releases == 1 && rel_slot == 5 && py_syn_active(&s) == 1);
+    /* the engine's note-off (TE's voices) once, before this block's render; the render got the
+     * block's envelope (rendered first: TE's dsynth reads it) */
+    CHECK(key_ups == 1 && key_up_v == 0 && !key_up_after_render && last_env0 == 32767);
     CHECK(py_syn_tail(&s));                                             /* only its release sounds */
     py_syn_note(&s, 60, 100, 1000);
     CHECK(!py_syn_tail(&s));                                            /* a tail and a new note */
     s.v[1].on = 0;
     blk(&s, 2, 5, 32767, bus, out);
     blk(&s, 2, 5, 32767, bus, out);                                     /* the envelope is done */
-    CHECK(!py_syn_active(&s));
+    CHECK(!py_syn_active(&s) && key_ups == 1);
+    /* a note shorter than a block: note_on (the FRESH render) first, then its note-off */
+    memset(&s, 0, sizeof(s));
+    key_ups = 0;
+    seq = 0;
+    py_syn_note(&s, 60, 100, 10);
+    blk(&s, 2, 5, 32767, bus, out);
+    CHECK(key_ups == 1 && key_up_after_render);
+    /* restart (a new engine on the instance): held notes start again (FRESH), released ones end */
+    memset(&s, 0, sizeof(s));
+    s.cap = 4;
+    py_syn_note(&s, 60, 100, 100000);
+    py_syn_note(&s, 62, 100, 10);
+    blk(&s, 2, 5, 32767, bus, out);
+    py_syn_restart(&s);
+    CHECK(s.v[0].on && !s.v[0].started && !s.v[1].on);
+    blk(&s, 2, 5, 32767, bus, out);
+    CHECK(last_flags & PY_SYN_FRESH);
 
     /* the output: (1000 x 32767) >> 15 = 999 at 88.2 kHz, gain 1/2 -> 499, into the 88.2 kHz bus;
      * peak after the gain; nothing at 44.1 kHz */

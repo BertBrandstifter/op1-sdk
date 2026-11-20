@@ -77,8 +77,20 @@ void py_syn_note(py_syn *s, int key, int vel7, uint32_t hold)
     v->gate = hold;
     v->started = 0;
     v->released = 0;
+    v->key_up = 0;
     v->age = ++s->ages;
     v->on = 1;
+}
+
+void py_syn_restart(py_syn *s)
+{
+    int i;
+
+    for (i = 0; i < PY_SPOLY; i++)
+        if (s->v[i].on && !s->v[i].released)
+            s->v[i].started = 0;
+        else
+            s->v[i].on = 0;
 }
 
 int py_syn_active(const py_syn *s)
@@ -119,6 +131,7 @@ static void gate(py_sv *v, const py_syn_api *api, int slot, uint32_t samples)
     if (v->gate <= samples) {
         api->env_release(v->env, slot);
         v->released = 1;
+        v->key_up = 1;
     } else {
         v->gate -= samples;
     }
@@ -182,11 +195,6 @@ uint32_t py_syn_block(py_syn *s, const py_syn_api *api, int inst, const int16_t 
             flags |= PY_SYN_HALF | (s->boost ? PY_SYN_BOOST : 0);
         for (i = 0; i < 128; i++)
             inc[i] = s->eco ? v->inc << 1 : v->inc;
-        if (!api->render(inst, k, eng, knobs, inc, flags)) {
-            v->on = 0;                          /* no engine for this sound: silence */
-            continue;
-        }
-        first = 0;
         if (s->eco) {                           /* two output blocks: two envelope blocks */
             gate(v, api, slot, 64);
             done = api->env_render(v->env, env, adsr, &v->vel);
@@ -200,6 +208,21 @@ uint32_t py_syn_block(py_syn *s, const py_syn_api *api, int inst, const int16_t 
             gate(v, api, slot, 64);
             done = api->env_render(v->env, env, adsr, &v->vel);
         }
+        if (v->key_up && !(flags & PY_SYN_FRESH)) {    /* (a note shorter than a block: on first) */
+            v->key_up = 0;
+            if (api->key_up)
+                api->key_up(inst, k, knobs);
+        }
+        if (!api->render(inst, k, eng, knobs, inc, env, flags)) {
+            v->on = 0;                          /* no engine for this sound: silence */
+            continue;
+        }
+        if (v->key_up) {
+            v->key_up = 0;
+            if (api->key_up)
+                api->key_up(inst, k, knobs);
+        }
+        first = 0;
         for (i = 0; i < 128; i++)
             sum[i] += (eng[i] * env[i]) >> 15;
         if (done || (v->released && peak_of(env, 128) < PY_ENV_FLOOR))

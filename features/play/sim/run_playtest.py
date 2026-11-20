@@ -38,6 +38,7 @@ STUBS = {                                                 # TE address: (driver 
     0x0199C620: ("f_unlink_stub", 0), 0x0199C7B8: ("f_mkdir_stub", 0), 0x019964EC: ("fat_free_stub", 0),
     0x01A9B1C0: ("yaffs_free_stub", 0), 0x01998E74: ("f_mount_stub", 0),
     0x01A00D14: ("set_knobs_stub", 0), 0x01A00C98: ("set_adsr_stub", 0), 0x019FF36C: ("set_octave_stub", 0),
+    0x01A1B7D4: ("te_engine_new", 0),
 }
 SONG_CLUSTERS = 400                                       # image 4: play_s/SONG01.PSL, room for 200 KB
 
@@ -188,7 +189,7 @@ def main():
     r = run_model(elf_run, segs, d["_start"], timeout=600)
     mx = syms["_py_mx"]
     vals = run_gdb(elf_run, [f"/x *(unsigned*){d['_fails']:#x}"] + [f"*(int*){d['_dbg'] + 4 * i:#x}" for i in range(7)]
-                   + [f"*(unsigned*){syms['_py_blocks']:#x}"],
+                   + [f"*(unsigned*){syms['_py_blocks']:#x}"] + [f"*(int*){d['_tevdbg'] + 4 * i:#x}" for i in range(12)],
                    [("play_screen", FB[0]), ("play_screen_gone", FB[1]), ("play_screen_tracks", FB[2]),
                     ("play_screen_song", FB[3]), ("play_screen_chain", FB[4]),
                     ("play_screen_help", FB[5]), ("play_screen_live", FB[6]),
@@ -197,7 +198,7 @@ def main():
                     ("play_screen_files", FB[10]), ("play_screen_songs_sounds", FB[11])],
                    timeout=600)
     if (r.returncode or os.environ.get("PY_DBG")) and vals:
-        print(f"failed check bits: {vals[0]}  first mismatch block/frame/gotL/wantL/gotR/wantR/pos: {vals[1:8]}  blocks {vals[8:]}")
+        print(f"failed check bits: {vals[0]}  first mismatch block/frame/gotL/wantL/gotR/wantR/pos: {vals[1:8]}  blocks {vals[8:9]}  tev {vals[9:]}")
     print("PASS" if r.returncode == 0 else f"FAIL (exit {r.returncode}; R7 = failed check bits)")
     sys.exit(r.returncode)
 

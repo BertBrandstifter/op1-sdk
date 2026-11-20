@@ -3,10 +3,11 @@
 A second tape screen with one list of up to **8 tracks** in any order. Each track is one of:
 
 - **AUDIO**: a WAV / AIF file from the set folder, looped or played once;
-- **SYNTH**: NOTE ROLL patterns, played on an instance of an SDK engine (ACID 3, MONO 3,
-  STATION 1, PARTY, PALETTE, MALLET, WHEEL, WARP, TRIO) with one of the 8 synth sounds; up to 8
-  SYNTH tracks share 5 instances, so at most 5 sound at once (the 4th and 5th while the CPU
-  allows; they take turns in the song);
+- **SYNTH**: NOTE ROLL patterns, played with one of the 8 synth sounds on any synth engine: TE's
+  own (FM, digital, string, cluster, pulse, sampler, phase, dna, dsynth, voltage, iter; v0.13) or
+  an SDK engine (ACID 3, MONO 3, STATION 1, PARTY, PALETTE, MALLET, WHEEL, WARP, TRIO), each track
+  on its own instance of the engine; up to 8 SYNTH tracks share 5 instances, so at most 5 sound at
+  once (the 4th and 5th while the CPU allows; they take turns in the song);
 - **DRUM**: DRUM ROLL patterns, played from one of the 8 drum kits.
 
 Everything runs in sync from bar 1, with level, mute, solo, master and a bar counter. PLAY is the
@@ -49,6 +50,19 @@ MASTER 0 DB        PRESS: VOICES  SHIFT: ECO  SHIFT+BLUE: EDIT
 | insert, insert again | a new track before this one (white turn while armed: its type) | a new track at the end |
 | T1..T4, shift + T1..T4 | cursor to track 1..4 / mute it | |
 | play / stop / back / forward | play-pause / pause, again bar 1 / one bar | |
+
+**Tempo = TE's tempo page** (v0.14; metronome key, blue knob BPM, shift + blue fine). PLAY
+follows it live, playing or not: every track keeps its place in the bar and its pattern, the
+notes sound on, the next steps come at the new tempo. AUDIO files are not stretched: they keep
+their speed and pick up at the scaled position (while they play, PLAY waits ~0.1 s for the knob
+to rest, then re-reads them once). The header's `BPM` shows it. Before v0.14 PLAY took the
+tempo once, when the set was loaded, and a `set.txt` with `bpm` overrode it.
+
+**play / stop on every screen** (v0.13.1): on the synth, drum, mixer, tempo and sequencer screens
+play and stop drive PLAY too (play: start / pause, stop: pause, again bar 1; during a render stop
+cancels it). TE keeps them on the album screen (album playback), with shift held, with rec held
+(rec + play still records TE's hidden tape), while TE's tape runs, and while REQUANTIZE drives
+TE's tape.
 
 ## The song: a tracker
 
@@ -135,8 +149,9 @@ can change its preset per chain: a verse chain on sound 2, a chorus chain on sou
 1..8** set the cursor track's own sound in every view; pressed while a row with its own SND
 plays, the key's sound wins until that row ends (live mode: try a sound, the song takes over
 again). The list shows the slot playing now (amber when it is a chain row's). A change acts on
-the next block: notes still sounding go on with the new sound's parameters. The slot should hold
-an SDK engine (TE's own engines cannot run in PLAY); only the 8 slots in memory can be used, no
+the next block: notes still sounding go on with the new sound's parameters (a sound on another engine:
+they start again on it). Any engine works (TE's own since v0.13; a sampler sound needs its
+sample loaded: `SAMPLER: NO SAMPLE` otherwise); only the 8 slots in memory can be used, no
 presets are loaded from flash.
 
 The first empty row ends a chain. Chains are shared: the same chain in a SYNTH column plays NOTE
@@ -209,7 +224,7 @@ engine's parameters, envelope and octave, saved as TE saves a sound edit. It sta
 |---|---|
 | `KEPT: NOT HERE` | its SDK engine is not in this firmware (or cannot run in PLAY) |
 | `KEPT: OTHER ENGINE` | the sound slot holds one of TE's engines now (FM, string, ...): PLAY does not switch TE's engine type. Pick any SDK engine on that slot and load again |
-| `KEPT` | the stored sound is one of TE's engines (PLAY does not play those) |
+| `KEPT` | the stored sound is one of TE's engines: it plays in PLAY (v0.13), but a slot does not bring its parameters back yet (TE's per-engine ranges are not mapped) |
 
 The track then plays whatever that slot holds now, as before. Every value written is clamped into
 TE's ranges first (TE checks stored sounds at boot). A track on `CUR` stores the sound that was
@@ -223,7 +238,7 @@ slot or has changed since.
   finger sequencer shows them too; the editors' undo history starts anew.
 - **Not in a slot:** the drum kits (the song only names the kit slots), TE's synth FX and LFO
   (PLAY does not apply them), the audio files (only their names: a slot loaded with another set
-  shows `GONE`), the tempo (set.txt / TE's), the master.
+  shows `GONE`), the tempo (TE's tempo page), the master.
 - Files: `/yaffs2/user/play_s/SONG01.BIN` .. `SONG16.BIN` (kept when a new set is imported). Empty
   patterns are not stored: a small song is ~8 KB, all 28 patterns used ~84 KB (a sound: 36 bytes). A file is read back
   once after it is written; a damaged one shows `DAMAGED`, a file from an editor version with other
@@ -367,10 +382,8 @@ reach 5. A track takes one for its first note and gives it back once its voices
 are silent, so SYNTH tracks that take turns in the song (rest cells, later columns, live cues)
 can use 8 different sounds. A note that finds no free instance takes one whose track only has
 a release tail left (the tail is cut), else it is dropped and the track shows `BUSY` for ~1 s
-(red `SYN` in the song view). Muted tracks take none. 2 DRUM tracks (CPU), 8 tracks in all. A synth sound
-whose engine is one of TE's own shows `NOT AN SDK ENGINE`: TE's engines exist once, as TE's six
-voices, and TE renders only the sound being played; running one a second time would need each
-engine's voice objects rebuilt (reverse engineering per engine). The SDK engines keep their state
+(red `SYN` in the song view). Muted tracks take none. 2 DRUM tracks (CPU), 8 tracks in all. TE's own engines run
+as PLAY's instances too (v0.13, "TE's engines" below). The SDK engines keep their state
 per voice slot (36: TE's 6 + 5 instances x 6, ~7 KB of RAM per instance over all engines) and per instance (MONO 3's voice order, ACID 3's mono
 voice, MALLET's motor, WHEEL's rotor, PALETTE's budget); keyboard displays stay TE's. That state
 passes on with the instance to the next track that takes it.
@@ -388,7 +401,7 @@ the set folder (written about 2 s after a change; kept when a new set without it
 
 1. Disk mode (shift + com, then disk). Create a folder **`play`** at the top of the disk (next to
    `album`, `drum`, `synth`, `tape`) and copy WAV / AIF files into it, any names (up to 16).
-   Optional `set.txt` with the tempo: `bpm 120` (else TE's tempo).
+   (A `set.txt` with `bpm ...` is no longer read since v0.14: the tempo is TE's tempo page.)
 2. Leave disk mode. On the way out, before TE clears the disk, PLAY copies them into its own
    folder; the `play` folder is then gone from the disk, the way TE takes `drum` and `synth` in.
 3. Add an AUDIO track and pick the file with the white knob.
@@ -409,10 +422,25 @@ track (`NOT 44.1 KHZ`, `NOT 16 BIT`, `SONG.WAV: GONE`); the rest plays on.
   by construction. An audio ring that runs late is silent for that block (`!` on its row) and
   comes back in sync at the right place.
 - **Synth voices:** the track's engine instance renders 128 samples at 88.2 kHz from the slot's
-  stored knobs; TE's own envelope code (Adsr.cpp, on PLAY's objects) shapes it with the slot's
+  stored knobs (an SDK engine through enginehost, TE's own engines through their voice objects,
+  below); TE's own envelope code (Adsr.cpp, on PLAY's objects) shapes it with the slot's
   envelope; the SYNTH tracks are summed with their gains at 88.2 kHz and PLAY's copy of TE's
   63-tap halfband takes the sum to 44.1 kHz once (ECO tracks join after it). TE's synth FX / LFO are not
   applied (TE has one instance of each). Notes start on the block after their step (1.45 ms).
+- **TE's engines** (v0.13, `py_tev.c`, static RE 2026-11-20): TE builds the 6 voices of the current
+  sound's engine with its factory (`TE_ENGINE_NEW`, producer_factory.cpp) as small C++ objects at
+  `0xffb00000 + vi x size` in the L1 scratchpad, engine-wide state right after them (fm's operator
+  setup, pulse's tables); all of it below `0x300` (cluster, the largest, 0x287 bytes). Their code
+  reads nothing per voice outside the object but buffers TE fills before each voice (pitch
+  increments `0xff801950`; dsynth: the envelope `0xff801d50`), read-only tables, shared scratch
+  and the dither generator; the sampler's voice holds its slot's sample at +4. So each PLAY
+  instance keeps its own copy of those 0x300 bytes: for a track's block PLAY saves TE's, copies
+  the instance's in, calls the voices through their vtables (note_on `+0x1c`, render `+0x14`,
+  release `+0x2c`) as TE's voice loop does, copies them back and puts TE's back (audio interrupt,
+  after TE rendered its own voices; ~5k cycles of copying). Fresh voices come from one prototype
+  per engine a slot holds, built in the main loop with interrupts masked (TE's factory into the
+  scratchpad, copied out, TE's voices restored). As with the SDK engines, TE's synth FX and LFO
+  and the sound's play mode (unison, glide) are not applied.
 - **Drum voices:** TE's kits stay in sample memory; PLAY reads them in place (pitch, start, end,
   playmode, reverse, volume of each key), with DRUM ROLL's VEL x lane level, TONE and LEN gate.
 - **Mix:** an "after" hook on TE's metronome mix adds PLAY's sum into TE's master bus, where the
@@ -461,7 +489,9 @@ otherwise.
 - `test_py_synth.c` (host): pitch increments, TE's halfband (DC, 1 kHz passes, 30 kHz gone), the
   voices against stand-ins for an engine and TE's envelope (flags, instance, release after the
   hold, -60 dB release end, release tails (`py_syn_tail`), voice cap and stealing, new notes first, gain and peak, ECO (parity,
-  HALF flag, BOOST only with ECO), no engine; the 32-bit decimator bit for bit against the 64-bit sum).
+  HALF flag, BOOST only with ECO), no engine; the 32-bit decimator bit for bit against the 64-bit sum;
+  the envelope rendered before the engine and handed to it, the engine's note-off once (after
+  the note_on of a note shorter than a block), a restart on a new engine).
 - `sim/load_play.py` (simulator, a measurement, not in test_all: about 10 minutes): three SYNTH tracks on
   ACID 3, a legato note every 1/16, ECO off and on: cycles per block (peak, average), renders per
   track. 2026-11-15: ECO off peak 201k (314k before new-notes-first), ECO on peak 129k (206k
@@ -469,7 +499,9 @@ otherwise.
 - `sim/run_playtest.py` (simulator, composed with WARP): import, folder switch, tracks added on
   the ADD row, exact mixed samples of once / looped files, a gone file on its own track, keys,
   a DRUM track sample by sample, a SYNTH track on a test engine as instance 1 with TE's envelope
-  stand-ins, SONG.BIN saved and read back, removing a track, no yaffs buffer at an odd address,
+  stand-ins, the same track on a stand-in for one of TE's engines (prototype built once in the
+  main loop, note_on / render / release in order on the voices in the scratchpad, increments and
+  envelope in TE's buffers, the same level, TE's own voices in the scratchpad untouched), SONG.BIN saved and read back, removing a track, no yaffs buffer at an odd address,
   TE's finger patterns loaded once op1.db is open (a DRUM track on TE's own pattern plays),
   the SYNTH cost options (voices, ECO renders every other block with HALF and, under light load,
   BOOST, muted renders nothing) and the

@@ -31,6 +31,7 @@
 #include "py_yaffs.h"
 #include "../enginehost/eh_host.h"
 #include "py_synth.h"                          /* PY_SYN_CAP_DEFAULT */
+#include "py_tev.h"
 #include "py_ui.h"
 #include "py_slot.h"
 
@@ -226,7 +227,7 @@ static void open_audio(void)
     int k;
 
     close_audio();
-    py_set_init(&set, &setfile, te_bpm_x100());
+    py_set_init(&set, 0, te_bpm_x100());       /* the clock: TE's tempo page (set.txt's bpm: no more, v0.14) */
     if (!scratch)
         scratch = TE_HEAP_MALLOC(TE_HEAP_SAMPLES, CHUNK_FRAMES * 4);
     for (k = 0; k < PY_TRACKS; k++) {
@@ -335,6 +336,53 @@ static void load_set(int song)
 
 static uint32_t clock_bpm(void) { return set.bpm_x100 ? set.bpm_x100 : te_bpm_x100(); }
 static uint32_t clock_bar(void) { return set.bar_frames ? set.bar_frames : py_bar_frames(te_bpm_x100()); }
+
+/* TE's tempo page is PLAY's clock (v0.14): a new tempo there, playing or not, retimes the song.
+ * The pattern clock and the play position scale in place (py_pat_retime: every track stays at
+ * its place in the bar, voices sound on); AUDIO tracks (files are not stretched) get their song
+ * segments anew and their rings re-read at the scaled position. While AUDIO tracks play, the
+ * tempo must rest for TEMPO_SETTLE passes first (a turn of the BPM knob = one re-read, not one
+ * per step). */
+#define TEMPO_SETTLE    12                      /* main-loop passes (~0.1 s) */
+static uint8_t tempo_wait;
+
+static int audio_used(void)
+{
+    int k;
+
+    for (k = 0; k < PY_TRACKS; k++)
+        if (py_song.trk[k].type == PS_AUDIO && set.t[k].used)
+            return 1;
+    return 0;
+}
+
+static void follow_tempo(void)
+{
+    uint32_t bpm = te_bpm_x100(), bar;
+    int aud, playing;
+
+    if (bpm == set.bpm_x100) {
+        tempo_wait = 0;
+        return;
+    }
+    aud = audio_used();
+    if (aud && py_mx.playing && ++tempo_wait < TEMPO_SETTLE)
+        return;
+    tempo_wait = 0;
+    bar = py_bar_frames(bpm);
+    playing = py_mx.playing;
+    if (aud)
+        py_mx.playing = 0;                      /* (the rings are re-read below) */
+    py_pat_retime(bar, bpm);                    /* (scales py_mx.pos too) */
+    set.bpm_x100 = bpm;
+    set.bar_frames = bar;
+    if (aud) {
+        song_audio();
+        py_seek(&py_mx, py_mx.pos);
+        py_fill(&py_mx, track_read, 0, PREFILL * 4u * PY_TRACKS, scratch);
+        py_mx.playing = (uint8_t)playing;
+    }
+}
 
 /* stop, move to global frame g, read some ahead, resume if it was playing */
 static void seek_to(uint32_t g, int play)
@@ -634,6 +682,7 @@ void py_main(void)
         update_gains();
         seek_to(py_mx.pos, playing);
     }
+    follow_tempo();
     py_pat_main(clock_bar(), clock_bpm());
     if (req_segs) {                             /* AUDIO song cells changed: the segments, the rings anew */
         int playing = py_mx.playing;
@@ -709,6 +758,19 @@ static int take(int key)
 }
 
 static volatile uint8_t join_due;               /* join on another screen: the tape key comes, then the song view */
+
+/* play / stop on every other screen are PLAY's transport too (v0.13.1), except where TE needs
+ * them: the album screen (album playback), shift held, rec held (rec + play still records TE's
+ * tape), TE's tape running (its stop) and REQUANTIZE at work (it drives TE's tape with injected
+ * play / stop presses). */
+extern volatile int rq_state __attribute__((weak));     /* REQUANTIZE, when in the image */
+static volatile uint8_t rec_held;
+
+static int transport_anywhere(void)
+{
+    return *TE_EDIT_MODE != TE_EDIT_MODE_ALBUM && !*TE_SHIFT_HELD && !rec_held
+        && *TE_TAPE_STATE == 0 && !(&rq_state && rq_state);
+}
 
 static int on_screen(void)
 {
@@ -1091,6 +1153,8 @@ int py_key(int key, int down)
 {
     int t;
 
+    if (key == TE_KEY_REC)
+        rec_held = (uint8_t)down;
     if (!down) {
         if (took(key)) {
             taken[key >> 5] &= ~(1u << (key & 31));
@@ -1131,6 +1195,17 @@ int py_key(int key, int down)
     if (on_screen() && !editor_up() && (tape_key(key) || (key == TE_KEY_SPEECH && !*TE_SHIFT_HELD))
         && py_help_key(key))
         return take(key);                       /* speech: the help page; any key closes it */
+    if (!on_screen() && (key == TE_KEY_PLAY || key == TE_KEY_STOP) && transport_anywhere()) {
+        if (py_rd_busy()) {                     /* a render: stop cancels it */
+            if (key == TE_KEY_STOP)
+                py_rd_cancel();
+        } else if (key == TE_KEY_PLAY) {
+            req_play = 1;
+        } else {
+            req_stop = 1;
+        }
+        return take(key);
+    }
     if (!on_screen() || !tape_key(key))
         return 0;
     if (editor_up()) {                          /* the editor did not want it: transport only */
@@ -1418,8 +1493,13 @@ static void draw_track(int y, int row, int k, int sel)
         if (t->type == PS_SYNTH) {
             int slot = py_pat_slot(k);
 
-            if (!eh_multi_ok(TE_SYNTH_KNOBS + slot * 8)) {
-                gfx_text7(116, y, eh_tag(TE_SYNTH_KNOBS + slot * 8) ? "ENGINE NOT IN PLAY YET" : "NOT AN SDK ENGINE",
+            if (TE_SYNTH_TYPE[slot] == TE_INSTR_DRWAVE ? !eh_multi_ok(TE_SYNTH_KNOBS + slot * 8)
+                                                      : py_tev_why(slot) != 0) {
+                int why = TE_SYNTH_TYPE[slot] == TE_INSTR_DRWAVE ? 0 : py_tev_why(slot);
+
+                gfx_text7(116, y, why == PY_TEV_NO_SAMPLE ? "SAMPLER: NO SAMPLE"
+                                  : why ? "ENGINE NOT IN PLAY"
+                                  : eh_tag(TE_SYNTH_KNOBS + slot * 8) ? "ENGINE NOT IN PLAY YET" : "NOT AN SDK ENGINE",
                           C_RED);
                 return;
             }

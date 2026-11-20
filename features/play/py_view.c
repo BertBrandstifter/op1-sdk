@@ -1390,7 +1390,7 @@ static const help_line help_page[HELP_PAGES][HELP_LINES] = {
         { "SHIFT+BLUE PR", "EDIT THE PATTERN (NOTE / DRUM ROLL)" },
         { "INSERT X2", "NEW TRACK - CUT X2: REMOVE IT" },
         { "PLAY / STOP", "START, PAUSE / PAUSE, AGAIN: BAR 1" },
-        { "< >", "ONE BAR BACK / FORWARD" },
+        { "< > / METRONOME", "BAR BACK, FORWARD / TEMPO: THE BPM" },
         { "JOIN", "THE SONG VIEW - THE TRACKER" },
         { "KEYS 1-8", "SOUND / KIT 1-8 OF THE CURSOR TRACK" },
         { "SPEECH", "THIS HELP - BLUE: THE OTHER PAGES" },

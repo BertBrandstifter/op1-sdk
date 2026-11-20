@@ -39,6 +39,7 @@
 #include "play.h"
 #include "py_yaffs.h"
 #include "py_slot.h"
+#include "py_tev.h"
 
 /* drum kits: [8] holder -> SampleBuffer -> +0 int16 *m_buffer (8 samples of padding first) */
 #define TE_DRUM_HOLDERS     ((void **volatile *)0x01cc10cc)  /* [8] */
@@ -585,6 +586,8 @@ void py_pat_main(uint32_t bar, uint32_t bpm_x100)
         fs_asked = 1;
         TE_FS_GET();
     }
+    if (py_pat_any())
+        py_tev_main();                          /* TE engines: a prototype of each one a slot holds */
     refresh();
     if (song_dirty) {
         song_dirty = 0;
@@ -592,6 +595,40 @@ void py_pat_main(uint32_t bar, uint32_t bpm_x100)
     } else if (quiet && !--quiet) {
         save_song();
     }
+}
+
+/* the tempo changed (TE's tempo page): every frame count of the pattern clock scaled by the new
+ * bar length over the old one, the play position with it, so each track keeps its place in the
+ * bar and its pattern; voices sound on. Main thread; the interrupt sees all of it at once. */
+static uint32_t rescale(uint32_t x, uint32_t nb, uint32_t ob)
+{
+    return (uint32_t)(((uint64_t)x * nb + ob / 2) / ob);
+}
+
+void py_pat_retime(uint32_t bar, uint32_t bpm_x100)
+{
+    uint64_t ds[DR_RATES], ns = nr_step_q16(bpm_x100);
+    uint32_t ob = clock_bar, mask;
+    int r, t;
+
+    for (r = 0; r < DR_RATES; r++)
+        ds[r] = dr_step_q16(bpm_x100, r);
+    __asm__ volatile("cli %0;" : "=d"(mask) : : "memory");
+    if (ob && bar != ob) {
+        for (t = 0; t < PS_TRACKS; t++) {
+            uint32_t end = rescale(heads[t].start + heads[t].len, bar, ob);
+
+            heads[t].start = rescale(heads[t].start, bar, ob);
+            heads[t].len = end - heads[t].start;    /* (the next head starts where this one ends) */
+        }
+        py_mx.pos = rescale(py_mx.pos, bar, ob);
+    }
+    for (r = 0; r < DR_RATES; r++)
+        dsteps[r] = ds[r];
+    nstep = ns;
+    steps_bpm = bpm_x100;
+    clock_bar = bar;
+    __asm__ volatile("sti %0;" : : "d"(mask) : "memory");
 }
 
 /* length (frames) of what pattern track t plays for pattern p */
@@ -855,9 +892,41 @@ static void synth_emit(void *ctx, const nr_hit *h)
     py_syn_note(&syns[c->t], key, (h->n->vel * 127 + 50) / 100, h->hold);
 }
 
+/* the engine of the track being rendered: an SDK engine's instance (drwave sounds) or TE's own
+ * voices of the instance (py_tev: every other engine; set by track_block) */
+static int syn_te;
+
+static int syn_render(int inst, int v, int16_t *out, const int16_t *knobs, const uint32_t *inc,
+                      const int16_t *env, int flags)
+{
+    return syn_te ? py_tev_render(inst, v, out, knobs, inc, env, flags)
+                  : eh_render_inst(inst, v, out, knobs, inc, flags);
+}
+
+static void syn_key_up(int inst, int v, const int16_t *knobs)
+{
+    if (syn_te)
+        py_tev_key_up(inst, v, knobs);
+}
+
 static const py_syn_api te_syn_api = {
-    eh_render_inst, TE_ADSR_START, TE_ADSR_RELEASE, TE_ADSR_RENDER,
+    syn_render, syn_key_up, TE_ADSR_START, TE_ADSR_RELEASE, TE_ADSR_RENDER,
 };
+
+/* track t's SYNTH sound in slot `slot` on its instance: 1 = it can sound (SDK engine, or TE's
+ * engine with its voices ready: py_tev_bind; fresh voices restart the notes) */
+static int syn_bind(int t, int slot)
+{
+    int r;
+
+    syn_te = TE_SYNTH_TYPE[slot] != TE_INSTR_DRWAVE;
+    if (!syn_te)
+        return 1;
+    r = py_tev_bind(inst_of[t], slot);
+    if (r == 2)
+        py_syn_restart(&syns[t]);
+    return r != 0;
+}
 
 volatile uint32_t py_trk_cyc[PS_TRACKS];        /* CYCLES per track, summed (play.c windows them) */
 volatile uint32_t py_dec_cyc;                   /* CYCLES of the shared decimator, summed */
@@ -965,9 +1034,17 @@ static int track_block(int t, uint32_t pos)
                 py_boosts++;
             }
             c0 = cycles();
-            peak_to(t, py_syn_block(s, &te_syn_api, inst_of[t], (const int16_t *)(TE_SYNTH_KNOBS + c.slot * 8),
-                                    (const int16_t *)(TE_SYNTH_ADSR + (uint32_t)c.slot * 16u), c.slot,
-                                    gain, bus88, eco44, blk));
+            if (syn_bind(t, c.slot)) {
+                if (syn_te)
+                    py_tev_enter(inst_of[t]);
+                peak_to(t, py_syn_block(s, &te_syn_api, inst_of[t], (const int16_t *)(TE_SYNTH_KNOBS + c.slot * 8),
+                                        (const int16_t *)(TE_SYNTH_ADSR + (uint32_t)c.slot * 16u), c.slot,
+                                        gain, bus88, eco44, blk));
+                if (syn_te)
+                    py_tev_leave(inst_of[t]);
+            } else {
+                py_syn_reset(s);                /* not playable (now): its notes drop */
+            }
             if (renders)
                 ren_cyc[t] = cycles() - c0;
             bus = !eco;
