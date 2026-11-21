@@ -36,7 +36,7 @@
 #define HELD            8
 #define FLASH           100                     /* audio blocks: ~145 ms */
 
-static wh_voice voices[EH_SLOTS];               /* every instance (PLAY: vi 6..35) */
+static wh_voice voices[EH_SLOTS];               /* every instance (PLAY: vi 6..41) */
 static wh_rotor rotors[EH_INST];                /* the rotary speaker per instance */
 volatile uint8_t wh_page;                       /* 0..2 = page 1..3 (bench reads) */
 #define PAGES           3

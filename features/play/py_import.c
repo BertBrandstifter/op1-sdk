@@ -15,7 +15,14 @@
  * folder (PLAY's slot files, written there by py_te.c when disk mode is entered, or one from
  * someone else) that no slot holds already goes into a free slot: SONGnn.PSL into slot nn if that
  * is free, else the first free one. A slot is never overwritten; a file that is damaged or of
- * another PLAY version (other pattern sizes) is left. */
+ * another PLAY version (other pattern sizes) is left.
+ *
+ * Demo songs (py_demos_install, main loop, once): the image carries slot files as
+ * /yaffs2/content/play_demo_13.psl .. _16.psl (feature.json content_files, demos/gen_demos.c; TE's
+ * content folder, a new folder there would have no file of TE's to model it on); at the first boot
+ * with them each goes into a free slot the same way (SONG13..16 if free), then a marker in the
+ * slot folder says it was done: a demo deleted later stays deleted, a new image does not bring
+ * them back. */
 #include <op1/te246.h>
 #include <op1/fat.h>
 #include "play.h"
@@ -344,6 +351,147 @@ static int import_song(int i, int n, psl_io *io, uint8_t *buf)
     if (!ok)
         PY_UNLINK(path);                        /* no half-written slot */
     return ok;
+}
+
+/* ------------------------------------------------------------------ demo songs: content -> slots */
+
+#define DEMO_PATH   "/yaffs2/content/play_demo_%d.psl"
+#define DEMO_MARK   PY_DIR_S "/DEMOS.OK"
+static const uint8_t demo_slot[] = { 13, 14, 15, 16 };    /* each its own slot number if free */
+#define NDEMOS      ((int)sizeof(demo_slot))
+volatile uint32_t py_demos_installed, py_demos_found, py_demos_why;    /* (bench, debug) */
+
+static int demo_read(void *ctx, uint32_t off, void *buf, uint32_t n)
+{
+    return PY_PREAD(*(int *)ctx, buf, n, (int32_t)off);    /* (own handles: py_slots_import may run
+                                                             * on the disk sync's thread) */
+}
+
+/* copy the open file `in` (size bytes) into slot n and read it back whole; 1 = done */
+static int install_demo(int in, uint32_t size, int n, psl_io *io, uint8_t *buf)
+{
+    char path[64];
+    psl_info info;
+    uint32_t off = 0;
+    int out, ok = 1, back;
+
+    py_pat_slot_path(path, n);
+    PY_MKDIR(PY_DIR_S, 0);
+    out = TE_FILE_OPEN(path, TE_FILE_CREATE, TE_FILE_CREATE_MODE);
+    if (out < 0)
+        return 0;
+    while (ok && off < size) {
+        uint32_t k = size - off < COPY_CHUNK ? size - off : COPY_CHUNK;
+
+        ok = PY_PREAD(in, buf, k, (int32_t)off) == (int)k && TE_FILE_WRITE(out, buf, k) == (int)k;
+        off += k;
+    }
+    TE_FILE_CLOSE(out);
+    if (ok) {
+        void *was = io->ctx;
+
+        back = TE_FILE_OPEN(path, TE_FILE_RDONLY, TE_FILE_MODE);
+        io->ctx = &back;
+        ok = back >= 0 && py_slot_check(io, &info) == PSL_OK;
+        io->ctx = was;
+        if (back >= 0)
+            TE_FILE_CLOSE(back);
+    }
+    if (!ok)
+        PY_UNLINK(path);
+    return ok;
+}
+
+int py_demos_install(void)
+{
+    static uint32_t st[32];
+    static char line[48];
+    char path[64], name[16];
+    psl_io io;
+    psl_info info;
+    uint8_t *buf;
+    uint16_t taken = 0;
+    uint32_t len[PSL_SLOTS], crc[PSL_SLOTS];
+    int i, n, r = 0, found = 0, left = 0, in;
+
+    if (py_pat_slot_busy())
+        return -1;                              /* (a slot is being written: next pass) */
+    if (PY_STAT(DEMO_MARK, st) >= 0)
+        return 0;                               /* done at an earlier boot */
+    buf = TE_HEAP_MALLOC(TE_HEAP_SAMPLES, COPY_CHUNK);
+    if (!buf)
+        return -1;
+    for (n = 0; n < PSL_SLOTS; n++) {
+        len[n] = slot_tail(n, &crc[n], buf);
+        if (len[n])
+            taken |= (uint16_t)(1u << n);
+    }
+    for (i = 0; i < (int)sizeof(io); i++)
+        ((uint8_t *)&io)[i] = 0;
+    py_pat_slot_sizes(io.size);
+    io.pat = buf;
+    io.read = demo_read;
+    for (i = 0; i < NDEMOS; i++) {
+        uint16_t same_as = 0;
+        uint32_t size, c;
+        int to, ok;
+
+        TE_SNPRINTF(path, sizeof(path), DEMO_PATH, demo_slot[i]);
+        if (PY_STAT(path, st) < 0)
+            continue;
+        found++;
+        size = st[0x1c / 4];
+        in = TE_FILE_OPEN(path, TE_FILE_RDONLY, TE_FILE_MODE);
+        if (in < 0) {
+            left++;
+            py_demos_why = 1;
+            continue;
+        }
+        io.ctx = &in;
+        ok = size >= 8 && py_slot_check(&io, &info) == PSL_OK && PY_PREAD(in, buf, 4, (int32_t)(size - 4)) == 4;
+        c = ok ? (uint32_t)buf[0] | (uint32_t)buf[1] << 8 | (uint32_t)buf[2] << 16 | (uint32_t)buf[3] << 24 : 0;
+        for (n = 0; ok && n < PSL_SLOTS; n++)
+            if (len[n] == size && crc[n] == c)
+                same_as |= (uint16_t)(1u << n);
+        name[0] = 'S'; name[1] = 'O'; name[2] = 'N'; name[3] = 'G';        /* "SONGnn.PSL" */
+        name[4] = (char)('0' + demo_slot[i] / 10);
+        name[5] = (char)('0' + demo_slot[i] % 10);
+        name[6] = '.'; name[7] = 'P'; name[8] = 'S'; name[9] = 'L'; name[10] = 0;
+        to = ok ? py_slot_pick(name, taken, same_as) : -1;
+        py_demos_why = !ok ? 2 : to == -1 ? 3 : 0;
+        if (to == -2) {                         /* a slot holds it already */
+            TE_FILE_CLOSE(in);
+            continue;
+        }
+        ok = ok && to >= 0 && install_demo(in, size, to, &io, buf);
+        TE_FILE_CLOSE(in);
+        if (!ok && !py_demos_why)
+            py_demos_why = 4;
+        if (!ok) {
+            left++;                             /* damaged, another version, no free slot */
+            continue;
+        }
+        taken |= (uint16_t)(1u << to);
+        len[to] = size;
+        crc[to] = c;
+        r++;
+    }
+    TE_FREE(buf);
+    py_demos_found = (uint32_t)found;
+    py_demos_installed = (uint32_t)r;
+    if (found) {                                /* (no demos in this image: ask again next boot) */
+        int fd;
+
+        PY_MKDIR(PY_DIR_S, 0);
+        fd = TE_FILE_OPEN(DEMO_MARK, TE_FILE_CREATE, TE_FILE_CREATE_MODE);
+        if (fd >= 0) {
+            TE_FILE_WRITE(fd, "1", 1);
+            TE_FILE_CLOSE(fd);
+        }
+        TE_SNPRINTF(line, sizeof(line), "PLAY: %d demo songs into slots (%d left)", r, left);
+        CONSOLE_PRINT(line);
+    }
+    return r;
 }
 
 int py_slots_import(void)

@@ -34,6 +34,7 @@
 #include "py_tev.h"
 #include "py_ui.h"
 #include "py_slot.h"
+#include "py_draw.h"
 
 #define RING_FRAMES     16384                   /* 372 ms */
 #define CHUNK_FRAMES    4096                    /* 16 KB stereo per read (~2.3 ms on the device) */
@@ -70,6 +71,7 @@ static volatile uint16_t note_frames;
 
 /* requests to the main thread */
 static volatile uint8_t req_load = 1, req_tracks, req_resume, req_play, req_stop, req_bar;
+static uint8_t demos_due = 1;                   /* py_demos_install not done yet this boot */
 static volatile int8_t req_bar_step;
 static volatile uint8_t req_start, req_start_row, req_start_chain, req_segs, req_rescan;
 static volatile int8_t req_start_aud;           /* req_start: the track that auditions a chain, -1 */
@@ -80,6 +82,13 @@ static volatile uint8_t req_cue_on[PS_TRACKS], req_cue_row[PS_TRACKS];   /* live
 #define CUE_GUARD       4096                    /* frames a cue's switch lies ahead at least (93 ms) */
 
 volatile uint8_t py_loading;                    /* GUI: "LOADING" */
+
+/* the track list's layout (v0.17): LANES (0) or ROWS (1); tape on the list toggles it, kept as the
+ * marker file below (there = ROWS), read at the first main-loop pass, written by the main loop */
+#define LAYOUT_FILE     PY_DIR_S "/ROWS.LAY"
+volatile uint8_t py_layout;
+static uint8_t layout_due = 1;                  /* not read yet this boot */
+static volatile uint8_t req_layout;             /* toggled: write the marker */
 
 /* ------------------------------------------------------------------ the track list */
 
@@ -186,7 +195,7 @@ static uint32_t te_bpm_x100(void)
 
 /* every AUDIO track with song cells follows them from the start row (py_set_song), the others
  * play free; the rings must be re-seeked afterwards */
-static uint8_t seg_buf[PS_ROWS];
+static uint8_t seg_buf[PS_ROWS], row_buf[PS_ROWS];
 
 static void song_audio(void)
 {
@@ -195,8 +204,8 @@ static void song_audio(void)
     for (k = 0; k < PY_TRACKS; k++) {
         req_cue_on[k] = 0;                      /* cues belong to the old segments */
         if (py_song.trk[k].type == PS_AUDIO && set.t[k].used)
-            py_set_song(&set, k, seg_buf, py_song_audio_segs(&py_song, k, py_pat_start_row(), seg_buf),
-                        py_pat_start_row());
+            py_set_song_rows(&set, k, seg_buf, row_buf, py_song_audio_segs(&py_song, k, py_pat_start_row(), seg_buf,
+                                                                           row_buf), py_pat_start_row());
     }
 }
 
@@ -214,9 +223,9 @@ static void audio_cues(void)
         req_cue_on[k] = 0;
         if (!py_mx.playing || py_song.trk[k].type != PS_AUDIO || !set.t[k].used || !set.t[k].song)
             continue;
-        n = py_song_audio_segs(&py_song, k, row, seg_buf);
+        n = py_song_audio_segs(&py_song, k, row, seg_buf, row_buf);
         if (n >= 0)
-            py_set_cue(&set, &py_mx, k, seg_buf, n, row, CUE_GUARD);
+            py_set_cue_rows(&set, &py_mx, k, seg_buf, row_buf, n, row, CUE_GUARD);
     }
 }
 
@@ -664,6 +673,28 @@ void py_main(void)
         py_import_run();
         req_load = 1;
     }
+    if (demos_due && !req_load && py_demos_install() >= 0)
+        demos_due = 0;                          /* the image's demo songs into free slots (once) */
+    if (layout_due) {                           /* the layout chosen before (v0.17) */
+        static uint32_t st[32];
+
+        layout_due = 0;
+        if (!req_layout)
+            py_layout = PY_STAT(LAYOUT_FILE, st) >= 0;
+    }
+    if (req_layout) {
+        req_layout = 0;
+        if (py_layout) {
+            int fd;
+
+            PY_MKDIR(PY_DIR_S, 0);
+            fd = TE_FILE_OPEN(LAYOUT_FILE, TE_FILE_CREATE, TE_FILE_CREATE_MODE);
+            if (fd >= 0)
+                TE_FILE_CLOSE(fd);
+        } else {
+            PY_UNLINK(LAYOUT_FILE);
+        }
+    }
     if (req_load) {
         req_load = 0;
         req_tracks = 0;
@@ -884,7 +915,7 @@ int py_song_bars(int row)
 
         if (py_song.trk[k].type != PS_AUDIO || !set.t[k].used)
             continue;
-        n = py_song_audio_segs(&py_song, k, row, seg);
+        n = py_song_audio_segs(&py_song, k, row, seg, 0);
         for (i = 0; i < n; i++)
             sum += seg[i] ? set.t[k].frames : bar;
         if (sum > max)
@@ -900,6 +931,21 @@ void py_master_step(int d)
 
     master_db = (int8_t)(v < -60 ? -60 : v > 0 ? 0 : v);
     update_gains();
+    {                                           /* (v0.17: no footer row any more) */
+        static char msg[16] = "MASTER ";
+        int i = 7, m = master_db < 0 ? -master_db : master_db;
+
+        if (master_db < 0)
+            msg[i++] = '-';
+        if (m >= 10)
+            msg[i++] = (char)('0' + m / 10);
+        msg[i++] = (char)('0' + m % 10);
+        msg[i++] = ' ';
+        msg[i++] = 'D';
+        msg[i++] = 'B';
+        msg[i] = 0;
+        py_note(msg);
+    }
 }
 
 /* the tracks in list order with track `from` moved to list position `to`, written back to
@@ -1175,9 +1221,15 @@ int py_key(int key, int down)
             return 0;
         }
         /* PLAY is the tape screen of this image: no way to TE's own tape screen (v0.6; before,
-         * tape again switched to it) nor to its erase screen (shift + tape). Tape here: the list */
-        if (!editor_up() && !py_rd_busy())
+         * tape again switched to it) nor to its erase screen (shift + tape). Tape here: the list;
+         * on the list (v0.17): its layout, LANES <-> ROWS */
+        if (!editor_up() && !py_rd_busy()) {
+            if (py_view == PY_V_LIST && !py_help_on() && !*TE_SHIFT_HELD) {
+                py_layout ^= 1;
+                req_layout = 1;
+            }
             py_v_list();
+        }
         return take(key);
     }
     if (key == TE_KEY_JOIN && *TE_EDIT_MODE != TE_EDIT_MODE_TAPE && !*TE_SHIFT_HELD) {
@@ -1388,145 +1440,207 @@ int py_knob(int knob, int16_t *diff)
 
 /* ------------------------------------------------------------------ screen (GUI thread) */
 
-#define ROW_Y(r)    (22 + (r) * 12)
-
-static uint16_t meter_hold[PY_TRACKS], meter_level[PY_TRACKS];
-
-static const char *type_name(int type)
+/* the header every view shares (py_draw.c): tempo, bar.beat, transport; h->ctx etc. for the caller */
+void py_hdr_fill(py_hm *h, const char *title, int num, uint16_t col)
 {
-    return type == PS_AUDIO ? "AUDIO" : type == PS_SYNTH ? "SYNTH" : "DRUM";
-}
+    uint32_t bf = clock_bar(), bar = 0, beat = 0;
 
-/* the header of every view: the title (num >= 0: a two-digit hex number after it), tempo, CPU,
- * bar.beat, transport; then the line under it */
-void py_draw_header(const char *title, int num, uint16_t col)
-{
-    uint32_t bar = 0, beat = 0, bf = clock_bar();
-    int x, y = 5;
-
-    x = gfx_text(4, 4, title, col, 2);
-    if (num >= 0)
-        gfx_hex(x + 8, 4, (uint32_t)num, 2, C_WHITE, 2);
-    else if (py_loading)
-        gfx_text7(x + 6, y, "LOADING", C_GREY);
-    x = gfx_text7(110, y, "BPM ", C_GREY);
-    gfx_dec7(x, y, (int32_t)(clock_bpm() + 50) / 100, C_WHITE);
-    if (py_mx.playing) {                        /* PLAY's share of the audio interrupt's time */
-        x = gfx_text7(164, y, "CPU ", C_GREY);
-        gfx_dec7(x, y, (py_cpu_all + 5) / 10, py_cpu_all > 700 ? C_RED : C_WHITE);
-    }
     if (bf) {
         bar = py_mx.pos / bf;
         beat = (py_mx.pos % bf) / (bf / 4);
     }
-    x = gfx_text7(214, y, "BAR ", C_GREY);
-    if (bar + 1 < 10)
-        x = gfx_text7(x, y, "0", C_WHITE);
-    x = gfx_dec7(x, y, (int32_t)bar + 1, C_WHITE);
-    x = gfx_text7(x, y, ".", C_WHITE);
-    gfx_dec7(x, y, (int32_t)beat + 1, C_WHITE);
-    if (py_rd_busy())
-        gfx_text7(290, y, "REC", C_RED);
-    else
-        gfx_text7(290, y, py_mx.playing ? "PLAY" : "STOP", py_mx.playing ? C_GREEN : C_GREY);
-    gfx_rect(0, 17, gfx_w, 1, C_LINE);
+    h->title = title;
+    h->title_col = col;
+    h->num = num;
+    h->ctx = py_loading ? "LOADING" : 0;
+    h->bpm = (int)((clock_bpm() + 50) / 100);
+    h->bar = (int)bar + 1;
+    h->beat = (int)beat + 1;
+    h->row = -1;
+    h->loop_a = h->loop_b = h->loop_n = 0;
+    h->state = (uint8_t)(py_rd_busy() ? 2 : py_mx.playing ? 1 : 0);
+    h->bare = 0;
+    h->nobar = 0;
 }
 
-/* meter (peak since the last frame, held and falling), level, mute, solo of track k */
-static void draw_mix(int y, int k, uint16_t col)
+/* "CPU 31" while playing (PLAY's share of the audio interrupt's time) after `pre` */
+const char *py_cpu_ctx(const char *pre)
 {
-    const ps_track *t = &py_song.trk[k];
-    uint32_t pk = py_mx.peak[k];
-    int x, w;
+    static char t[24];
+    int i = 0, v;
 
-    py_mx.peak[k] = 0;
-    if (pk > 32767)
-        pk = 32767;
-    meter_level[k] = (uint16_t)(pk > meter_level[k] ? pk : meter_level[k] * 7 / 8);
-    meter_hold[k] = (uint16_t)(pk > meter_hold[k] ? pk : meter_hold[k] > 200u ? meter_hold[k] - 200u : 0u);
-    w = (int)(meter_level[k] * 48u / 32768u);
-    gfx_rect(176, y, 48, 7, C_LINE);
-    gfx_rect(176, y, w, 7, t->mute ? C_DIM : col);
-    gfx_rect(176 + (int)(meter_hold[k] * 47u / 32768u), y, 1, 7, C_WHITE);
-    x = gfx_dec7(230, y, t->level, C_WHITE);
-    gfx_text7(x + 3, y, "DB", C_GREY);
-    gfx_text7(286, y, "M", t->mute ? C_RED : C_DIM);
-    gfx_text7(300, y, "S", t->solo ? C_AMBER : C_DIM);
+    for (; *pre; pre++)
+        t[i++] = *pre;
+    if (py_mx.playing) {
+        if (i) {
+            t[i++] = ' ';
+            t[i++] = '\1';
+            t[i++] = ' ';
+        }
+        t[i++] = 'C';
+        t[i++] = 'P';
+        t[i++] = 'U';
+        t[i++] = ' ';
+        v = (py_cpu_all + 5) / 10;
+        if (v >= 100)
+            t[i++] = (char)('0' + v / 100 % 10);
+        if (v >= 10)
+            t[i++] = (char)('0' + v / 10 % 10);
+        t[i++] = (char)('0' + v % 10);
+    }
+    t[i] = 0;
+    return t;
 }
 
-static void draw_track(int y, int row, int k, int sel)
+/* the header of the other views (chain, songs, files): the title (num >= 0: two hex digits after it) */
+void py_draw_header(const char *title, int num, uint16_t col)
+{
+    py_hm h;
+
+    py_hdr_fill(&h, title, num, col);
+    if (!h.ctx)
+        h.ctx = py_cpu_ctx("");
+    py_d_header(&h);
+}
+
+/* an engine's name: an SDK engine by its tag, TE's by its type */
+static const char *engine_of(int slot)
+{
+    static const char *const sdk[] = { "DR WAVE", "PARTY", "MONO 3", "STATION 1", "TRIO", "WHEEL", "WARP",
+                                       "MALLET", "ACID 3", "PALETTE" };
+    static const char *const te[] = { "FM", "DIGITAL", "DR WAVE", "STRING", "CLUSTER", "PULSE", "SAMPLER",
+                                      "PHASE", "DRUM", "DBOX", "LS", "DNA", "DSYNTH", "VOLTAGE", "ITER" };
+    int type = TE_SYNTH_TYPE[slot];
+
+    if (type == TE_INSTR_DRWAVE) {
+        int tag = eh_tag(TE_SYNTH_KNOBS + slot * 8);
+
+        return tag >= 0 && tag < (int)(sizeof(sdk) / sizeof(sdk[0])) ? sdk[tag] : "SDK ENGINE";
+    }
+    return type >= 0 && type < (int)(sizeof(te) / sizeof(te[0])) ? te[type] : "ENGINE";
+}
+
+/* the list as py_draw.c shows it: one track */
+static void list_track(py_lt *o, int k)
 {
     const ps_track *t = &py_song.trk[k];
-    int x;
-    uint16_t col = t->type == PS_AUDIO ? C_AMBER : t->type == PS_SYNTH ? C_BLUE : C_RED;
 
-    if (sel)
-        gfx_rect(0, y - 3, gfx_w, 12, cut_armed == k ? GFX_RGB(0x40, 0x10, 0x14)
-                 : insert_armed ? GFX_RGB(0x10, 0x30, 0x22) : C_SEL);
-    gfx_dec7(4, y, row + 1, C_WHITE);
-    gfx_text7(14, y, t->type == PS_AUDIO ? "AUD" : t->type == PS_SYNTH ? "SYN" : "DRM", col);
+    o->k = (uint8_t)k;
+    o->type = t->type;
+    o->mute = t->mute;
+    o->solo = t->solo;
+    o->level = t->level;
+    o->cpu = py_mx.playing && !t->mute && t->type != PS_AUDIO ? py_cpu_trk[k] : 0xffff;
+    o->err = 0;
+    o->name = 0;
+    o->voices = o->eco = o->busy = o->under = o->pend = o->slot_alt = 0;
+    o->seq = 0;
+    o->seq_song = 0;
+    o->slot = 0;
+    o->amode = 0;
     if (t->type == PS_AUDIO) {
-        gfx_text7(38, y, t->file[0] ? t->file : "NO FILE", C_WHITE);
-        if (py_song_col_used(&py_song, k))      /* it follows its song cells */
-            gfx_text7(116, y, "SONG", C_AMBER);
-        else
-            gfx_text7(116, y, t->loop ? "LOOP" : "ONCE", C_GREY);
-        if (!set.t[k].used && !py_loading) {
-            gfx_text7(146, y, set.t[k].err, C_RED);
+        o->name = t->file[0] ? t->file : "NO FILE";
+        o->amode = (uint8_t)(py_song_col_used(&py_song, k) ? 2 : t->loop ? 1 : 0);
+        if (!set.t[k].used && !py_loading)
+            o->err = set.t[k].err;
+        o->under = py_mx.underruns[k] != 0;
+        return;
+    }
+    {
+        int pat = py_list_pattern(k), slot = py_pat_slot(k);
+
+        o->pend = (uint8_t)(pat >= 0 && (pat & PY_PAT_PENDING));
+        pat = pat < 0 ? pat : pat & ~PY_PAT_PENDING;
+        o->seq = (int8_t)(pat >= 0 && pat < PS_PATTERNS ? pat + 1 : 0);
+        o->seq_song = (uint8_t)!py_song_quick(&py_song, k);
+        o->slot = (int8_t)(slot + 1);
+        o->slot_alt = (uint8_t)(py_mx.playing && slot != t->sound && t->sound < 8);
+        if (t->type == PS_DRUM) {
+            o->name = "DRUM";
             return;
         }
-        if (py_mx.underruns[k])
-            gfx_text7(148, y, "!", C_RED);
-    } else {
-        int pat = py_list_pattern(k), pend = pat >= 0 && (pat & PY_PAT_PENDING);
-        const ps_head *h = py_pat_head(k);
+        o->name = engine_of(slot);
+        if (TE_SYNTH_TYPE[slot] == TE_INSTR_DRWAVE ? !eh_multi_ok(TE_SYNTH_KNOBS + slot * 8)
+                                                  : py_tev_why(slot) != 0) {
+            int why = TE_SYNTH_TYPE[slot] == TE_INSTR_DRWAVE ? 0 : py_tev_why(slot);
 
-        x = gfx_text7(38, y, t->type == PS_DRUM ? "KIT " : "SND ", C_GREY);     /* white */
-        gfx_dec7(x, y, py_pat_slot(k) + 1,      /* (amber: the chain row's sound, not the track's) */
-                 py_mx.playing && py_pat_slot(k) != t->sound && t->sound < 8 ? C_AMBER : C_WHITE);
-        x = gfx_text7(74, y, py_song_quick(&py_song, k) ? "PAT " : "SNG ", C_GREY);   /* orange */
-        pat = pat < 0 ? pat : pat & ~PY_PAT_PENDING;
-        if (pat >= 0 && pat < PS_PATTERNS)
-            gfx_dec7(x, y, pat + 1, pend ? C_AMBER : C_WHITE);     /* amber: next, when this one ends */
-        else
-            gfx_text7(x, y, "--", C_DIM);
-        if (t->type == PS_SYNTH) {
-            int slot = py_pat_slot(k);
-
-            if (TE_SYNTH_TYPE[slot] == TE_INSTR_DRWAVE ? !eh_multi_ok(TE_SYNTH_KNOBS + slot * 8)
-                                                      : py_tev_why(slot) != 0) {
-                int why = TE_SYNTH_TYPE[slot] == TE_INSTR_DRWAVE ? 0 : py_tev_why(slot);
-
-                gfx_text7(116, y, why == PY_TEV_NO_SAMPLE ? "SAMPLER: NO SAMPLE"
-                                  : why ? "ENGINE NOT IN PLAY"
-                                  : eh_tag(TE_SYNTH_KNOBS + slot * 8) ? "ENGINE NOT IN PLAY YET" : "NOT AN SDK ENGINE",
-                          C_RED);
-                return;
-            }
-            if (py_pat_starved(k)) {            /* 3 other SYNTH tracks hold notes: its notes drop */
-                gfx_text7(116, y, "BUSY", C_RED);
-            } else {
-                x = gfx_text7(116, y, "V", C_GREY);
-                gfx_dec7(x, y, t->voices ? t->voices : PY_SYN_CAP_DEFAULT, C_WHITE);
-                if (t->eco)
-                    gfx_text7(132, y, "ECO", C_GREEN);
-            }
+            o->err = why == PY_TEV_NO_SAMPLE ? "NO SAMPLE" : why ? "NOT IN PLAY"
+                   : eh_tag(TE_SYNTH_KNOBS + slot * 8) ? "NOT IN PLAY" : "NOT AN ENGINE";
         }
-        if (py_mx.playing && !t->mute)          /* the track's share (percent) */
-            gfx_dec7(154, y, (py_cpu_trk[k] + 5) / 10, py_cpu_trk[k] > 300 ? C_RED : C_GREY);
-        if (h->active && py_mx.playing)
-            gfx_rect(169, y + 2, 3, 3, col);    /* playing */
+        o->busy = (uint8_t)(py_pat_starved(k) != 0);
+        o->voices = t->voices ? t->voices : PY_SYN_CAP_DEFAULT;
+        o->eco = t->eco;
     }
-    draw_mix(y, k, col);
 }
 
-static void list_frame(void);
+static void list_frame(void)
+{
+    static py_lm m;
+    int list[PS_TRACKS], n, i;
+    const char *note;
+    py_hm h;
+
+    n = py_rows(list);
+    m.layout = py_layout;
+    m.n = (uint8_t)n;
+    m.cursor = cursor;
+    m.add_room = count(PS_NONE) != 0;
+    m.add_type = add_type;
+    m.add_ok = (uint8_t)can_add(add_type);
+    m.insert = insert_armed;
+    m.master_db = master_db;
+    m.cut = -1;
+    for (i = 0; i < n; i++) {
+        list_track(&m.t[i], list[i]);
+        if (cut_armed == list[i])
+            m.cut = (int8_t)i;
+    }
+    m.note = 0;
+    m.note2 = 0;
+    note = py_note_now();
+    if (note) {
+        m.note = note;
+        m.note_col = D_AMBER;
+    } else if (cut_armed >= 0) {
+        m.note = "CUT AGAIN TO REMOVE THE TRACK";
+        m.note_col = D_RED;
+    } else if (insert_armed) {
+        m.note = can_add(add_type) ? "INSERT AGAIN: ADD" : "CANNOT ADD";
+        m.note_col = D_GREEN;
+        m.note2 = add_type == PS_AUDIO ? "AUDIO" : add_type == PS_SYNTH ? "SYNTH" : "DRUM";
+    } else if (cursor >= n && !m.add_ok) {
+        m.note = "MAX 2 DRUM TRACKS";
+        m.note_col = D_MUTED;
+    } else if (cursor >= n && add_type == PS_AUDIO && !nfiles) {
+        m.note = "NO FILES: PUT WAV / AIF IN PLAY/";
+        m.note_col = D_MUTED;
+    }
+    py_hdr_fill(&h, "PLAY", -1, C_WHITE);
+    h.nobar = 1;                                /* v0.17: no BAR on the list */
+    if (!h.ctx) {
+        static char trk[8];
+
+        trk[0] = (char)('0' + n);
+        trk[1] = ' ';
+        trk[2] = 'T';
+        trk[3] = 'R';
+        trk[4] = 'K';
+        trk[5] = 0;
+        h.ctx = py_cpu_ctx(trk);
+    }
+    py_d_header(&h);
+    py_d_list(&m);
+}
 
 /* a render runs: the footer of whatever view is shown says so */
 static void render_footer(void)
 {
     int x, pc = py_rd_percent();
 
+    if (py_view == PY_V_LIST || py_view == PY_V_SONG) {     /* the views with the one-line footer */
+        py_d_footer_render(py_rd_name(), pc);
+        return;
+    }
     gfx_rect(0, PY_FOOT_LINE + 1, gfx_w, gfx_h - PY_FOOT_LINE - 1, GFX_BLACK);
     x = gfx_text7(4, PY_FOOT_Y1, "RENDERING ", C_RED);
     x = gfx_text7(x, PY_FOOT_Y1, py_rd_name(), C_WHITE);
@@ -1539,66 +1653,33 @@ static void render_footer(void)
 
 void py_frame(uint16_t *buf)
 {
+    static uint32_t last_blocks;
+    uint32_t blocks = py_blocks - last_blocks;
+    int t;
+
     if (!on_screen() || editor_up())
         return;                                 /* an editor opened from PLAY draws instead */
-    gfx_begin(buf);
-    gfx_rect(0, 0, gfx_w, gfx_h, GFX_BLACK);
-    if (py_help_on()) {
-        py_help_frame();
-        return;
+    last_blocks += blocks;
+    if (!py_mx.playing && !py_rd_busy())
+        blocks = blocks ? blocks : 20;          /* (stopped, the hook may not run: still fall) */
+    for (t = 0; t < PS_TRACKS; t++) {           /* the meters: this frame's peaks, the time since */
+        uint32_t pk = py_mx.peak[t];
+
+        py_mx.peak[t] = 0;
+        py_d_meter_feed(t, pk, blocks);
     }
-    if (py_view != PY_V_LIST)
+    gfx_begin(buf);
+    eh_aa_begin(buf);
+    eh_aa_dy = 0;
+    eh_aa_gamma = 1;                            /* (the engine screens draw without) */
+    gfx_rect(0, 0, gfx_w, gfx_h, GFX_BLACK);
+    if (py_help_on())
+        py_help_frame();
+    else if (py_view != PY_V_LIST)
         py_v_frame();
     else
         list_frame();
-    if (py_rd_busy())
+    if (py_rd_busy() && !py_help_on())
         render_footer();
-}
-
-static void list_frame(void)
-{
-    int list[PS_TRACKS], n, i, x, t;
-    const char *note;
-
-    py_draw_header("PLAY", -1, C_WHITE);
-    n = py_rows(list);
-    for (i = 0; i < n; i++)
-        draw_track(ROW_Y(i), i, list[i], i == cursor);
-    if (count(PS_NONE)) {                       /* the ADD row */
-        int y = ROW_Y(n), ok = can_add(add_type);
-
-        if (cursor == n)
-            gfx_rect(0, y - 3, gfx_w, 12, C_SEL);
-        x = gfx_text7(4, y, "+ ADD ", C_GREY);
-        x = gfx_text7(x, y, type_name(add_type),
-                      ok ? (add_type == PS_AUDIO ? C_AMBER : add_type == PS_SYNTH ? C_BLUE : C_RED) : C_DIM);
-        if (!ok)
-            gfx_text7(x + 8, y, "(MAX 2 DRUM)", C_DIM);
-        else if (add_type == PS_AUDIO && !nfiles)
-            gfx_text7(x + 8, y, "NO FILES: PUT WAV / AIF IN PLAY/", C_DIM);
-    }
-    gfx_rect(0, PY_FOOT_LINE, gfx_w, 1, C_LINE);
-    x = gfx_text7(4, PY_FOOT_Y1, "MASTER ", C_GREY);
-    x = gfx_dec7(x, PY_FOOT_Y1, master_db, C_WHITE);
-    gfx_text7(x + 3, PY_FOOT_Y1, "DB", C_GREY);
-    t = cursor < n ? list[cursor] : -1;
-    note = py_note_now();
-    if (note)
-        gfx_text7(96, PY_FOOT_Y1, note, C_AMBER);
-    else if (cut_armed >= 0)
-        gfx_text7(96, PY_FOOT_Y1, "CUT AGAIN TO REMOVE THE TRACK", C_RED);
-    else if (insert_armed) {
-        x = gfx_text7(96, PY_FOOT_Y1, can_add(add_type) ? "INSERT AGAIN: ADD " : "CANNOT ADD ", C_GREEN);
-        gfx_text7(x, PY_FOOT_Y1, type_name(add_type), C_WHITE);
-    } else
-        gfx_text7(96, PY_FOOT_Y1, "JOIN: SONG VIEW   SPEECH: HELP", C_GREY);
-    if (t < 0)
-        gfx_text7(4, PY_FOOT_Y2, "WHITE: TYPE  WHITE PRESS: ADD", C_GREY);
-    else if (py_song.trk[t].type == PS_AUDIO)
-        gfx_text7(4, PY_FOOT_Y2, py_song_col_used(&py_song, t) ? "WHITE: FILE  SONG VIEW: ITS CELLS"
-                  : "WHITE: FILE  WHITE PRESS: LOOP / ONCE", C_GREY);
-    else if (py_song.trk[t].type == PS_SYNTH)
-        gfx_text7(4, PY_FOOT_Y2, "WHITE: SOUND  PRESS: VOICES  SHIFT: ECO  ORANGE: PAT", C_GREY);
-    else
-        gfx_text7(4, PY_FOOT_Y2, "WHITE: KIT  ORANGE: PATTERN  SHIFT+BLUE: EDIT", C_GREY);
+    eh_aa_gamma = 0;
 }

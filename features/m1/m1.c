@@ -24,7 +24,7 @@
 #define PAGES           4
 #define OFF             (-1)
 
-static m1_voice voices[EH_SLOTS];         /* every instance (PLAY: vi 6..35) */
+static m1_voice voices[EH_SLOTS];         /* every instance (PLAY: vi 6..41) */
 /* the sounding notes (the LCD names them): a key held on the OP-1 (m1_note_key) is its note (TE
  * plays note index + 53 + 12 x octave); the next new voice tells the octave (its pitch rounded to the nearest octave of the
  * note: glide / LFO / bend at the start move it by less than 6 semitones). New voices no held key

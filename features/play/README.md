@@ -6,8 +6,8 @@ A second tape screen with one list of up to **8 tracks** in any order. Each trac
 - **SYNTH**: NOTE ROLL patterns, played with one of the 8 synth sounds on any synth engine: TE's
   own (FM, digital, string, cluster, pulse, sampler, phase, dna, dsynth, voltage, iter; v0.13) or
   an SDK engine (ACID 3, MONO 3, STATION 1, PARTY, PALETTE, MALLET, WHEEL, WARP, TRIO), each track
-  on its own instance of the engine; up to 8 SYNTH tracks share 5 instances, so at most 5 sound at
-  once (the 4th and 5th while the CPU allows; they take turns in the song);
+  on its own instance of the engine; up to 8 SYNTH tracks share 6 instances, so at most 6 sound at
+  once (the 4th to 6th while the CPU allows; they take turns in the song);
 - **DRUM**: DRUM ROLL patterns, played from one of the 8 drum kits.
 
 Everything runs in sync from bar 1, with level, mute, solo, master and a bar counter. PLAY is the
@@ -17,17 +17,43 @@ key always shows the track list; join opens the song view from any screen (v0.8.
 **song view** (join, from any screen) has one column per track, the **chain view** strings patterns together,
 **live mode** (shift + rec in the song view) cues rows while it plays, and **rec** renders
 the song into an AIFF file that plays back as one cheap AUDIO track (below). **speech** shows a help
-page for the view you are in. The views use the SDK's 5x7 font (52 characters a line). Spec: `new_pattern_tape.md` in the SDK root (section 2.3).
+page for the view you are in. The track list and the song view follow a design handover (v0.17,
+`SCREENS.md`): thin numerals, a colour per track, live meters; the other pages use the SDK's 5x7 font. Spec: `new_pattern_tape.md` in the SDK root (section 2.3).
 
 ## The screen
 
+Two layouts of the same track list; **tape on the list switches between them** (v0.17), and the
+choice stays across power-off (`/yaffs2/user/play_s/ROWS.LAY` there = ROWS):
+
+- **LANES**: four tracks side by side, each a lane, top to bottom: its number and type, the
+  engine (AUDIO: the file), the level as a big number with a live meter, `SND n PAT n` (or
+  `SNG n` when the song plays it; dimmer: chosen, starts when the playing one ends; AUDIO: LOOP /
+  ONCE / SONG), then M, S, voices (`V2`) and ECO in one line. A fifth column: the `+ ADD` lane, or the
+  tracks outside the window (more than 4).
+- **ROWS**: one row per track (four on screen, the list scrolls): number, type, `SND n` over
+  `PAT n` / `SNG n`, voices (`V2`) and ECO, a wide meter, the level, M / S.
+
+Everything in a lane / row is drawn in its track's colour, which follows the encoders: track 1
+blue, 2 green, 3 white, 4 red (5-8 again); a muted track dims (with a solo on: every track
+not soloed, here and in the song view), red stays for warnings (BUSY,
+an engine PLAY cannot play, a file gone, CPU above 30 %). The meters run -48 to +6 dB (red from
+0 dB) with a falling white peak; the small triangle under a meter is the level set. No hint line
+at the bottom (the panel's edge hides it): notes (an armed cut / insert, the master, the
+layout) appear there for a moment. The header shows the tempo (BPM) and, while playing, PLAY's
+CPU share; each SYNTH / DRUM track shows its own. The song view's header: only SONG, the loop and
+the transport.
+
+The song view (join) is the tracker alone: every column (up to 8 on screen, sharing the width;
+the header shows each track's number), the rows with the cursor row marked, each column's playing cell tinted, the loop as a red bracket with its times.
+
 ```
-PLAY            BPM 120     CPU 31   BAR 02.3      PLAY
-1 AUD SONG.WAV   LOOP          [=====     ] -9 DB  M S
-2 SYN SND 1 PAT 2 V2 ECO   12 .[===       ] -9 DB  M S
-3 DRM KIT 1 PAT 1           4 .[========  ] -9 DB  M S
-+ ADD SYNTH
-MASTER 0 DB        PRESS: VOICES  SHIFT: ECO  SHIFT+BLUE: EDIT
+PLAY 4 TRK . CPU 31     BPM 120   BAR 03.2           > PLAY
+ 1 SYN         | 2 SYN     12% | 3 SYN     16% | 4 DRM      4% | (+) ADD
+ ACID 3        | MALLET        | STATION 1     | DRUM          |  SYNTH
+ -9 dB         | -9 dB         | 0 dB          | -9 dB         |
+ [meter]       | [meter]       | [meter]       | [meter]       |
+ SND1 PAT1     | SND2 PAT1     | SND2 SNG2     | KIT3 SNG5     |
+ (M)(S) V2 ECO | (M)(S) V4 ECO | (M)(S) V4 ECO | (M)(S)        |
 ```
 
 | Control | On a track | On the `+ ADD` row |
@@ -50,6 +76,7 @@ MASTER 0 DB        PRESS: VOICES  SHIFT: ECO  SHIFT+BLUE: EDIT
 | insert, insert again | a new track before this one (white turn while armed: its type) | a new track at the end |
 | T1..T4, shift + T1..T4 | cursor to track 1..4 / mute it | |
 | play / stop / back / forward | play-pause / pause, again bar 1 / one bar | |
+| tape | the layout: LANES <-> ROWS (from another view: the list first) | the same |
 
 **Tempo = TE's tempo page** (v0.14; metronome key, blue knob BPM, shift + blue fine). PLAY
 follows it live, playing or not: every track keeps its place in the bar and its pattern, the
@@ -78,6 +105,16 @@ but one pattern on row 00 is the simple case the track list edits directly; a ne
 track starts that way (TE's current sound / kit, pattern 1). A column that is empty at its start
 row is silent; given a chain there while playing, it joins at the next bar.
 
+**Loop section** (v0.16): rows `a..b` play `n` times before the song goes on below them, for
+example rows 02-05 twice: 00 01 02 03 04 05 02 03 04 05 06 ... Set it in the song view: cursor on
+the first row, **shift + back**; on the last row, **shift + forward**; **orange turn** sets the
+times (2 to 16, `X1` turns it off). An amber bracket marks the rows, with `X2` on its first row;
+each change shows `LOOP 02-05 X2` in the footer. Every column counts its own passes (a column
+leaving row `b` jumps back to row `a`), AUDIO columns too; when the song starts again from its
+start row, the loop does again. A song started inside the loop also goes back to its first row.
+Inserted or deleted song rows move the loop with its rows. It is kept with the song (`SONG.BIN`
+and song slots: spare bytes of the format, so older files and slots still load, without a loop).
+
 ```
 SONG            BPM 120     CPU 31   BAR 05.1      PLAY
      1SYN     2DRM     3AUD     4SYN
@@ -104,10 +141,12 @@ CHAIN 02 ALSO ON TRACK 4        WHITE PRESS: OPEN  SHIFT: CLONE
 | rec, rec again | render the song from the cursor row to a file (see Render) |
 | shift + rec | live mode on / off |
 | stop / back / forward | as on the list (stop twice: bar 1, song row 00 again) |
+| shift + back / shift + forward | the loop section: its first / last row = the cursor row (none yet: a new one, twice) |
+| orange turn | the loop's times `X2` .. `X16`; `X1` = off (the rows stay for later) |
 | shift + blue press | the pattern in NOTE ROLL / DRUM ROLL |
 | keys 1..8 | sound / kit 1..8 of the cursor column's track, at once |
 | shift + orange turn | master |
-| tape / orange press | back to the track list (join stays: join always opens the song view) |
+| tape | back to the track list (join stays: join always opens the song view; orange press: nothing, v0.17) |
 | shift + join | the songs page: save / load the song with its patterns (see Songs) |
 
 **Gaps.** An empty cell is the column's end, not a pause. For a pause put `OF` cells in the
@@ -258,6 +297,35 @@ beyond 16 slots; TE's console line after disk mode says how many came in and how
 Deleting a `.PSL` on the computer deletes nothing on the OP-1 (TE empties the folder anyway when
 disk mode is left).
 
+### Demo songs
+
+Four songs come with PLAY (v0.15, `demos/`): own compositions on the genres' common ground, and
+one public-domain piece.
+
+| Slot | Song | Genre | Tempo | Tracks |
+|------|------|-------|-------|--------|
+| 13 | WAREHOUSE | techno, A minor | 128 | drums, a 303 line (ACID 3: accents, slides), a pad (STATION 1 UNIVERSE), a bell motif (DIGI BELL) |
+| 14 | PIANO HOUSE | house, F major | 124 | drums with claps, shaker and congas, M1 PIANO stabs, HOUSE ORGAN bass, STRINGS |
+| 15 | RADIO | pop, G major (I V vi IV) | 112 | drums, E.PIANO, SYNTH BASS, SAW LEAD verse and chorus melodies, BELL PAD |
+| 16 | PRELUDE | classic: J. S. Bach, Prelude in C major BWV 846 | 76 | bars 1-19 and a closing chord on HARPSICHORD, STRINGS under it |
+
+- **In the image:** the files ride along as `/yaffs2/content/play_demo_13.psl` .. `_16.psl`; at the first boot with
+  them PLAY copies each into a free slot (its own number 13-16 if free, else the first free one,
+  never over a song of yours) and writes `play_s/DEMOS.OK`, so this happens once: a demo you
+  delete stays deleted, a new image does not bring it back.
+- **Without the image:** copy `demos/SONG13.PSL` .. `SONG16.PSL` into the disk's `play_s/` folder in
+  disk mode (Sharing songs, below).
+- **Before playing:** load the **m1 drums** kit (drum preset browser, folder station 1) into
+  **drum slot 8**: the drum tracks name that slot and its keys (kick 1, side stick 4, snare 5,
+  clap 9, closed hat 10, open hat 12, shaker 14, crash 20, ...). The synth sounds go into **synth
+  slots 5-8**: the load asks, as for any slot; a sound only comes back onto a slot that holds a
+  drwave sound now (any SDK engine's preset; else it shows `KEPT` and the slot plays what it
+  has). Set the tempo on TE's tempo page (a slot does not store it).
+- `demos/gen_demos.c` writes the files with PLAY's own `py_slot_save` and reads them back with
+  `py_slot_check` / `py_slot_load` (every pattern, sound and the song compared; the knobs inside
+  drwave's ranges): `python3 features/play/demos/gen_demos.py`; `--preview <dir>` adds a rough WAV
+  of each (plain waveforms, not PLAY's engines) to hear the notes on a computer.
+
 The `.PSL` format (`py_slot.h`): a 40-byte header (`PSL2`, pattern sizes, masks of the stored
 patterns and sounds, a summary for the slot list), the song (`PSN3`), the stored patterns, the
 stored sounds, a CRC-32 over everything. Little-endian, no compression; the patterns are NOTE
@@ -373,12 +441,12 @@ decimator, and a new note renders before the voices already sounding (a mono eng
 ACID 3 then renders once in that block instead of twice: the CPU spikes that came with legato
 notes).
 
-Limits: up to 8 SYNTH tracks, at most 5 of them sounding at once (v0.9; v0.8: 3): the 5 engine
-instances are a pool. The 4th and 5th are taken only while PLAY's CPU allows it: its peak block
-(the last of each block parity, at least 50k cycles per sounding instance before anything is
-measured) plus one more instance's share must stay under 250k cycles (~43 % of a block; TE's own
+Limits: up to 8 SYNTH tracks, at most 6 of them sounding at once (v0.16; v0.9: 5, v0.8: 3): the 6 engine
+instances are a pool. The 4th to 6th are taken only while PLAY's CPU allows it: its peak block
+(the last of each block parity, at least 41k cycles per sounding instance before anything is
+measured) plus one more instance's share must stay under 348k cycles (~60 % of a block since v0.17, before 250k; TE's own
 25-30 % on top). Heavy engines without ECO then stop at 3 (`BUSY`), light ones and ECO tracks
-reach 5. A track takes one for its first note and gives it back once its voices
+reach 6. A track takes one for its first note and gives it back once its voices
 are silent, so SYNTH tracks that take turns in the song (rest cells, later columns, live cues)
 can use 8 different sounds. A note that finds no free instance takes one whose track only has
 a release tail left (the tail is cut), else it is dropped and the track shows `BUSY` for ~1 s

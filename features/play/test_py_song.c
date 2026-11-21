@@ -5,7 +5,7 @@
  * to the start row, AUDIO tracks (ON = the file's length, OF = a bar), tracks drifting apart with
  * different lengths, seeking, new / clone chain, save / load with CRC; for the views: a chain
  * played alone, chain users, the list's quick-edit rule, song / chain row insert and delete,
- * AUDIO segments from a start row. */
+ * AUDIO segments from a start row; the loop section (walk, AUDIO segments, row edits, stored). */
 #include <stdio.h>
 #include <string.h>
 #include "py_song.h"
@@ -215,17 +215,17 @@ static void test_views(void)
     CHECK(s.chain[5][0].pat == 0 && s.chain[5][PS_CROWS - 2].pat == 3 && s.chain[5][PS_CROWS - 1].pat == PS_EMPTY);
 
     /* AUDIO segments: no cell = free; else the cells from the start row to the first empty one */
-    CHECK(py_song_audio_segs(&s, 2, 0, seg) == -1);
+    CHECK(py_song_audio_segs(&s, 2, 0, seg, 0) == -1);
     s.cell[0][2] = PS_ON;
     s.cell[1][2] = PS_OF;
     s.cell[2][2] = PS_ON;
     s.cell[4][2] = PS_ON;
-    CHECK(py_song_audio_segs(&s, 2, 0, seg) == 3 && seg[0] == PS_ON && seg[1] == PS_OF && seg[2] == PS_ON);
-    CHECK(py_song_audio_segs(&s, 2, 1, seg) == 2 && seg[0] == PS_OF && seg[1] == PS_ON);
-    CHECK(py_song_audio_segs(&s, 2, 3, seg) == 0);                      /* cells, none at the start row */
+    CHECK(py_song_audio_segs(&s, 2, 0, seg, 0) == 3 && seg[0] == PS_ON && seg[1] == PS_OF && seg[2] == PS_ON);
+    CHECK(py_song_audio_segs(&s, 2, 1, seg, 0) == 2 && seg[0] == PS_OF && seg[1] == PS_ON);
+    CHECK(py_song_audio_segs(&s, 2, 3, seg, 0) == 0);                      /* cells, none at the start row */
     for (r = 0; r < PS_ROWS; r++)
         s.cell[r][2] = PS_ON;
-    CHECK(py_song_audio_segs(&s, 2, 0, seg) == PS_ROWS && py_song_audio_segs(&s, 2, 127, seg) == 1);
+    CHECK(py_song_audio_segs(&s, 2, 0, seg, 0) == PS_ROWS && py_song_audio_segs(&s, 2, 127, seg, 0) == 1);
 }
 
 /* live cues: the column jumps to the cued row when its current chain ends (not the pattern), and
@@ -342,6 +342,65 @@ static void test_sound_v2(void)
     CHECK(py_song_load(&t, buf, PS_FILE_BYTES_V2) < 0);                 /* a PSN3 file cut short */
 }
 
+/* the loop section: rows 1..2 X3 between row 0 and row 3 */
+static void test_loop(void)
+{
+    static uint8_t buf[PS_FILE_BYTES];
+    static ps_song back;
+    uint8_t seg[PS_ROWS], rows[PS_ROWS];
+    ps_head h;
+    int a, b, i, n;
+    static const int want[] = { 0, 1, 2, 1, 2, 1, 2, 3, 0, 1, 2, 1 };   /* the song again: the loop again */
+
+    py_song_clear(&s);
+    CHECK(py_song_loop(&s, &a, &b) == 0 && a == 0 && b == 0);              /* a fresh song: none */
+    s.trk[0].type = PS_SYNTH;
+    s.trk[2].type = PS_AUDIO;
+    for (i = 0; i < 4; i++) {
+        s.cell[i][0] = (uint8_t)(10 + i);
+        s.chain[10 + i][0].pat = 0;                                         /* 250 frames each */
+        s.cell[i][2] = i == 2 ? PS_OF : PS_ON;
+    }
+    py_song_set_loop(&s, 2, 1, 3);                                          /* (swapped) */
+    CHECK(py_song_loop(&s, &a, &b) == 3 && a == 1 && b == 2);
+    CHECK(py_song_start(&s, 0, 0, 0, BAR, lens, 0, &h));
+    for (i = 0; i < (int)(sizeof(want) / sizeof(want[0])); i++) {
+        CHECK(h.active && h.row == want[i] && h.start == (uint32_t)i * 250u);
+        py_song_next(&s, 0, BAR, lens, 0, &h);
+    }
+    CHECK(py_song_start(&s, 0, 2, 0, BAR, lens, 0, &h) && h.row == 2);    /* started inside: back to 1 */
+    py_song_next(&s, 0, BAR, lens, 0, &h);
+    CHECK(h.row == 1 && h.loops == 1);
+    py_song_seek(&s, 0, 250u * 20, BAR, lens, 0, &h);                       /* seeking walks it too */
+    CHECK(h.active && h.start == 250u * 20);
+    /* AUDIO: the segments unrolled, each with its row */
+    n = py_song_audio_segs(&s, 2, 0, seg, rows);
+    CHECK(n == 8 && rows[0] == 0 && rows[1] == 1 && rows[2] == 2 && rows[3] == 1 && rows[6] == 2 && rows[7] == 3
+          && seg[2] == PS_OF && seg[4] == PS_OF && seg[7] == PS_ON);
+    CHECK(py_song_audio_segs(&s, 2, 3, seg, rows) == 1 && rows[0] == 3);   /* after it: no loop */
+    /* stored with the song */
+    py_song_save(&s, buf);
+    CHECK(py_song_load(&back, buf, PS_FILE_BYTES) == 0 && py_song_loop(&back, &a, &b) == 3 && a == 1 && b == 2);
+    /* rows inserted / deleted: the loop moves with its rows */
+    CHECK(py_song_row_insert(&s, 0) == 0 && py_song_loop(&s, &a, &b) == 3 && a == 2 && b == 3);
+    CHECK(py_song_row_insert(&s, 3) == 0 && py_song_loop(&s, &a, &b) == 3 && a == 2 && b == 4);   /* inside: grows */
+    CHECK(py_song_row_insert(&s, 5) == 0 && py_song_loop(&s, &a, &b) == 3 && a == 2 && b == 4);   /* after: stays */
+    py_song_row_delete(&s, 5);
+    py_song_row_delete(&s, 3);
+    CHECK(py_song_loop(&s, &a, &b) == 3 && a == 2 && b == 3);
+    py_song_row_delete(&s, 0);
+    CHECK(py_song_loop(&s, &a, &b) == 3 && a == 1 && b == 2);
+    py_song_row_delete(&s, 1);
+    CHECK(py_song_loop(&s, &a, &b) == 3 && a == 1 && b == 1);
+    py_song_row_delete(&s, 1);                                              /* its only row: off */
+    CHECK(py_song_loop(&s, &a, &b) == 0);
+    py_song_set_loop(&s, 1, 2, 1);                                          /* X1: off */
+    CHECK(py_song_loop(&s, &a, &b) == 0 && a == 1 && b == 2);
+    s.trk[0].spare[0] = 9;                                                  /* nonsense (a > b): none */
+    s.trk[0].spare[2] = 3;
+    CHECK(py_song_loop(&s, &a, &b) == 0);
+}
+
 int main(void)
 {
     test_walk();
@@ -351,6 +410,7 @@ int main(void)
     test_cue();
     test_rest();
     test_sound_v2();
+    test_loop();
     printf("%s (%d failed)\n", fails ? "FAIL" : "PASS", fails);
     return fails != 0;
 }

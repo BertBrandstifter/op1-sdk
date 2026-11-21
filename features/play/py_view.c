@@ -25,9 +25,6 @@
 #include "py_ui.h"
 #include "py_slot.h"
 
-#define VIS         7                           /* song rows on screen */
-#define COL_X(i)    (28 + (i) * 36)
-#define SROW_Y(r)   (34 + (r) * 12)
 #define CROW_Y(r)   (41 + (r) * 10)
 
 /* song view */
@@ -186,6 +183,32 @@ static int live_key(int key, int shift, const int *list, int n, int t)
     }
 }
 
+/* a note with the loop section as it is now */
+static void loop_note(void)
+{
+    static char msg[40];
+    static const char hex[] = "0123456789ABCDEF";
+    int a, b, n = py_song_loop(&py_song, &a, &b), i = 0;
+    const char *p;
+
+    for (p = n ? "LOOP " : "LOOP OFF ("; *p; p++)
+        msg[i++] = *p;
+    msg[i++] = hex[a >> 4]; msg[i++] = hex[a & 15];
+    msg[i++] = '-';
+    msg[i++] = hex[b >> 4]; msg[i++] = hex[b & 15];
+    if (n) {
+        msg[i++] = ' ';
+        msg[i++] = 'X';
+        if (n >= 10)
+            msg[i++] = '1';
+        msg[i++] = (char)('0' + n % 10);
+    } else {
+        msg[i++] = ')';
+    }
+    msg[i] = 0;
+    py_note(msg);
+}
+
 static void song_key(int key, int shift)
 {
     int list[PS_TRACKS], n, t = cursor_track(list, &n);
@@ -216,8 +239,7 @@ static void song_key(int key, int shift)
         if (shift)
             py_v_slots();
         break;
-    case TE_KEY_ORANGE_PUSH:                    /* (and the tape key, play.c) */
-        py_view = PY_V_LIST;
+    case TE_KEY_ORANGE_PUSH:                    /* v0.17: nothing (tape: the list; chain view: back) */
         break;
     case TE_KEY_PLAY:                           /* from the cursor row, bar 1; playing: pause */
         if (shift)
@@ -232,7 +254,23 @@ static void song_key(int key, int shift)
         break;
     case TE_KEY_BACK:
     case TE_KEY_FORWARD:
-        py_req_bar(key == TE_KEY_BACK ? -1 : 1);
+        if (shift) {                            /* the loop section: its first / last row here */
+            int a, b, ln = py_song_loop(&py_song, &a, &b);
+
+            if (!ln) {
+                a = b = s_row;
+                ln = 2;                         /* a new loop: twice */
+            }
+            if (key == TE_KEY_BACK)
+                a = s_row, b = b < a ? a : b;
+            else
+                b = s_row, a = a > b ? b : a;
+            py_song_set_loop(&py_song, a, b, ln);
+            loop_note();
+            py_changed(2);
+        } else {
+            py_req_bar(key == TE_KEY_BACK ? -1 : 1);
+        }
         break;
     case TE_KEY_T1: case TE_KEY_T2: case TE_KEY_T3: case TE_KEY_T4:
         if (key - TE_KEY_T1 < n) {
@@ -369,9 +407,24 @@ static void song_knob(int knob, int d, int shift)
             }
         }
         break;
-    default:                                    /* orange: shift = master */
-        if (shift)
+    default:                                    /* orange: the loop's times (X1 = off); shift = master */
+        if (shift) {
             py_master_step(d);
+        } else {
+            int a, b, ln = py_song_loop(&py_song, &a, &b);
+
+            if (!ln && !a && !b) {
+                py_note("SHIFT + < / >: LOOP START / END");
+                break;
+            }
+            v = (ln ? ln : 1) + d;
+            v = v < 1 ? 1 : v > PS_LOOP_MAX ? PS_LOOP_MAX : v;
+            if (v != (ln ? ln : 1)) {
+                py_song_set_loop(&py_song, a, b, v);
+                loop_note();
+                py_changed(2);
+            }
+        }
         break;
     }
 }
@@ -920,107 +973,112 @@ static int footer_note(const char *armed)
     return del_armed || note != 0;
 }
 
+/* the footer's render question: RENDER 8 BARS FROM ROW 00 - UP TO 1.2 MB */
+static const char *render_ask(void)
+{
+    static char t[64];
+    uint32_t tenths = (uint32_t)rd_bars * py_clock_bar() / 26214u;     /* stereo: 4 bytes a frame */
+    const char *p;
+    char num[8];
+    int i = 0;
+
+#define PUT(str) for (p = (str); *p; p++) t[i++] = *p
+    PUT("RENDER ");
+    py_d_fmt(num, rd_bars);
+    PUT(num);
+    PUT(" BARS FROM ROW ");
+    py_d_hex2(num, s_row);
+    PUT(num);
+    PUT(" - UP TO ");
+    py_d_fmt(num, (int)(tenths / 10u));
+    PUT(num);
+    t[i++] = '.';
+    t[i++] = (char)('0' + tenths % 10u);
+    PUT(" MB");
+#undef PUT
+    t[i] = 0;
+    return t;
+}
+
 static void song_frame(void)
 {
-    static uint8_t blink;
-    int list[PS_TRACKS], n, t = cursor_track(list, &n), i, r, x;
-    int row = s_row, top = s_top;
+    static uint8_t blink, s_left;
+    static py_sm m;
+    int list[PS_TRACKS], n, t = cursor_track(list, &n), i, la, lb, ln, changed, slot;
+    const char *note;
+    py_hm h;
 
-    py_draw_header(live ? "LIVE" : "SONG", -1, live ? C_RED : C_WHITE);
-    gfx_rect(0, PY_FOOT_LINE, gfx_w, 1, C_LINE);
     blink++;
-    top = row < top ? row : row >= top + VIS ? row - VIS + 1 : top;
-    s_top = (uint8_t)top;
-    for (i = 0; i < n; i++) {                   /* the columns' names */
+    m.s = &py_song;
+    m.n = (uint8_t)n;
+    m.live = live;
+    m.playing = py_mx.playing;
+    m.row = s_row;
+    m.col = s_col;
+    m.blink = blink;
+    m.top = (uint8_t *)&s_top;
+    m.left = &s_left;
+    ln = py_song_loop(&py_song, &la, &lb);
+    m.loop_a = la;
+    m.loop_b = lb;
+    m.loop_n = ln;
+    for (i = 0; i < n; i++) {
         const ps_track *tr = &py_song.trk[list[i]];
+        py_sc *c = &m.c[i];
 
-        x = gfx_dec7(COL_X(i), 22, i + 1, tr->mute ? C_DIM : C_WHITE);
-        gfx_text7(x, 22, tr->type == PS_AUDIO ? "AUD" : tr->type == PS_SYNTH ? "SYN" : "DRM",
-                  tr->mute ? C_DIM : py_pat_starved(list[i]) ? C_RED : colour(tr->type));   /* red: BUSY */
-        if (tr->solo)
-            gfx_rect(COL_X(i), 30, 24, 1, C_AMBER);
+        m.list[i] = (uint8_t)list[i];
+        c->k = (uint8_t)list[i];
+        c->type = tr->type;
+        c->mute = tr->mute;
+        c->solo = tr->solo;
+        c->starved = (uint8_t)(py_pat_starved(list[i]) != 0);
+        c->slot = (int8_t)(tr->type == PS_AUDIO ? 0 : py_pat_slot(list[i]) + 1);
+        c->file = tr->file;
+        c->head = (int16_t)head_row(list[i]);
+        c->cue = (int16_t)(py_mx.playing ? py_cue_row(list[i]) : -1);
     }
-    for (r = 0; r < VIS; r++) {
-        int y = SROW_Y(r), sr = top + r;
-
-        if (sr == row)
-            gfx_rect(0, y - 3, gfx_w, 12, C_SEL);
-        gfx_hex7(4, y, (uint32_t)sr, 2, sr == row ? C_WHITE : C_GREY);
-        for (i = 0; i < n; i++) {
-            int k = list[i], audio = py_song.trk[k].type == PS_AUDIO;
-            uint8_t v = py_song.cell[sr][k];
-            int here = head_row(k) == sr;
-            uint16_t ink = here ? GFX_BLACK : C_WHITE;
-
-            x = COL_X(i);
-            if (here)
-                gfx_rect(x - 2, y - 2, 16, 11, colour(py_song.trk[k].type));
-            if (v == PS_EMPTY) {
-                if (sr == 0 || py_song.cell[sr - 1][k] != PS_EMPTY)
-                    gfx_text7(x, y, "--", C_DIM);       /* the column ends here */
-            } else if (audio) {
-                gfx_text7(x, y, v == PS_ON ? "ON" : "OF", here ? ink : v == PS_ON ? C_WHITE : C_GREY);
-            } else if (v == PS_REST) {
-                gfx_text7(x, y, "OF", here ? ink : C_GREY);        /* a rest: one silent bar */
-            } else {
-                gfx_hex7(x, y, v, 2, v < PS_CHAINS && py_song_chain_empty(&py_song, v) && !here ? C_GREY : ink);
-            }
-            if (py_mx.playing && py_cue_row(k) == sr && (blink & 8))    /* cued: it jumps here */
-                frame_rect(x - 3, y - 3, 18, 13, colour(py_song.trk[k].type));
-            if (sr == row && i == s_col)
-                frame_rect(x - 4, y - 4, 20, 15, C_WHITE);
-        }
+    note = py_note_now();
+    m.note = 0;
+    if (rd_ask) {
+        m.note = render_ask();
+        m.note_col = D_AMBER;
+    } else if (del_armed) {
+        m.note = "SHIFT + CUT AGAIN: DELETE THIS SONG ROW";
+        m.note_col = D_RED;
+    } else if (note) {
+        m.note = note;
+        m.note_col = D_AMBER;
+    } else if (t < 0) {
+        m.note = "NO TRACKS: ADD THEM ON THE LIST - TAPE";
+        m.note_col = D_MUTED;
     }
-    if (rd_ask) {                               /* rec pressed: the render is asked */
-        uint32_t tenths = (uint32_t)rd_bars * py_clock_bar() / 26214u;   /* stereo: 4 bytes a frame */
+    py_hdr_fill(&h, live ? "LIVE" : "SONG", -1, live ? C_RED : C_WHITE);
+    slot = py_pat_slot_now(&changed);
+    if (!h.ctx) {
+        static char sl[12] = "SLOT 00";
 
-        x = gfx_text7(4, PY_FOOT_Y1, "RENDER ", C_AMBER);
-        x = gfx_dec7(x, PY_FOOT_Y1, rd_bars, C_WHITE);
-        x = gfx_text7(x, PY_FOOT_Y1, " BARS FROM ROW ", C_AMBER);
-        x = gfx_hex7(x, PY_FOOT_Y1, (uint32_t)row, 2, C_WHITE);
-        x = gfx_text7(x, PY_FOOT_Y1, " - UP TO ", C_GREY);
-        x = gfx_dec7(x, PY_FOOT_Y1, (int32_t)(tenths / 10u), C_GREY);
-        x = gfx_text7(x, PY_FOOT_Y1, ".", C_GREY);
-        x = gfx_dec7(x, PY_FOOT_Y1, (int32_t)(tenths % 10u), C_GREY);
-        gfx_text7(x, PY_FOOT_Y1, " MB", C_GREY);
-        gfx_text7(4, PY_FOOT_Y2, "WHITE: BARS  REC: START  ANY OTHER KEY: CANCEL", C_GREY);
-        return;
-    }
-    if (!footer_note("SHIFT + CUT AGAIN: DELETE THIS SONG ROW")) {
-        uint8_t v = t >= 0 ? py_song.cell[row][t] : PS_EMPTY;
-
-        if (t < 0) {
-            gfx_text7(4, PY_FOOT_Y1, "NO TRACKS: ADD THEM ON THE LIST - TAPE", C_GREY);
-        } else if (py_song.trk[t].type == PS_AUDIO) {
-            gfx_text7(4, PY_FOOT_Y1, v == PS_ON ? "ON: THE FILE ONCE" : v == PS_OF ? "OF: ONE BAR SILENT"
-                      : py_song_col_used(&py_song, t) ? "THE COLUMN ENDS HERE" : "NO CELLS: THE TRACK PLAYS FREE",
-                      C_WHITE);
-        } else if (v < PS_CHAINS) {
-            int other = other_user(py_song_chain_users(&py_song, v), t, list, n);
-
-            x = gfx_text7(4, PY_FOOT_Y1, "CHAIN ", C_WHITE);
-            x = gfx_hex7(x, PY_FOOT_Y1, v, 2, C_WHITE);
-            if (py_song_chain_empty(&py_song, v)) {
-                gfx_text7(x, PY_FOOT_Y1, "  NO ROWS YET", C_GREY);
-            } else if (other) {
-                x = gfx_text7(x, PY_FOOT_Y1, "  ALSO ON TRACK ", C_GREY);
-                gfx_dec7(x, PY_FOOT_Y1, other, C_GREY);
-            }
-        } else if (v == PS_REST) {
-            gfx_text7(4, PY_FOOT_Y1, "OF: A REST, ONE BAR SILENT", C_WHITE);
+        if (slot >= 0 && !py_mx.playing) {
+            sl[5] = (char)('0' + (slot + 1) / 10);
+            sl[6] = (char)('0' + (slot + 1) % 10);
+            sl[7] = changed ? '*' : 0;
+            sl[8] = 0;
+            h.ctx = sl;
         } else {
-            gfx_text7(4, PY_FOOT_Y1, "EMPTY: THE COLUMN ENDS HERE", C_GREY);
+            h.ctx = py_cpu_ctx("");
         }
-        gfx_text7(232, PY_FOOT_Y1, "SPEECH: HELP", C_DIM);
     }
-    if (live)
-        gfx_text7(4, PY_FOOT_Y2, "PLAY: CUE ROW  WHITE PRESS: CUE CELL  REC: RENDER", C_GREY);
-    else if (t >= 0 && py_song.trk[t].type == PS_AUDIO)
-        gfx_text7(4, PY_FOOT_Y2, "WHITE PRESS: ON / OF  REC: RENDER", C_GREY);
-    else if (t >= 0 && py_song.cell[row][t] < PS_CHAINS)
-        gfx_text7(4, PY_FOOT_Y2, "WHITE PRESS: OPEN  SHIFT: CLONE  REC: RENDER", C_GREY);
-    else
-        gfx_text7(4, PY_FOOT_Y2, "WHITE PRESS: LAST CHAIN  SHIFT: NEW  REC: RENDER", C_GREY);
+    h.row = s_row;
+    h.bare = 1;                                 /* v0.17: no slot, BPM, ROW, BAR in the song view */
+    h.loop_a = la;
+    h.loop_b = lb;
+    h.loop_n = ln;
+    py_d_header(&h);
+    py_d_song(&m);
+    if (m.note) {                               /* v0.17: no hint row, only notes */
+        py_d_text3(4, D_FOOT_Y, m.note, m.note_col, 0);
+        if (rd_ask)
+            py_d_text3(232, D_FOOT_Y, "REC: START", D_TEXT, 0);
+    }
 }
 
 static void chain_frame(void)
@@ -1391,7 +1449,7 @@ static const help_line help_page[HELP_PAGES][HELP_LINES] = {
         { "INSERT X2", "NEW TRACK - CUT X2: REMOVE IT" },
         { "PLAY / STOP", "START, PAUSE / PAUSE, AGAIN: BAR 1" },
         { "< > / METRONOME", "BAR BACK, FORWARD / TEMPO: THE BPM" },
-        { "JOIN", "THE SONG VIEW - THE TRACKER" },
+        { "JOIN / TAPE", "SONG VIEW / LAYOUT: LANES, ROWS" },
         { "KEYS 1-8", "SOUND / KIT 1-8 OF THE CURSOR TRACK" },
         { "SPEECH", "THIS HELP - BLUE: THE OTHER PAGES" },
     },
@@ -1402,12 +1460,12 @@ static const help_line help_page[HELP_PAGES][HELP_LINES] = {
         { "SHIFT+WHITE PR", "NEW CHAIN / CLONE THE CHAIN" },
         { "CUT / INSERT", "CUT / PASTE THE CELL" },
         { "SHIFT+INSERT", "NEW ROW - SHIFT+CUT X2: DELETE ROW" },
-        { "PLAY", "FROM THE CURSOR ROW, BAR 1" },
-        { "SHIFT+PLAY", "CUE THE ROW: AT THE CHAIN'S END" },
+        { "PLAY / SHIFT", "FROM THE ROW / CUE IT (CHAIN'S END)" },
+        { "SHIFT+< / >", "LOOP START / END - ORANGE: TIMES" },
         { "REC, REC", "RENDER THE SONG TO AN AIF FILE" },
         { "SHIFT+REC", "LIVE MODE ON / OFF" },
         { "KEYS 1-8", "SOUND / KIT 1-8 OF THE CURSOR TRACK" },
-        { "TAPE, ORANGE PR", "BACK TO THE TRACK LIST" },
+        { "TAPE", "BACK TO THE TRACK LIST" },
     },
     {   /* the chain view */
         { 0, "16 ROWS: PATTERN, TRANSPOSE, SOUND - EMPTY ROW = END" },

@@ -105,12 +105,55 @@ static void find(const ps_song *s, int t, int row, int cr, uint32_t bar, ps_len_
     h->active = 0;
 }
 
+int py_song_loop(const ps_song *s, int *a, int *b)
+{
+    int la = s->trk[0].spare[0], lb = s->trk[0].spare[1], n = s->trk[0].spare[2];
+
+    if (la >= PS_ROWS || lb >= PS_ROWS || lb < la)
+        la = lb = 0, n = 0;
+    *a = la;
+    *b = lb;
+    return n >= 2 && n <= PS_LOOP_MAX ? n : 0;
+}
+
+void py_song_set_loop(ps_song *s, int a, int b, int n)
+{
+    if (a > b) {
+        int x = a;
+
+        a = b;
+        b = x;
+    }
+    a = a < 0 ? 0 : a >= PS_ROWS ? PS_ROWS - 1 : a;
+    b = b < 0 ? 0 : b >= PS_ROWS ? PS_ROWS - 1 : b;
+    s->trk[0].spare[0] = (uint8_t)a;
+    s->trk[0].spare[1] = (uint8_t)b;
+    s->trk[0].spare[2] = (uint8_t)(n < 2 ? 0 : n > PS_LOOP_MAX ? PS_LOOP_MAX : n);
+}
+
+/* the row after `row` as a column walks: leaving the loop's last row, its first again until the
+ * passes are done (*loops counts them, 0 again once the song goes on below the loop) */
+static int loop_next(const ps_song *s, int row, uint8_t *loops)
+{
+    int a, b, n = py_song_loop(s, &a, &b);
+
+    if (n && row == b) {
+        if (*loops + 1 < n) {
+            (*loops)++;
+            return a;
+        }
+        *loops = 0;
+    }
+    return row + 1;
+}
+
 int py_song_start(const ps_song *s, int t, int row, uint32_t g, uint32_t bar, ps_len_fn len, void *ctx,
              ps_head *h)
 {
     h->start_row = (uint8_t)(row < PS_ROWS ? row : 0);
     h->solo = PS_EMPTY;
     h->cue = PS_EMPTY;
+    h->loops = 0;
     h->start = g;
     h->len = 0;
     find(s, t, h->start_row, 0, bar, len, ctx, h);
@@ -141,6 +184,7 @@ int py_song_start_chain(const ps_song *s, int t, int c, uint32_t g, uint32_t bar
     h->row = h->start_row = 0;
     h->solo = (uint8_t)c;
     h->cue = PS_EMPTY;
+    h->loops = 0;
     h->start = g;
     h->len = 0;
     h->active = (uint8_t)(c >= 0 && c < PS_CHAINS && place_chain(s, t, c, 0, bar, len, ctx, h));
@@ -161,11 +205,12 @@ void py_song_next(const ps_song *s, int t, uint32_t bar, ps_len_fn len, void *ct
         return;
     }
     if (!is_p(t) || c >= PS_CHAINS || chain_row(s, c, cr) >= PS_CROWS) {
-        row++;                                  /* the chain is done: the next song row */
+        row = loop_next(s, row, &h->loops);     /* the chain is done: the next song row (or the loop's first) */
         cr = 0;
         if (h->cue < PS_ROWS) {                 /* live: a cued row instead, the column's start row from now */
             row = h->start_row = h->cue;        /* (an empty cell there: the column stops) */
             h->cue = PS_EMPTY;
+            h->loops = 0;
         }
     }
     find(s, t, row, cr, bar, len, ctx, h);
@@ -274,6 +319,16 @@ int py_song_row_insert(ps_song *s, int row)
             s->cell[r][t] = s->cell[r - 1][t];
     for (t = 0; t < PS_TRACKS; t++)
         s->cell[row][t] = PS_EMPTY;
+    {                                           /* the loop moves with its rows (a row inside: it grows) */
+        int a, b, n = py_song_loop(s, &a, &b);
+
+        if (row <= a)
+            a++, b++;
+        else if (row <= b)
+            b++;
+        if (n || a || b)
+            py_song_set_loop(s, a, b, n);
+    }
     return 0;
 }
 
@@ -288,6 +343,20 @@ void py_song_row_delete(ps_song *s, int row)
             s->cell[r][t] = s->cell[r + 1][t];
     for (t = 0; t < PS_TRACKS; t++)
         s->cell[PS_ROWS - 1][t] = PS_EMPTY;
+    {                                           /* the loop moves with its rows (one inside: it shrinks) */
+        int a, b, n = py_song_loop(s, &a, &b);
+
+        if (row < a) {
+            a--, b--;
+        } else if (row <= b) {
+            if (a == b)
+                n = 0;                          /* its only row gone: off */
+            else
+                b--;
+        }
+        if (n || a || b)
+            py_song_set_loop(s, a, b, n);
+    }
 }
 
 int py_song_crow_insert(ps_song *s, int c, int r)
@@ -315,14 +384,19 @@ void py_song_crow_delete(ps_song *s, int c, int r)
     s->chain[c][PS_CROWS - 1].tsp = 0;
 }
 
-int py_song_audio_segs(const ps_song *s, int t, int start_row, uint8_t *seg)
+int py_song_audio_segs(const ps_song *s, int t, int start_row, uint8_t *seg, uint8_t *rows)
 {
+    uint8_t loops = 0;
     int r, n = 0;
 
     if (!py_song_col_used(s, t))
         return -1;
-    for (r = start_row < 0 ? 0 : start_row; r < PS_ROWS && s->cell[r][t] != PS_EMPTY; r++)
+    for (r = start_row < 0 ? 0 : start_row; r < PS_ROWS && s->cell[r][t] != PS_EMPTY && n < PS_ROWS;
+         r = loop_next(s, r, &loops)) {
+        if (rows)
+            rows[n] = (uint8_t)r;
         seg[n++] = s->cell[r][t] == PS_ON ? PS_ON : PS_OF;
+    }
     return n;
 }
 

@@ -33,7 +33,7 @@
                                          * inner rate at 88.2 kHz where the sound needs it (ACID 3:
                                          * the filter while its cutoff is above 6 kHz) */
 #define EH_VOICES       6
-#define EH_INST         6               /* instances: 0 = TE's voices, 1..5 = PLAY's synth tracks */
+#define EH_INST         7               /* instances: 0 = TE's voices, 1..6 = PLAY's synth tracks (v1.9; before: 1..5) */
 #define EH_SLOTS        (EH_INST * EH_VOICES)   /* voice index vi = instance x EH_VOICES + voice */
 
 /* render one voice: vi = voice 0..5, out = 128 samples at 88.2 kHz, knobs = the sound's 8 stored
@@ -101,6 +101,7 @@ void eh_frame(int x, int y, int w, int h, int r, int t, uint16_t c, uint16_t fil
  * eh_aa_frame: outline t px wide, corner radius r; eh_aa_box: filled (both whole px).
  * eh_aa_plot: one pixel at coverage a (0..256) */
 extern int eh_aa_dy;
+extern int eh_aa_gamma;                 /* 1: coverage gamma-lifted (1/1.8) before the blend (v1.10, PLAY) */
 void eh_aa_begin(uint16_t *buf);
 void eh_aa_plot(int x, int y, uint16_t c, int a);
 void eh_aa_line(int x0, int y0, int x1, int y1, int hw, uint16_t c);

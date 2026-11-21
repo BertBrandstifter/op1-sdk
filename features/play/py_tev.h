@@ -24,7 +24,7 @@
 #include <stdint.h>
 
 #define PY_TEV_REGION   0x300                   /* bytes of scratch swapped (largest: cluster 0x287) */
-#define PY_TEV_INST     6                       /* = EH_INST: instances 1..5 are PLAY's */
+#define PY_TEV_INST     7                       /* = EH_INST: instances 1..6 are PLAY's */
 #define PY_TEV_PROTOS   8                       /* at most 8 different engines in the 8 sound slots */
 
 /* the engine type can play on a SYNTH track through TE's voices (not drwave: those are the SDK's) */

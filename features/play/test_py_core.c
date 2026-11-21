@@ -119,6 +119,15 @@ static void test_map(void)
         CHECK(py_map(&s, 1, 88500, &run) == 0 && run == 300 && py_set_row(&s, 1, 88500) == 2);
         CHECK(py_map(&s, 1, 88800 + 310, &run) == -1 && run == 88190);      /* the circle again */
         CHECK(py_map(&s, 1, 3 * 88800 + 88510, &run) == 10 && run == 290);
+        {                                       /* a loop section: rows 0 1 2 1 2 (each segment its row) */
+            static const uint8_t lseg[5] = { 1, 0, 1, 0, 1 }, lrow[5] = { 0, 1, 2, 1, 2 };
+
+            py_set_song_rows(&s, 1, lseg, lrow, 5, 0);
+            CHECK(py_set_row(&s, 1, 88500) == 2 && py_set_row(&s, 1, 88800) == 1
+                  && py_set_row(&s, 1, 88800 + 88200) == 2 && s.t[1].cur.period == 88800 + 88500);
+            py_set_song(&s, 1, seg, 3, 5);                                     /* no rows: row0 + i */
+            CHECK(py_set_row(&s, 1, 300) == 6);
+        }
         py_set_song(&s, 1, seg, 0, 0);                                         /* cells, none at the start row */
         CHECK(s.t[1].song && py_map(&s, 1, 5, &run) == -1 && py_set_row(&s, 1, 5) == -1);
         py_set_song(&s, 1, seg, -1, 0);                                        /* free again: the loop */

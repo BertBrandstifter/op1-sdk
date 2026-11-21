@@ -9,6 +9,9 @@
 
 static uint16_t *frame_buf;
 int eh_aa_dy;
+int eh_aa_gamma;                                /* coverage through gamma_tab (PLAY's screens) */
+/* 256 (a / 256) ^ (1 / 1.8) for a = 8 i */
+static const uint16_t gamma_tab[33] = { 0, 37, 55, 69, 81, 91, 101, 110, 119, 127, 134, 141, 148, 155, 162, 168, 174, 180, 186, 192, 197, 203, 208, 213, 218, 223, 228, 233, 238, 242, 247, 252, 256 };
 
 void eh_aa_begin(uint16_t *buf) { frame_buf = buf; }
 
@@ -34,6 +37,9 @@ void eh_aa_plot(int x, int y, uint16_t c, int a)
         else
             keeping = -1;
     }
+    if (eh_aa_gamma && a < 256)                 /* partial pixels lifted: an edge on the panel reads as
+                                                 * smooth instead of a row of dark steps */
+        a = gamma_tab[(a + 4) >> 3];
     p = &frame_buf[(gfx_w - 1 - x) * GFX_STRIDE + y];
     if (a >= 248) {
         *p = c;

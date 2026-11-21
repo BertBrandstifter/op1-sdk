@@ -100,7 +100,7 @@ with level, mute, solo and master. Play and stop drive PLAY from every screen (a
 - **SYNTH** — NOTE ROLL patterns on any synth engine: TE's own (FM, digital, string, cluster,
   pulse, sampler, phase, dna, dsynth, voltage, iter) or the SDK's (ACID 3, MONO 3, STATION 1,
   PARTY, PALETTE, MALLET, WHEEL, WARP, TRIO), each track on its own instance, so two tracks can
-  play two FM sounds at once; up to 5 sound at once, the 4th and 5th while the CPU allows;
+  play two FM sounds at once; up to 6 sound at once, the 4th to 6th while the CPU allows;
 - **DRUM** — DRUM ROLL patterns on TE's drum kits;
 - **AUDIO** — a WAV / AIFF from disk mode's `play/` folder, looped or once, streamed from flash.
 
@@ -109,6 +109,12 @@ transpose, live mode. **16 song slots** keep songs on the OP-1. Disk mode shows 
 `.PSL` files and the renders as AIFF, and `.PSL` files you put there land in free slots. Drum
 kits and audio files are named, not stored, so share them alongside. The mix joins TE's master bus
 like the tape does.
+
+**Four demo songs** come in the image (slots 13-16 at the first boot, or copy
+[`features/play/demos/*.PSL`](features/play/demos) into `play_s/`): WAREHOUSE (techno, 303 line),
+PIANO HOUSE (M1 piano and organ bass), RADIO (pop, I V vi IV) and PRELUDE (Bach's Prelude in C,
+BWV 846). Load the m1 drums kit into drum slot 8 first; details in the
+[PLAY README](features/play/README.md#demo-songs).
 
 PLAY replaces TE's tape screen in its image (`recipes/op1play.json`, op1plus + PLAY); TE's tape
 data is never touched. Status: **experimental**, on-device tests ongoing. Controls and details:

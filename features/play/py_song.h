@@ -42,7 +42,7 @@ typedef struct ps_track {
     uint8_t voices;                             /* SYNTH: voices at most, 1 / 2 / 4 (0 = 2) */
     uint8_t eco;                                /* SYNTH: 1 = the engine at 44.1 kHz (half the cost) */
     char file[PS_NAME];                         /* AUDIO: the file in the set folder */
-    uint8_t pad2[3];
+    uint8_t spare[3];                           /* track 0's: the song's loop section (py_song_loop) */
 } ps_track;
 
 typedef struct ps_song {
@@ -72,8 +72,17 @@ typedef struct ps_head {
     uint8_t snd;                                /* the chain row's sound slot 0..7, PS_EMPTY = the track's */
     uint8_t cue;                                /* live: the song row to jump to when the current chain
                                                  * ends (it becomes start_row), PS_EMPTY = none */
+    uint8_t loops;                              /* passes of the loop section done (py_song_loop) */
     uint32_t start, len;                        /* global frames: [start, start + len) */
 } ps_head;
+
+/* the song's loop section (v0.16): song rows a..b play n times in a row (2..PS_LOOP_MAX) before
+ * the song goes on below b; every column counts its own passes (a column leaving row b jumps back
+ * to row a). Kept in track 0's spare bytes, so SONG.BIN and slot files keep their size (older
+ * files: 0 = no loop). py_song_loop returns n, 0 = none (a, b still say where it was). */
+#define PS_LOOP_MAX 16
+int py_song_loop(const ps_song *s, int *a, int *b);
+void py_song_set_loop(ps_song *s, int a, int b, int n);     /* a > b: swapped; n < 2: off */
 
 /* start track t at song row `row` at global frame g; returns h->active */
 int py_song_start(const ps_song *s, int t, int row, uint32_t g, uint32_t bar, ps_len_fn len, void *ctx,
@@ -109,7 +118,7 @@ void py_song_crow_delete(ps_song *s, int c, int r);
 /* AUDIO track t as the song plays it from start_row: seg[0..n-1] = PS_ON / PS_OF, the cells up to
  * the first empty one (seg holds PS_ROWS); returns n, or -1 if the column has no cell at all (the
  * track plays free: LOOP / ONCE) */
-int py_song_audio_segs(const ps_song *s, int t, int start_row, uint8_t *seg);
+int py_song_audio_segs(const ps_song *s, int t, int start_row, uint8_t *seg, uint8_t *rows);
 
 /* ------------------------------------------------------------------ storage */
 

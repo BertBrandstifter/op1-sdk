@@ -1,6 +1,6 @@
 /* py_synth: PLAY's synth voices for SYNTH tracks (new_pattern_tape.md 2.2), host-tested.
  *
- * A SYNTH track runs its own instance of an SDK engine (features/enginehost: instance 1..5) on
+ * A SYNTH track runs its own instance of an SDK engine (features/enginehost: instance 1..6) on
  * one of the 8 synth sound slots. Per block (64 output frames) and voice: the engine renders 128
  * samples at 88.2 kHz from the slot's stored knobs and PLAY's pitch increments; TE's own envelope
  * code (dsp/Adsr.cpp, called through the api on PLAY's own 24-byte objects) shapes it with the

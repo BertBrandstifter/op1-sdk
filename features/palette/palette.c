@@ -35,7 +35,7 @@ enum { P_LEVEL = 0, P_WAVE = 4, P_PITCH = 8, P_CUT = 12, P_TIME = 16, NP = 20 };
 
 static const uint8_t pmax[5] = { PL_LEVELS - 1, PL_WAVES - 1, PL_PITCHES - 1, PL_CUTS - 1, PL_TIMES - 1 };
 
-static pl_voice voices[EH_SLOTS];               /* every instance (PLAY: vi 6..35) */
+static pl_voice voices[EH_SLOTS];               /* every instance (PLAY: vi 6..41) */
 static uint32_t order[EH_SLOTS], notes[EH_INST];   /* note-on order, per instance */
 static uint32_t gone;                           /* bit per voice slot (all instances) */
 static volatile int8_t newest = -1;

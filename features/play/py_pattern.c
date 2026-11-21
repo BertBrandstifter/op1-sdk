@@ -15,7 +15,7 @@
  *             SYNTH: py_synth plays them on an engine instance (1..3, enginehost) with the
  *             slot's knobs and TE's envelope code. The instances are a pool: a SYNTH track takes
  *             one for its first note and gives it back once its voices are silent, so up to 8
- *             SYNTH tracks take turns, at most 5 sounding at once, the 4th and 5th only while
+ *             SYNTH tracks take turns, at most 6 sounding at once, the 4th to 6th only while
  *             PLAY's CPU allows it (PY_INST_CYC; a note that finds none takes
  *             an instance whose track only has release tails left, else it is dropped).
  *             DRUM blocks go into py_mx.pin[t];
@@ -107,7 +107,7 @@ static volatile uint8_t cue_req[PS_TRACKS] = { PS_EMPTY, PS_EMPTY, PS_EMPTY, PS_
 static py_drums drums[PS_TRACKS];
 static py_syn syns[PS_TRACKS];
 /* the instance pool (audio interrupt; py_pat_start resets it with the interrupt not playing) */
-static volatile uint8_t inst_of[PS_TRACKS];     /* SYNTH track -> engine instance 1..5, 0 = none now */
+static volatile uint8_t inst_of[PS_TRACKS];     /* SYNTH track -> engine instance 1..6, 0 = none now */
 static uint8_t inst_busy;                       /* bit i: instance i is taken */
 static volatile uint16_t starved[PS_TRACKS];    /* blocks left of "a note found no instance" (GUI) */
 #define STARVED_BLOCKS  690                     /* ~1 s */
@@ -736,8 +736,8 @@ uint32_t py_pat_song_frames(int row)
         for (i = 0; i < PS_ROWS * PS_CROWS; i++) {
             sum += h.len;
             py_song_next(&py_song, t, clock_bar, pat_len, 0, &h);
-            if (!h.active || (h.row == r0 && h.crow == c0))
-                break;
+            if (!h.active || (h.row == r0 && h.crow == c0 && !h.loops))
+                break;                          /* (a loop's first row again: not the end) */
         }
         if (sum > max)
             max = sum;
@@ -829,15 +829,18 @@ static void inst_free(int t)
     }
 }
 
-/* overload guard: instances 1..PY_INST_SAFE any time; the 4th and 5th only while PLAY's peak
+/* overload guard: instances 1..PY_INST_SAFE any time; the 4th to 6th only while PLAY's peak
  * block (the last of either parity, at least PY_INST_EST per busy instance: at the song's start
  * nothing is measured yet and every track's first note comes in the same block) plus one more
  * instance's share stays under py_inst_cyc */
 #define PY_INST_SAFE    3
-#define PY_INST_EST     50000u                  /* CYCLES per sounding instance before any measure
-                                                 * (sim: ACID 3 45k, MONO 3 23..37k per voice) */
-#define PY_INST_CYC     250000u                 /* CYCLES per block: ~43 % of one (TE's own 25-30 %
-                                                 * on top; sim load bench, 3 ACID 3 ECO off: 201k) */
+#define PY_INST_EST     41000u                  /* CYCLES per sounding instance before any measure
+                                                 * (sim: ACID 3 45k, MONO 3 23..37k per voice); v0.16:
+                                                 * 41k (was 50k) so 6 x EST fits PY_INST_CYC and a 6th
+                                                 * instance can start before anything is measured */
+#define PY_INST_CYC     348000u                 /* CYCLES per block: ~60 % of one (v0.17, the owner's
+                                                 * choice; was 250k = 43 %); TE's own 25-30 % on top:
+                                                 * heavy songs may glitch (sim: 3 ACID 3 ECO off: 201k) */
 volatile uint32_t py_inst_cyc = PY_INST_CYC;    /* (the sim lowers it) */
 
 static int inst_room(void)
@@ -854,7 +857,7 @@ static int inst_room(void)
     return peak + peak / (uint32_t)busy <= py_inst_cyc;
 }
 
-/* track t's instance, taken from the pool if it has none: a free one (the 4th / 5th while the CPU
+/* track t's instance, taken from the pool if it has none: a free one (the 4th to 6th while the CPU
  * allows: inst_room), else one whose track only has release tails left (cut); 0 = none (BUSY) */
 static int inst_take(int t)
 {

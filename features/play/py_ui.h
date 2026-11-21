@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <op1/gfx.h>
 #include "py_core.h"
+#include "py_draw.h"
 
 #define C_GREY      GFX_RGB(0x8a, 0x8a, 0x99)
 #define C_DIM       GFX_RGB(0x40, 0x40, 0x48)
@@ -31,6 +32,9 @@ void py_changed(int audio);                     /* the song was edited (2: AUDIO
 void py_note(const char *msg);                  /* a short note in the footer */
 const char *py_note_now(void);                  /* GUI: the note to draw this frame, 0 = none */
 void py_draw_header(const char *title, int num, uint16_t col);
+void py_hdr_fill(py_hm *h, const char *title, int num, uint16_t col);   /* the header's model: tempo, bar, transport */
+extern volatile uint8_t py_layout;
+const char *py_cpu_ctx(const char *pre);        /* the header's context: pre, then CPU nn while playing */              /* the list: 0 LANES, 1 ROWS (tape on the list toggles it) */
 void py_req_pause(void);                        /* play while playing */
 void py_req_stop(void);
 void py_req_bar(int step);

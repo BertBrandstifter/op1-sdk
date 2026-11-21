@@ -180,8 +180,8 @@ void py_set_init(py_set *s, const py_setfile *sf, uint32_t te_bpm_x100)
     }
 }
 
-static void segs_fill(const py_set *s, const py_track *t, py_segs *x, const uint8_t *seg, int n, int row0,
-                      uint32_t origin)
+static void segs_fill(const py_set *s, const py_track *t, py_segs *x, const uint8_t *seg, const uint8_t *rows,
+                      int n, int row0, uint32_t origin)
 {
     uint32_t sum = 0;
     int i;
@@ -196,18 +196,24 @@ static void segs_fill(const py_set *s, const py_track *t, py_segs *x, const uint
             break;                              /* past 2^32 frames (27 h): never reached */
         sum += len;
         x->seg[i] = seg[i];
+        x->row[i] = (uint8_t)(rows ? rows[i] : row0 + i);
         x->n = (uint8_t)(i + 1);
     }
     x->period = sum;
 }
 
-void py_set_song(py_set *s, int k, const uint8_t *seg, int n, int row0)
+void py_set_song_rows(py_set *s, int k, const uint8_t *seg, const uint8_t *rows, int n, int row0)
 {
     py_track *t = &s->t[k];
 
     t->song = (uint8_t)(n >= 0);
     t->pending = 0;
-    segs_fill(s, t, &t->cur, seg, n, row0, 0);
+    segs_fill(s, t, &t->cur, seg, rows, n, row0, 0);
+}
+
+void py_set_song(py_set *s, int k, const uint8_t *seg, int n, int row0)
+{
+    py_set_song_rows(s, k, seg, 0, n, row0);
 }
 
 /* the segments track t plays at global frame g */
@@ -247,7 +253,7 @@ int py_set_row(const py_set *s, int k, uint32_t g)
     if (!t->used || !t->frames || !t->song)
         return -1;
     i = seg_at(s, t, segs_of(t, g), g, &at, &left);
-    return i < 0 ? -1 : segs_of(t, g)->row0 + i;
+    return i < 0 ? -1 : segs_of(t, g)->row[i];
 }
 
 int py_set_cued(const py_set *s, int k, uint32_t g)
@@ -258,6 +264,12 @@ int py_set_cued(const py_set *s, int k, uint32_t g)
 }
 
 uint32_t py_set_cue(py_set *s, py_mixer *m, int k, const uint8_t *seg, int n, int row0, uint32_t guard)
+{
+    return py_set_cue_rows(s, m, k, seg, 0, n, row0, guard);
+}
+
+uint32_t py_set_cue_rows(py_set *s, py_mixer *m, int k, const uint8_t *seg, const uint8_t *rows, int n, int row0,
+                         uint32_t guard)
 {
     py_track *t = &s->t[k];
     py_ring *r = &m->ring[k];
@@ -279,7 +291,7 @@ uint32_t py_set_cue(py_set *s, py_mixer *m, int k, const uint8_t *seg, int n, in
         sw = bar ? g - g % bar + bar : g;               /* silent: the next bar */
     }
     t->pending = 0;                                     /* (nxt is not read while it is rebuilt) */
-    segs_fill(s, t, &t->nxt, seg, n < 0 ? 0 : n, row0, sw);
+    segs_fill(s, t, &t->nxt, seg, rows, n < 0 ? 0 : n, row0, sw);
     t->sw = sw;
     t->pending = 1;
     if ((int32_t)(r->wr - sw) > 0)

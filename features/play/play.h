@@ -56,6 +56,7 @@ enum { PY_SND_OK, PY_SND_MISSING /* its SDK engine is not in this firmware (or n
        PY_SND_OTHER /* the slot is another TE engine now */, PY_SND_TE /* TE's own engine: PLAY does not play it */ };
 extern uint8_t py_snd_why[8], py_snd_tag[8];    /* per sound slot, after py_pat_slot_diff */
 int py_slots_import(void);                      /* disk mode's play_s/ -> free slots (py_import.c) */
+int py_demos_install(void);                     /* main: the image's demo songs -> free slots, once (-1: not now) */
 int py_pat_slot_busy(void);                     /* a slot file is open (the main loop saves / loads) */
 void py_pat_slot_path(char *out, int n);        /* slot n's file (64 bytes) */
 void py_pat_slot_sizes(uint32_t size[2]);       /* the pattern sizes a slot file must have */

@@ -47,6 +47,7 @@ typedef struct py_file {                        /* an audio file in the set fold
 typedef struct py_segs {                        /* the segments of a song-driven track */
     uint8_t n, row0;                            /* segments; the song row of seg[0] */
     uint8_t seg[PY_SEGS];                       /* nonzero = the file once (its length), 0 = a bar of silence */
+    uint8_t row[PY_SEGS];                       /* the song row of each (row0 + i, or a loop's rows again) */
     uint32_t period;                            /* frames of the whole circle */
     uint32_t origin;                            /* the global frame seg[0] starts at */
 } py_segs;
@@ -79,6 +80,9 @@ int py_set_assign(py_set *s, int k, const py_file *files, int n, const char *nam
  * repeated; n = 0: silent; n < 0: free again (looped or once, as assigned). Main thread, with the
  * rings re-seeked afterwards (py_seek + py_fill): what they hold was read with the old mapping. */
 void py_set_song(py_set *s, int k, const uint8_t *seg, int n, int row0);
+/* the same with the song row of each segment (rows: n entries; 0 = row0 + i): a loop section's
+ * rows come again (py_song_audio_segs) */
+void py_set_song_rows(py_set *s, int k, const uint8_t *seg, const uint8_t *rows, int n, int row0);
 
 /* the song row (row0 + segment) a song-driven track k plays at global frame g; -1 = none (free,
  * silent, unused) */
@@ -149,6 +153,8 @@ void py_mix(py_mixer *m, int32_t *l, int32_t *r, int stride);
  * frame so the read-ahead fills it anew. A second cue before the switch replaces the first.
  * Main thread, while playing; guard must cover one main-loop pass. Returns the switch frame. */
 uint32_t py_set_cue(py_set *s, py_mixer *m, int k, const uint8_t *seg, int n, int row0, uint32_t guard);
+uint32_t py_set_cue_rows(py_set *s, py_mixer *m, int k, const uint8_t *seg, const uint8_t *rows, int n, int row0,
+                         uint32_t guard);
 
 /* the song row a pending cue of track k goes to; -1 = none pending at global frame g */
 int py_set_cued(const py_set *s, int k, uint32_t g);

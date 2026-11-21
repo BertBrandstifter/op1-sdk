@@ -63,10 +63,10 @@
  * 25 a rest cell (OF, white turn below 00) in a DRUM column: one silent bar, then the column goes on
  * 26 keys 1-8 = the cursor track's sound / kit (list, song view); a chain row's SND column is the
  *    track's slot while the row plays; a key pressed meanwhile wins until the row ends
- * 27 up to 8 SYNTH tracks share the 5 engine instances: seven SYNTH tracks added on the ADD row;
+ * 27 up to 8 SYNTH tracks share the 6 engine instances: seven SYNTH tracks added on the ADD row;
  *    five taking turns (one note each, one bar after the other) every one plays, all on instance
- *    1 (each gives it back once silent); all seven at once: five play (instances 1-5), the other
- *    two drop their note and show BUSY; with PLAY's CPU over the guard (py_inst_cyc lowered) only
+ *    1 (each gives it back once silent); all seven at once: six play (instances 1-6), the other
+ *    one drops its note and shows BUSY; with PLAY's CPU over the guard (py_inst_cyc lowered) only
  *    three play, four show BUSY
  * 28 views (v0.8.2): join stays in the song view (plain and live), tape on PLAY: the list; tape
  *    from another screen: the list (not the view left there); join on another screen: taken, a
@@ -101,7 +101,12 @@ extern py_mixer py_mx;
 extern volatile uint32_t py_blocks, py_import_files, py_import_errors, py_import_runs;
 extern char FB[], FB2[], FB3[], FB4[], FB5[], FB6[], FB7[];
 extern int py_help_on(void), py_pat_cued(int t), py_rd_busy(void);
-extern char FB8[], FB9[], FB10[], FB11[], FB12[];
+extern int py_demos_install(void);
+extern volatile uint32_t py_demos_found, py_demos_installed, py_demos_why;
+extern uint8_t DEMO[], DEMO_END[];                /* demos/SONG13.PSL (run_playtest.py) */
+extern char FB8[], FB9[], FB10[], FB11[], FB12[], FB13[];
+extern volatile uint8_t py_layout;              /* the list: 0 LANES, 1 ROWS (v0.17) */
+extern void py_req_start(int row, int aud_track, int chain), py_req_stop(void);
 extern int py_pat_slot(int t);
 extern int py_pat_starved(int t);
 extern volatile uint32_t py_boosts, py_inst_cyc;
@@ -671,6 +676,7 @@ typedef struct { int32_t delta; void *fn; } te_vs;
 static int tev_new_calls, tev_new_type = -1, tev_notes, tev_releases, tev_renders, tev_bad, tev_env0;
 static uint32_t tev_inc;
 volatile int32_t tevdbg[12];
+volatile int32_t dbg19[12];                     /* 19b: view, playing, playing, audition track, gain, active, notes, peak, mute, pos */
 #define TEV_O(self) ((volatile uint32_t *)(self))
 #define TEV_SHARED (*(volatile uint32_t *)0xffb000c0)
 
@@ -1162,7 +1168,18 @@ int main(void)
     press(TE_KEY_ORANGE_PUSH);                                      /* ... re-read */
     py_main();
     CHECK(10, ntracks() == 4 && py_song.trk[3].type == PS_SYNTH && py_song.trk[2].type == PS_DRUM);
-    hook_frame((uint16_t *)FB3);
+    hook_frame((uint16_t *)FB3);                                    /* ROWS (tape twice in 7) */
+    {                                                               /* v0.17: tape on the list = the layout */
+        uint32_t lst[32];
+        int was = py_layout;
+
+        CHECK(10, was == 1 && file_stat("/yaffs2/user/play_s/ROWS.LAY", lst) >= 0);
+        press(TE_KEY_TAPE);
+        CHECK(10, py_layout == 0 && py_view == 0);
+        py_main();
+        CHECK(10, file_stat("/yaffs2/user/play_s/ROWS.LAY", lst) < 0);   /* LANES: no marker */
+        hook_frame((uint16_t *)FB13);
+    }
 
     /* 12: cut twice removes the track under the cursor */
     turn(0, -9);
@@ -1552,6 +1569,44 @@ int main(void)
             CHECK(19, py_view == 1);
         }
 
+        /* 19b: while the song plays, a SYNTH chain auditions alone (the chain view's play: the
+         * same request as check 19's, here without moving the song view's cursor) */
+        if (py_song.trk[3].type == PS_SYNTH && py_song.cell[0][3] < PS_CHAINS) {
+            uint32_t notes;
+            int32_t loud = 0;
+
+            py_req_start(0, -1, 0);                                 /* the song from row 00 */
+            py_main();
+            for (b = 0; b < 40; b++) {
+                hook_volume();
+                if (!(b % 4))
+                    py_main();
+            }
+            dbg19[1] = py_mx.playing;
+            notes = py_syn_notes;
+            py_req_start(0, 3, py_song.cell[0][3]);                 /* audition track 4's chain */
+            py_main();
+            dbg19[2] = py_mx.playing;
+            dbg19[3] = py_pat_audition_track();
+            dbg19[4] = py_mx.gain[3];
+            dbg19[5] = py_pat_head(3)->active;
+            for (b = 0; b < 200; b++) {
+                clear_master();
+                hook_volume();
+                if (E34[0] > loud || -E34[0] > loud)
+                    loud = E34[0] < 0 ? -E34[0] : E34[0];
+                if (!(b % 4))
+                    py_main();
+            }
+            dbg19[6] = (int32_t)(py_syn_notes - notes);
+            dbg19[7] = loud;
+            CHECK(19, dbg19[1] && dbg19[2] && dbg19[3] == 3 && dbg19[4] && dbg19[5] && dbg19[6] > 0 && loud > 0
+                  && !py_mx.gain[0]);
+            py_req_stop();                                          /* the audition ends: bar 1 */
+            py_main();
+            CHECK(19, !py_mx.playing && py_mx.pos == 0 && py_pat_audition_track() < 0);
+        }
+
         /* 20: AUDIO cells: track 1 (A2.AIF, mono, one bar) ON, OF, then again */
         {
             int32_t mv;
@@ -1601,6 +1656,26 @@ int main(void)
             py_main();
             press(TE_KEY_STOP);
             py_main();
+            {   /* the loop section: shift + back / forward = its rows, orange = its times; the AUDIO
+                 * column's segments unrolled (ON OF three times) */
+                int la, lb, ln;
+
+                shift_press(TE_KEY_BACK);                           /* row 00: 00-00 X2 */
+                ln = py_song_loop(&py_song, &la, &lb);
+                CHECK(20, ln == 2 && la == 0 && lb == 0);
+                turn(0, 1);
+                shift_press(TE_KEY_FORWARD);                        /* 00-01 */
+                turn(3, 1);                                         /* X3 */
+                py_main();
+                ln = py_song_loop(&py_song, &la, &lb);
+                CHECK(20, ln == 3 && la == 0 && lb == 1 && py_mx.set->t[0].song && py_mx.set->t[0].cur.n == 6
+                      && py_mx.set->t[0].cur.period == 3 * 176400u && py_mx.set->t[0].cur.row[3] == 1);
+                hook_frame((uint16_t *)FB4);                        /* the song view with the loop */
+                turn(3, -2);                                        /* X1: off */
+                py_main();
+                CHECK(20, !py_song_loop(&py_song, &la, &lb) && py_mx.set->t[0].cur.n == 2);
+                turn(0, -1);
+            }
             press(TE_KEY_CUT);                                      /* no cells: free again */
             turn(0, 1);
             press(TE_KEY_CUT);
@@ -1982,7 +2057,7 @@ int main(void)
         }
     }
 
-    /* 27: seven SYNTH tracks on five engine instances */
+    /* 27: seven SYNTH tracks on six engine instances */
     {
         uint8_t *p = nr_pat;                                        /* NOTE ROLL pattern 0: A4, one step */
         int t, r, pass, starts, inst_seen = 0, starved = 0;
@@ -2073,7 +2148,7 @@ int main(void)
                 starved |= py_pat_starved(t) << t;
             inst_seen = eng_insts;
             if (!pass)
-                CHECK(27, env_starts - starts == 5 && inst_seen == (31 << 1) && starved == (3 << 5));
+                CHECK(27, env_starts - starts == 6 && inst_seen == (63 << 1) && starved == (1 << 6));
             else
                 CHECK(27, env_starts - starts == 3 && inst_seen == (7 << 1) && starved == (15 << 3));
             dbg[4 + pass] = (int32_t)((env_starts - starts) | (uint32_t)inst_seen << 8 | (uint32_t)starved << 16);
@@ -2332,6 +2407,40 @@ int main(void)
         CHECK(29, file_stat(s2, st) < 0 && py_songs_left == 1 && py_songs_imported == imported + 2);
         dbg[5] = (int)py_export_songs | (int)(py_songs_imported - imported) << 8 | (int)py_songs_left << 16;
         press(TE_KEY_JOIN);
+    }
+
+    {   /* 29 (cont.): the image's demo songs (content/play_demo_nn.psl) into a free slot, once */
+        static const char dp[] = "/yaffs2/content/play_demo_13.psl",
+                          ds[] = "/yaffs2/user/play_s/SONG13.BIN", mk[] = "/yaffs2/user/play_s/DEMOS.OK";
+        uint32_t st[32], j, n = (uint32_t)(DEMO_END - DEMO);
+        int f, g, r1, r2, same = 0, free0 = 0;
+
+        file_unlink("/yaffs2/user/play_s/SONG01.BIN");             /* (room in the bench's file table) */
+        file_unlink("/yaffs2/user/play_r/REND01.AIF");
+        file_unlink("/yaffs2/user/play_r/REND02.AIF");
+        for (j = 0; j < NF; j++)
+            free0 += !fs[j].used;
+        f = add(dp, 0);
+
+        if (f >= 0) {
+            mcpy(fs[f].data, DEMO, n);
+            fs[f].size = n;
+        }
+        r1 = py_demos_install();
+        g = find(ds);
+        if (g >= 0 && fs[g].size == n)
+            for (j = 0, same = 1; j < n; j++)
+                same &= fs[g].data[j] == DEMO[j];
+        CHECK(29, f >= 0 && r1 == 1 && py_demos_found == 1 && py_demos_installed == 1 && same
+              && file_stat(mk, st) == 0);
+        file_unlink(ds);                                            /* deleted by the user ... */
+        r2 = py_demos_install();
+        CHECK(29, r2 == 0 && find(ds) < 0);                         /* ... stays deleted */
+        if (fails & (1 << 29)) {                                    /* (the other checks' values otherwise) */
+            dbg[4] = r1 | r2 << 8 | (int)py_demos_found << 16 | (f < 0) << 24 | (g < 0) << 25 | same << 26 | free0 << 27;
+            dbg[6] = (int)py_demos_why | DEMO[0] << 8 | DEMO[3] << 16;
+            dbg[5] = (int)n;
+        }
     }
 
     CHECK(11, odd_io == 0);                                         /* TE's NAND driver: even buffers */

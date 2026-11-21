@@ -23,7 +23,7 @@ from build import compile_project  # noqa: E402
 
 DRIVER_AT, STACK = 0x01F40000, 0x01F7FFFC
 IMGS = [0x02500000, 0x02800000, 0x02B00000, 0x03200000]   # images 1..4 (the driver copies one
-FB = [0x03000000, 0x03030000, 0x03060000, 0x030C0000, 0x03090000, 0x02E00000, 0x02E40000, 0x02E80000, 0x02EC0000, 0x02F00000, 0x02F40000, 0x02F80000]   # the 5th: also the driver's scratch frame                 # into tape_c.raw at 0x02200000)
+FB = [0x03000000, 0x03030000, 0x03060000, 0x030C0000, 0x03090000, 0x02E00000, 0x02E40000, 0x02E80000, 0x02EC0000, 0x02F00000, 0x02F40000, 0x02F80000, 0x02FC0000]   # the 5th: also the driver's scratch frame                 # into tape_c.raw at 0x02200000)
 STUBS = {                                                 # TE address: (driver function, entry bytes)
     0x01A997F4: ("file_open", 0), 0x01A99908: ("file_close", 0), 0x01A99CA8: ("file_pread", 0),
     0x01A99F84: ("file_write", 0), 0x01A9A69C: ("file_stat", 0), 0x01A9A886: ("file_mkdir", 0),
@@ -40,6 +40,7 @@ STUBS = {                                                 # TE address: (driver 
     0x01A00D14: ("set_knobs_stub", 0), 0x01A00C98: ("set_adsr_stub", 0), 0x019FF36C: ("set_octave_stub", 0),
     0x01A1B7D4: ("te_engine_new", 0),
 }
+DEMO_AT = 0x03D00000                                      # demos/SONG13.PSL (after the file arena, before the heap)
 SONG_CLUSTERS = 400                                       # image 4: play_s/SONG01.PSL, room for 200 KB
 
 
@@ -51,7 +52,8 @@ NEED = ["py_main", "py_mx", "py_blocks", "py_import_files", "py_import_errors", 
         "py_pat_audition_track", "py_help_on", "py_pat_cued", "py_rd_busy", "py_pat_slot",
         "py_pat_starved", "py_update_gains", "py_pat_set_start", "py_boosts", "py_inst_cyc", "py_list_pattern",
         "nr_swing", "dr_swing", "py_pat_slot_now", "py_nrfiles", "py_export_files", "py_export_skipped",
-        "py_export_songs", "py_songs_imported", "py_songs_left", "py_snd_why"]
+        "py_export_songs", "py_songs_imported", "py_songs_left", "py_snd_why", "py_demos_install",
+        "py_demos_found", "py_demos_installed", "py_demos_why", "py_song_loop", "py_layout", "py_req_start", "py_req_stop"]
 HOOKS = {"_hook_key": "__sdk_hook_019b6c74", "_hook_knob": "__sdk_hook_019b6c0c",
          "_hook_frame": "__sdk_hook_019ab8b2", "_hook_volume": "__sdk_hook_019de548",
          "_hook_cleanup": "__sdk_hook_01997584",
@@ -82,8 +84,10 @@ def segments(code, syms, driver_src, out, extra_need=()):
         defs[f"_IMG{i}_END"] = at + len(img)
     for k, v in info.items():                             # image 4: the driver writes the file in
         defs[f"_IMG4_{k}"] = v
+    demo = open(os.path.join(os.path.dirname(HERE), "demos", "SONG13.PSL"), "rb").read()
+    defs["_DEMO"], defs["_DEMO_END"] = DEMO_AT, DEMO_AT + len(demo)
     driver, d = c_bin([os.path.join(HERE, "crt.S"), driver_src], DRIVER_AT, os.path.join(out, "driver"), defs)
-    segs = [(0x01E00000, code), (DRIVER_AT, driver)] + [(at, img) for at, img in zip(IMGS, imgs)]
+    segs = [(0x01E00000, code), (DRIVER_AT, driver), (DEMO_AT, demo)] + [(at, img) for at, img in zip(IMGS, imgs)]
     segs += [(fb, bytes(320 * 512)) for fb in FB]
     for addr, (fn, pre) in STUBS.items():
         stub, _ = asm_bin(os.path.join(HERE, "stubs.S"), addr, os.path.join(out, f"stub_{addr:08x}"),
@@ -189,16 +193,18 @@ def main():
     r = run_model(elf_run, segs, d["_start"], timeout=600)
     mx = syms["_py_mx"]
     vals = run_gdb(elf_run, [f"/x *(unsigned*){d['_fails']:#x}"] + [f"*(int*){d['_dbg'] + 4 * i:#x}" for i in range(7)]
-                   + [f"*(unsigned*){syms['_py_blocks']:#x}"] + [f"*(int*){d['_tevdbg'] + 4 * i:#x}" for i in range(12)],
+                   + [f"*(unsigned*){syms['_py_blocks']:#x}"] + [f"*(int*){d['_tevdbg'] + 4 * i:#x}" for i in range(12)]
+                   + [f"*(int*){d['_dbg19'] + 4 * i:#x}" for i in range(10)],
                    [("play_screen", FB[0]), ("play_screen_gone", FB[1]), ("play_screen_tracks", FB[2]),
                     ("play_screen_song", FB[3]), ("play_screen_chain", FB[4]),
                     ("play_screen_help", FB[5]), ("play_screen_live", FB[6]),
                     ("play_screen_render", FB[7]), ("play_screen_songs", FB[8]),
                     ("play_screen_songs_ask", FB[9]),
-                    ("play_screen_files", FB[10]), ("play_screen_songs_sounds", FB[11])],
+                    ("play_screen_files", FB[10]), ("play_screen_songs_sounds", FB[11]),
+                    ("play_screen_lanes", FB[12])],
                    timeout=600)
     if (r.returncode or os.environ.get("PY_DBG")) and vals:
-        print(f"failed check bits: {vals[0]}  first mismatch block/frame/gotL/wantL/gotR/wantR/pos: {vals[1:8]}  blocks {vals[8:9]}  tev {vals[9:]}")
+        print(f"failed check bits: {vals[0]}  first mismatch block/frame/gotL/wantL/gotR/wantR/pos: {vals[1:8]}  blocks {vals[8:9]}  tev {vals[9:21]}  19b {vals[21:]}")
     print("PASS" if r.returncode == 0 else f"FAIL (exit {r.returncode}; R7 = failed check bits)")
     sys.exit(r.returncode)
 
