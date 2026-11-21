@@ -421,6 +421,7 @@ CUT X2: DELETE  SHIFT+JOIN: SONGS  JOIN: BACK
 | Control | Files page |
 |---|---|
 | blue / white turn | the file |
+| play | listen to it: the file alone from its start, PLAY paused (the row shows the time in green); play again or stop: stop (v0.17) |
 | cut, cut again | delete it (the footer asks first, `PLAYED!` if a track uses it). Playback stops; a track that played it shows `GONE` |
 | shift + join | back to the songs page |
 | join / orange press | the song view |

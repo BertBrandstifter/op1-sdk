@@ -462,7 +462,7 @@
     "PLAY: while playing, CPU in the header = PLAY's share of the audio time, the number on a SYNTH / DRUM row = that track's share",
     "PLAY: shift + join (song view or track list) = the songs page: 16 slots, each the song with all 14 NOTE ROLL and 14 DRUM ROLL patterns, both swings and the synth sounds it plays (SONGnn.BIN in /yaffs2/user/play_s); blue / white turn the slot, rec twice = save, play twice = load (stops; the song replaced; patterns and sounds that differ from the ones now are listed first: green turn / press = from the slot or kept, white press = all, play = load, join = do not; the ones the song plays default to the slot's; a sound that cannot come back shows why and stays), cut twice = delete, join / orange press = back",
     "PLAY: disk mode = every slot in the disk's play_s/ folder as SONGnn.PSL (the file to share); .PSL files put there go into free slots when disk mode is left (SONGnn.PSL into slot nn if free, else the first free one; a slot is never overwritten)",
-    "PLAY: songs page shift + join = the files page: the render folder (RENDnn.AIF with length, ST / MO, MB, the AUDIO tracks playing it); blue / white turn the file, cut twice = delete (playback stops), shift + join = the songs page, join / orange press = the song view"
+    "PLAY: songs page shift + join = the files page: the render folder (RENDnn.AIF with length, ST / MO, MB, the AUDIO tracks playing it); blue / white turn the file, play = listen to it (again: stop), cut twice = delete (playback stops), shift + join = the songs page, join / orange press = the song view"
   ],
   "tests": [
     "test_py_core.c",

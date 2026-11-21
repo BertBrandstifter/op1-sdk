@@ -83,6 +83,7 @@ static void leave_chain(void);
 /* join (the list, the chain view, another screen): the song view, as it was (live mode stays) */
 void py_v_enter(void)
 {
+    py_req_preview(-1);                         /* (the files page left) */
     if (py_view == PY_V_CHAIN)
         leave_chain();                          /* (ends an audition) */
     del_armed = 0;
@@ -97,6 +98,7 @@ void py_v_enter(void)
 /* the tape key: the track list */
 void py_v_list(void)
 {
+    py_req_preview(-1);                         /* (the files page left) */
     if (py_view == PY_V_CHAIN)
         leave_chain();
     del_armed = 0;
@@ -928,15 +930,22 @@ static void files_key(int key, int shift)
     rf_armed = 0;
     switch (key) {
     case TE_KEY_JOIN:
+        py_req_preview(-1);
         if (shift)
             py_v_slots();                       /* shift + join: the songs page again */
         else
             py_view = PY_V_SONG;
         return;
     case TE_KEY_ORANGE_PUSH:
+        py_req_preview(-1);
         py_view = PY_V_SONG;
         return;
+    case TE_KEY_PLAY:                           /* listen to the file (again: stop) */
+        if (rf_cur < py_nrfiles)
+            py_req_preview(py_preview_file() == rf_cur ? -1 : rf_cur);
+        return;
     case TE_KEY_STOP:
+        py_req_preview(-1);
         py_req_stop();
         return;
     case TE_KEY_CUT:
@@ -1499,7 +1508,11 @@ static void files_frame(void)
         if (top + r == cur)
             gfx_rect(0, y - 2, gfx_w, 10, C_SEL);
         gfx_text7(4, y, f->name, top + r == cur ? C_WHITE : C_GREY);
-        if (f->ch) {
+        if (f->ch && py_preview_file() == top + r) {     /* playing: the time so far, green */
+            gfx_text7(92, y, ">", C_GREEN);
+            draw_len(100, y, py_preview_pos(), f->rate, C_GREEN);
+            gfx_text7(136, y, f->ch == 2 ? "ST" : "MO", C_DIM);
+        } else if (f->ch) {
             draw_len(100, y, f->frames, f->rate, C_WHITE);
             gfx_text7(136, y, f->ch == 2 ? "ST" : "MO", C_DIM);
         } else {
@@ -1532,7 +1545,7 @@ static void files_frame(void)
         gfx_text7(x, PY_FOOT_Y1, " MB", C_GREY);
         gfx_text7(232, PY_FOOT_Y1, "SPEECH: HELP", C_DIM);
     }
-    gfx_text7(4, PY_FOOT_Y2, rf_armed ? "DELETING STOPS PLAYBACK" : "CUT X2: DELETE  SHIFT+JOIN: SONGS  JOIN: BACK",
+    gfx_text7(4, PY_FOOT_Y2, rf_armed ? "DELETING STOPS PLAYBACK" : "PLAY: LISTEN  CUT X2: DELETE  JOIN: BACK",
               rf_armed ? C_AMBER : C_GREY);
 }
 
@@ -1581,7 +1594,7 @@ static const help_line help_page[HELP_PAGES][HELP_LINES] = {
         { "CUT / INSERT", "CUT / PASTE THE CELL" },
         { "SHIFT+INSERT", "NEW ROW - SHIFT+CUT X2: DELETE ROW" },
         { "PLAY / SHIFT", "FROM THE ROW / CUE IT (CHAIN'S END)" },
-        { "SHIFT+< / >", "LOOP START / END - ORANGE: TIMES" },
+        { "SHIFT+BACK/FWD", "LOOP FIRST/LAST ROW, ORANGE: X2-X16" },
         { "REC, REC", "RENDER THE SONG TO AN AIF FILE" },
         { "SHIFT+REC", "LIVE MODE ON / OFF" },
         { "KEYS 1-8", "SOUND / KIT 1-8 OF THE CURSOR TRACK" },
@@ -1633,6 +1646,7 @@ static const help_line help_page[HELP_PAGES][HELP_LINES] = {
         { 0, "THE RENDERED FILES (REC IN THE SONG VIEW)" },
         { "SHIFT+JOIN", "THIS PAGE (FROM THE SONGS PAGE)" },
         { "BLUE / WHITE", "THE FILE" },
+        { "PLAY", "LISTEN TO IT (AGAIN / STOP: STOP)" },
         { "CUT, CUT", "DELETE IT (PLAYBACK STOPS)" },
         { "JOIN, ORANGE PR", "BACK TO THE SONG VIEW" },
         { 0, "PLAYED BY: THE AUDIO TRACKS USING IT; THEY" },

@@ -53,7 +53,7 @@ NEED = ["py_main", "py_mx", "py_blocks", "py_import_files", "py_import_errors", 
         "py_pat_starved", "py_update_gains", "py_pat_set_start", "py_boosts", "py_inst_cyc", "py_list_pattern",
         "nr_swing", "dr_swing", "py_pat_slot_now", "py_nrfiles", "py_export_files", "py_export_skipped",
         "py_export_songs", "py_songs_imported", "py_songs_left", "py_snd_why", "py_demos_install",
-        "py_demos_found", "py_demos_installed", "py_demos_why", "py_song_loop", "py_layout", "py_req_start", "py_req_stop", "py_fx_on", "py_fx_extra"]
+        "py_demos_found", "py_demos_installed", "py_demos_why", "py_song_loop", "py_layout", "py_req_start", "py_req_stop", "py_fx_on", "py_fx_extra", "py_preview_file"]
 HOOKS = {"_hook_key": "__sdk_hook_019b6c74", "_hook_knob": "__sdk_hook_019b6c0c",
          "_hook_frame": "__sdk_hook_019ab8b2", "_hook_volume": "__sdk_hook_019de548",
          "_hook_cleanup": "__sdk_hook_01997584",

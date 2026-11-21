@@ -121,3 +121,5 @@ The chain, songs, files and help pages keep their layout but get the new header.
 - Live mode trigger effects on the black keys (FILL .. SOLO BASS; shift: all tracks), footer
   `FX ... > T3 / ALL` while held (README "Trigger effects").
 - SONG header: number + SYN / DRM / AUD per column, a 3 px gap under it.
+- Files page: play = listen to the render (a preview stream into TE's bus, PLAY paused); help line
+  for the loop: `SHIFT+BACK/FWD  LOOP FIRST/LAST ROW, ORANGE: X2-X16`.

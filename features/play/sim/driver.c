@@ -2330,7 +2330,28 @@ int main(void)
         mains(2);
         before = py_nrfiles;
         CHECK(30, py_view == 4 && before >= 1 && file_stat("/yaffs2/user/play_r/REND01.AIF", st) == 0);
-        hook_frame((uint16_t *)FB11);                               /* the files page */
+        {                                                           /* v0.17: play = listen to the file */
+            extern int py_preview_file(void);
+            int32_t loud = 0;
+
+            press(TE_KEY_PLAY);
+            mains(2);
+            CHECK(30, py_preview_file() == 0 && !py_mx.playing);
+            for (b = 0; b < 400; b++) {
+                clear_master();
+                hook_volume();
+                if (E34[0] > loud || -E34[0] > loud)
+                    loud = E34[0] < 0 ? -E34[0] : E34[0];
+                if (!(b % 4))
+                    py_main();
+            }
+            dbg19[9] = loud;
+            CHECK(30, loud > 0);
+            hook_frame((uint16_t *)FB11);                           /* the files page, the file playing */
+            press(TE_KEY_PLAY);                                     /* again: stop */
+            mains(2);
+            CHECK(30, py_preview_file() < 0);
+        }
         press(TE_KEY_CUT);                                          /* asks */
         mains(2);
         CHECK(30, file_stat("/yaffs2/user/play_r/REND01.AIF", st) == 0);

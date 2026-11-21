@@ -148,6 +148,98 @@ static int yaffs_read(void *ctx, uint32_t off, void *buf, uint32_t n)
     return PY_PREAD(*(int *)ctx, buf, n, (int32_t)off);
 }
 
+/* ------------------------------------------------------------------ the files page's preview (v0.17)
+ * play on the files page: a rendered file alone, from its start, into TE's bus as PLAY's own mix
+ * goes (the master, the same scale), while PLAY is stopped. Main loop: open, parse, read ahead into
+ * a ring from TE's sample heap; audio interrupt: plays what was read. */
+#define PV_FRAMES   16384                       /* the ring: stereo int16, 64 KB */
+#define PV_CHUNK    2048                        /* frames per read */
+static int16_t *pv_buf;
+static uint8_t pv_io[PV_CHUNK * 4] __attribute__((aligned(4)));   /* (yaffs: even addresses) */
+static int pv_fd = -1;
+static aud_info pv_a;
+static volatile uint8_t pv_on;                  /* the interrupt plays the ring */
+static volatile int8_t pv_req = -1;             /* GUI -> main: the file to start, -2 stop, -1 none */
+static volatile int8_t pv_file = -1;            /* the file playing (py_rfiles) */
+static volatile uint32_t pv_wr, pv_rd;          /* frames read into the ring / played */
+
+void py_req_preview(int n) { pv_req = (int8_t)(n < 0 ? -2 : n); }
+int py_preview_file(void) { return pv_on ? pv_file : -1; }
+uint32_t py_preview_pos(void) { return pv_rd; }
+
+static void pv_stop(void)
+{
+    pv_on = 0;
+    pv_file = -1;
+    if (pv_fd >= 0) {
+        TE_FILE_CLOSE(pv_fd);
+        pv_fd = -1;
+    }
+}
+
+static void pv_fill(void)
+{
+    while (pv_on && pv_wr < pv_a.frames && pv_wr - pv_rd < PV_FRAMES - PV_CHUNK) {
+        uint32_t n = pv_a.frames - pv_wr, bytes, i;
+        int ch = pv_a.channels;
+
+        n = n > PV_CHUNK ? PV_CHUNK : n;
+        bytes = n * (uint32_t)ch * 2u;
+        if (PY_PREAD(pv_fd, pv_io, bytes, (int32_t)(pv_a.data_off + pv_wr * (uint32_t)ch * 2u)) != (int)bytes) {
+            pv_stop();
+            return;
+        }
+        for (i = 0; i < n; i++) {
+            const uint8_t *b = pv_io + i * (uint32_t)ch * 2u;
+            int16_t l = (int16_t)(pv_a.big_endian ? b[0] << 8 | b[1] : b[1] << 8 | b[0]), r = l;
+            uint32_t at = ((pv_wr + i) & (PV_FRAMES - 1)) * 2u;
+
+            if (ch == 2)
+                r = (int16_t)(pv_a.big_endian ? b[2] << 8 | b[3] : b[3] << 8 | b[2]);
+            pv_buf[at] = l;
+            pv_buf[at + 1] = r;
+        }
+        pv_wr += n;                             /* (after the samples: the interrupt reads below it) */
+    }
+}
+
+static void pv_main(void)
+{
+    if (pv_req != -1) {
+        int n = pv_req;
+
+        pv_req = -1;
+        pv_stop();
+        if (n >= 0 && n < py_nrfiles) {
+            char path[64];
+            int fd;
+
+            py_mx.playing = 0;                  /* PLAY pauses */
+            if (!pv_buf)
+                pv_buf = TE_HEAP_MALLOC(TE_HEAP_SAMPLES, PV_FRAMES * 4u);
+            TE_SNPRINTF(path, sizeof(path), "%s/%s", PY_DIR_R, py_rfiles[n].name);
+            fd = pv_buf ? TE_FILE_OPEN(path, TE_FILE_RDONLY, TE_FILE_MODE) : -1;
+            if (fd >= 0 && aud_parse(yaffs_read, &fd, py_rfiles[n].size, &pv_a) == AUD_OK) {
+                pv_fd = fd;
+                pv_wr = pv_rd = 0;
+                pv_file = (int8_t)n;
+                pv_on = 1;
+            } else {
+                if (fd >= 0)
+                    TE_FILE_CLOSE(fd);
+                py_note("CANNOT PLAY THIS FILE");
+            }
+        }
+    }
+    if (pv_on && py_mx.playing)
+        pv_stop();                              /* PLAY plays again: the preview ends */
+    if (pv_on) {
+        pv_fill();
+        if (pv_rd >= pv_a.frames)
+            pv_stop();                          /* the end */
+    }
+}
+
 static int track_read(void *ctx, int k, uint32_t off, void *buf, uint32_t n)
 {
     (void)ctx;
@@ -493,6 +585,15 @@ void py_bus_hook(void)
         return;
     }
     if (!py_mx.playing) {
+        if (pv_on) {                            /* the files page's preview */
+            for (i = 0; i < PY_BLOCK && pv_rd < pv_wr; i++, pv_rd++) {
+                const int16_t *s = &pv_buf[(pv_rd & (PV_FRAMES - 1)) * 2u];
+                int32_t g = py_mx.master;
+
+                TE_BUS_L[i] = sat16(TE_BUS_L[i] + ((((s[0] * g) >> 15) * BUS_SCALE) >> 15));
+                TE_BUS_R[i] = sat16(TE_BUS_R[i] + ((((s[1] * g) >> 15) * BUS_SCALE) >> 15));
+            }
+        }
         py_pat_idle();                          /* the editors' playheads: not PLAY's */
         if (py_cpu_all) {
             for (i = 0; i < PS_TRACKS; i++)
@@ -584,6 +685,7 @@ static void scan_renders(void)
 /* main: render n deleted (playback stops; an AUDIO track playing it shows GONE) */
 static int delete_render(int n)
 {
+    pv_stop();                                  /* (a preview of it ends) */
     char path[64];
     int r;
 
@@ -767,6 +869,7 @@ void py_main(void)
         seek_to((uint32_t)(b < 0 ? 0 : b) * bf, py_mx.playing);
     }
     audio_cues();
+    pv_main();
     py_fill(&py_mx, track_read, 0, PY_BUDGET, scratch);
 }
 

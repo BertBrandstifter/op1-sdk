@@ -51,6 +51,9 @@ void py_update_gains(void);
 void py_seek_to(uint32_t g, int play);          /* main: stop, heads and rings at frame g, play or not */
 uint32_t py_clock_bar(void);                    /* frames per bar */
 void py_req_rescan(void);                       /* read the folders' files again (the song stays) */
+void py_req_preview(int n);                     /* the files page: play render n alone (-1: stop) */
+int py_preview_file(void);                      /* the render playing, -1 none */
+uint32_t py_preview_pos(void);                  /* its frames played */
 enum { PY_SL_NONE, PY_SL_SCAN, PY_SL_SAVE, PY_SL_LOAD, PY_SL_DELETE,
        PY_SL_DIFF /* before a load: which patterns would change (then the page asks, or loads) */,
        PY_SL_FSCAN /* the files page: the render folder read */, PY_SL_FDELETE /* render n deleted */ };
