@@ -12,26 +12,13 @@ as notes and sound settings instead of audio: tweak it any time, share it as a s
 
 ## See it
 
-**PLAY**, the new tape screen: the track list in two layouts (tape switches), the tracker, live
-mode with trigger effects, song slots and render. Drawn by the real feature code (host preview /
-simulator bench).
+**PLAY**, the new tape screen: the track list and the tracker. Drawn by the real feature code
+(host preview).
 
 <table>
 <tr>
 <td><img src="images/play/lanes.png" alt="PLAY track list as lanes: four tracks side by side with engine, level, live meter, sound and pattern"><br><sub><b>Track list, LANES</b> (tape): one lane per track, live meters, M / S, voices, ECO</sub></td>
-<td><img src="images/play/rows.png" alt="PLAY track list as rows: one row per track with a wide live meter"><br><sub><b>Track list, ROWS</b> (tape again): the same tracks as rows, wide meters</sub></td>
-</tr>
-<tr>
 <td><img src="images/play/tracker.png" alt="PLAY tracker: one column per track, chains per row, a loop section"><br><sub><b>Tracker</b> (join): one column per track, each with its own playhead, a loop section</sub></td>
-<td><img src="images/play/live_fx.png" alt="PLAY tracker in live mode with trigger effects held"><br><sub><b>Live mode</b> (shift + rec): cue rows, hold black keys for trigger effects</sub></td>
-</tr>
-<tr>
-<td><img src="images/play/songs.png" alt="PLAY songs page with 16 slots"><br><sub><b>Song slots</b> (shift + join): save / load / delete a whole song with its patterns and sounds</sub></td>
-<td><img src="images/play/load_ask.png" alt="PLAY load question: per pattern and sound, keep now or take from the slot"><br><sub><b>Loading asks</b>: per pattern and per sound, keep yours or take the slot's</sub></td>
-</tr>
-<tr>
-<td><img src="images/play/render.png" alt="PLAY rendering the song into an AIFF file"><br><sub><b>Render</b> (rec): the song into an AIFF, when you want audio</sub></td>
-<td></td>
 </tr>
 </table>
 

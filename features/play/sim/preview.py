@@ -4,7 +4,7 @@ and writes build/demo/play_new_<name>.png (2x, like the sim bench's screens) and
 
     python3 features/play/sim/preview.py
 
-play_new_readme_*.png are the README's pictures (images/play/lanes, rows, tracker, live_fx.png:
+play_new_readme_lanes / _tracker.png are the README's pictures (images/play/lanes.png, tracker.png:
 copy them there after a look change)."""
 
 import os, struct, subprocess, sys
