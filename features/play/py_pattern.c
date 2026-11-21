@@ -31,6 +31,7 @@
 #include "../noteroll/nr_core.h"
 #include "../noteroll/nr_fs.h"
 #include "../noteroll/nr_store.h"
+#include "../noteroll/nr_punch.h"
 #include "../enginehost/eh_host.h"
 #include "py_core.h"
 #include "py_song.h"
@@ -98,6 +99,7 @@ static ps_head heads[PS_TRACKS];
 /* the list's / keys' sound wins over the playing chain row's until the track's next row */
 static volatile uint8_t snd_over[PS_TRACKS];
 static int slot_of(int t, int synth);
+static void fx_later_clear(void);               /* (the live trigger effects' notes to come) */
 static volatile uint8_t start_row;              /* the song row every column starts from / loops back to */
 static volatile int8_t aud_track = -1;          /* the chain view's audition: this track plays ... */
 static volatile uint8_t aud_chain;              /* ... this chain alone */
@@ -666,6 +668,8 @@ void py_pat_start(uint32_t g)
 {
     int t, i;
 
+    fx_later_clear();
+
     for (t = 0; t < PS_TRACKS; t++) {
         heads[t].active = 0;
         cue_req[t] = PS_EMPTY;
@@ -798,15 +802,74 @@ typedef struct emit_ctx {
     const void *p;
     uint32_t base;                              /* pattern clock at the block's first sample */
     int t, slot, tsp;
+    uint32_t pos, gbase;                        /* the block's first frame; global frame of pattern clock 0 */
+    uint16_t fx;                                /* live trigger effects held for the track (PY_FX_*) */
 } emit_ctx;
 
-static void drum_emit(void *ctx, const dr_hit *h)
+/* ------------------------------------------------------------------ live trigger effects (v0.17)
+ *
+ * The song view's live mode: the 10 black keys held = FILL, RANDOM, ECHO, RETRIG, RETRIG FAST,
+ * OCT UP, OCT DOWN, COIN, SOLO LEAD, SOLO BASS on the cursor's track (shift: on every track);
+ * py_view.c sets py_fx_on, the audio interrupt plays them here. SYNTH notes go through NOTE ROLL's
+ * own note effects (nr_px_notes: RANDOM, ECHO, OCT, COIN, SOLOs), DRUM hits through the same ideas
+ * here (OCT / RANDOM pitch, COIN, ECHO, SOLO BASS = lane 1, SOLO LEAD = the other lanes); RETRIG
+ * loops the last 1/16 with a note from the press on (FAST: half of it), FILL adds a note / hit of the
+ * pattern on some 1/16s. ECHO and COIN notes after the block wait in `later`. */
+volatile uint16_t py_fx_on[PS_TRACKS];          /* bit PY_FX_*: held for track t (KeyHandler writes) */
+volatile uint8_t py_fx_fast[PS_TRACKS];         /* the repeat that plays is RETRIG FAST (the last pressed) */
+volatile uint32_t py_fx_extra;                  /* notes / hits the effects added (bench) */
+static uint32_t fx_rng = 0x13579bdfu;
+static uint8_t rep_on[PS_TRACKS];
+static uint32_t rep_t0[PS_TRACKS], rep_start[PS_TRACKS];
+
+typedef struct fx_later {
+    uint32_t due, hold;
+    int32_t gain;                               /* DRUM: its gain; SYNTH: velocity 1..127 */
+    int16_t semis;                              /* DRUM: semitones; SYNTH: the key */
+    uint8_t t, lkey, full, used;
+} fx_later;
+#define FX_LATER    48
+static fx_later later[FX_LATER];
+
+static void fx_later_clear(void)
 {
-    const emit_ctx *c = ctx;
-    const dr_lane *l = &((const dr_pattern *)c->p)->lane[h->lane];
-    void **holder = TE_DRUM_HOLDERS[c->slot];
+    int i;
+
+    for (i = 0; i < FX_LATER; i++)
+        later[i].used = 0;
+}
+
+static uint32_t fx_rnd(void)
+{
+    fx_rng = fx_rng * 1664525u + 1013904223u;
+    return fx_rng >> 8;
+}
+
+static void later_add(int t, uint32_t due, int semis, int32_t gain, uint32_t hold, int lkey, int full)
+{
+    int i;
+
+    for (i = 0; i < FX_LATER && later[i].used; i++)
+        ;
+    if (i == FX_LATER)
+        return;                                 /* full: that echo is left out */
+    later[i].due = due;
+    later[i].hold = hold;
+    later[i].gain = gain;
+    later[i].semis = (int16_t)semis;
+    later[i].t = (uint8_t)t;
+    later[i].lkey = (uint8_t)lkey;
+    later[i].full = (uint8_t)full;
+    later[i].used = 1;
+}
+
+#define FX_B(f)     (1u << (f))
+
+/* one hit of drum key lkey (0..23) of kit slot on track t, `off` frames into the block */
+static void drum_play(int t, int slot, int lkey, int semis, int32_t gain, uint32_t hold, int full, uint32_t off)
+{
+    void **holder = TE_DRUM_HOLDERS[slot];
     const int16_t *pcm, *key;
-    int32_t gain;
 
     if (!holder || !*holder)
         return;
@@ -814,10 +877,35 @@ static void drum_emit(void *ctx, const dr_hit *h)
     if (!pcm)
         return;
     pcm += 8;                                   /* 8 samples of padding */
-    key = (const int16_t *)(TE_DRUM_KEYS + (uint32_t)c->slot * 0x180u + (uint32_t)l->key * 16u);
-    gain = h->s->p[DR_VEL] * l->level * 32768 / 10000;
-    py_drum_hit(&drums[c->t], pcm, key, h->s->p[DR_TONE] + 12 * TE_DRUM_OCTAVE[c->slot] + c->tsp,
-                gain > 32767 ? 32767 : gain, h->hold, h->full, h->at - c->base);
+    key = (const int16_t *)(TE_DRUM_KEYS + (uint32_t)slot * 0x180u + (uint32_t)lkey * 16u);
+    py_drum_hit(&drums[t], pcm, key, semis, gain > 32767 ? 32767 : gain, hold, full, off);
+}
+
+static void drum_emit(void *ctx, const dr_hit *h)
+{
+    const emit_ctx *c = ctx;
+    const dr_lane *l = &((const dr_pattern *)c->p)->lane[h->lane];
+    int32_t gain = h->s->p[DR_VEL] * l->level * 32768 / 10000;
+    int semis = h->s->p[DR_TONE] + 12 * TE_DRUM_OCTAVE[c->slot] + c->tsp;
+    uint32_t off = h->at - c->base, step = clock_bar / 16;
+
+    if (c->fx) {                                /* live trigger effects */
+        if ((c->fx & FX_B(PY_FX_SBASS) && h->lane) || (c->fx & FX_B(PY_FX_SLEAD) && !h->lane))
+            return;
+        if (c->fx & FX_B(PY_FX_OCTUP))
+            semis += 12;
+        if (c->fx & FX_B(PY_FX_OCTDN))
+            semis -= 12;
+        if (c->fx & FX_B(PY_FX_RANDOM))
+            semis += (int)(fx_rnd() % 25u) - 12;
+        if (c->fx & FX_B(PY_FX_COIN))           /* an octave-up grace hit a quarter step later */
+            later_add(c->t, c->pos + off + step / 4, semis + 12, gain * 3 / 4, h->hold, l->key, h->full);
+        if (c->fx & FX_B(PY_FX_ECHO)) {         /* again 3 and 6 steps later, softer */
+            later_add(c->t, c->pos + off + 3 * step, semis, gain * 6 / 10, h->hold, l->key, h->full);
+            later_add(c->t, c->pos + off + 6 * step, semis, gain * 3 / 10, h->hold, l->key, h->full);
+        }
+    }
+    drum_play(c->t, c->slot, l->key, semis, gain, h->hold, h->full, off);
     py_drum_hits++;
 }
 
@@ -893,7 +981,128 @@ static void synth_emit(void *ctx, const nr_hit *h)
     py_syn_notes++;
     if (!py_mx.gain[c->t] || !inst_take(c->t))
         return;                                 /* muted (renders nothing), or no instance free */
+    if (c->fx & (FX_B(PY_FX_RANDOM) | FX_B(PY_FX_ECHO) | FX_B(PY_FX_OCTUP) | FX_B(PY_FX_OCTDN)
+                 | FX_B(PY_FX_COIN) | FX_B(PY_FX_SLEAD) | FX_B(PY_FX_SBASS))) {
+        static const uint8_t to_nr[PY_FX_N] = { 0xff, NR_PX_RAND, NR_PX_ECHO, 0xff, 0xff, NR_PX_OCTUP,
+                                                NR_PX_OCTDN, NR_PX_COIN, NR_PX_SLEAD, NR_PX_SBASS };
+        const nr_step *st = &((const nr_pattern *)c->p)->s[h->step];
+        uint32_t held = 0, span = clock_bar / 16 / (st->ratch < 1 ? 1 : st->ratch), at = c->gbase + h->at;
+        nr_px_pulse o[16];
+        int i, n;
+
+        for (i = 0; i < PY_FX_N; i++)
+            if ((c->fx >> i & 1) && to_nr[i] != 0xff)
+                held |= 1u << to_nr[i];
+        n = nr_px_notes(held, key, h->n->vel, h->voice, nr_voices(st), span, h->hold, fx_rnd(), 256, o, 16);
+        for (i = 0; i < n; i++) {
+            int v7 = (o[i].vel * 127 + 50) / 100;
+
+            if (o[i].delay < PY_BLOCK)
+                py_syn_note(&syns[c->t], o[i].key, v7 < 1 ? 1 : v7, o[i].hold);
+            else
+                later_add(c->t, at + o[i].delay, o[i].key, v7 < 1 ? 1 : v7, o[i].hold, 0, 0);
+        }
+        py_fx_extra += n > 1 ? (uint32_t)(n - 1) : 0u;
+        return;
+    }
     py_syn_note(&syns[c->t], key, (h->n->vel * 127 + 50) / 100, h->hold);
+}
+
+/* a window of pattern time [src, src + n) of track t, `off` frames into the block */
+static void sched(const ps_head *h, emit_ctx *c, int synth, uint32_t src, uint32_t n, uint32_t off)
+{
+    c->base = src - off;
+    c->gbase = c->pos + off - src;
+    if (!n || h->pat >= 14)
+        return;
+    if (synth && npub[h->pat]) {
+        c->p = npub[h->pat];
+        nr_schedule(c->p, src, n, nstep, nr_swing, h->start, synth_emit, c);
+    } else if (!synth && dpub[h->pat]) {
+        const dr_pattern *p = dpub[h->pat];
+        uint64_t step[DR_LANES];
+        int l;
+
+        for (l = 0; l < DR_LANES; l++)
+            step[l] = p->lane[l].rate < DR_RATES ? dsteps[p->lane[l].rate] : 0;
+        c->p = p;
+        dr_schedule(p, src, n, step, dr_swing, h->start, drum_emit, c);
+    }
+}
+
+/* RETRIG: the last 1/16 with a note / hit, from 1/16 k0 back (up to a bar) */
+static int probe_n;
+
+static void probe_nr(void *ctx, const nr_hit *h) { (void)ctx; (void)h; probe_n++; }
+static void probe_dr(void *ctx, const dr_hit *h) { (void)ctx; (void)h; probe_n++; }
+
+static uint32_t last_hit(const ps_head *h, int synth, uint32_t k0, uint32_t step)
+{
+    uint32_t i;
+
+    if (h->pat >= 14)
+        return k0;
+    for (i = 0; i < 16 && i <= k0; i++) {
+        probe_n = 0;
+        if (synth && npub[h->pat]) {
+            nr_schedule(npub[h->pat], (k0 - i) * step, step, nstep, 0, h->start, probe_nr, 0);
+        } else if (!synth && dpub[h->pat]) {
+            const dr_pattern *p = dpub[h->pat];
+            uint64_t st[DR_LANES];
+            int l;
+
+            for (l = 0; l < DR_LANES; l++)
+                st[l] = p->lane[l].rate < DR_RATES ? dsteps[p->lane[l].rate] : 0;
+            dr_schedule(p, (k0 - i) * step, step, st, 0, h->start, probe_dr, 0);
+        }
+        if (probe_n)
+            return k0 - i;
+    }
+    return k0;
+}
+
+/* FILL: on some 1/16s of [a, a + n) (pattern time) a note / hit of the pattern, softer */
+static void fill(const ps_head *h, emit_ctx *c, int synth, uint32_t a, uint32_t n, uint32_t off)
+{
+    uint32_t step = clock_bar / 16, k;
+
+    if (!step || h->pat >= 14)
+        return;
+    for (k = (a + step - 1) / step; k * step < a + n; k++) {
+        uint32_t o = off + (k * step - a);
+
+        if (fx_rnd() % 100u >= 40u)
+            continue;
+        if (synth && npub[h->pat]) {
+            const nr_pattern *p = npub[h->pat];
+            int st = (int)(fx_rnd() % (uint32_t)(p->len ? p->len : 1)), tries, key;
+
+            for (tries = 0; tries < p->len && p->s[st].n[0].key == NR_NONE; tries++)
+                st = st + 1 >= p->len ? 0 : st + 1;
+            if (p->s[st].n[0].key == NR_NONE)
+                return;
+            key = p->s[st].n[0].key + 12 * TE_SYNTH_OCTAVE[c->slot] + c->tsp;
+            if (key >= 0 && key <= 127 && py_mx.gain[c->t] && inst_take(c->t)) {
+                py_syn_note(&syns[c->t], key, 50 + (int)(fx_rnd() % 60u), step / 2);
+                py_fx_extra++;
+            }
+        } else if (!synth && dpub[h->pat]) {
+            const dr_pattern *p = dpub[h->pat];
+            int l = (int)(fx_rnd() % DR_LANES), tries, i;
+
+            for (tries = 0; tries < DR_LANES; tries++, l = (l + 1) % DR_LANES) {
+                for (i = 0; i < p->lane[l].len && i < DR_STEPS && !p->lane[l].s[i].on; i++)
+                    ;
+                if (!p->lane[l].mute && i < p->lane[l].len && i < DR_STEPS)
+                    break;
+            }
+            if (tries == DR_LANES)
+                return;
+            drum_play(c->t, c->slot, p->lane[l].key, 12 * TE_DRUM_OCTAVE[c->slot] + c->tsp,
+                      (int32_t)(40 + fx_rnd() % 50u) * p->lane[l].level * 32768 / 10000, step / 2, 1, o);
+            py_fx_extra++;
+        }
+    }
 }
 
 /* the engine of the track being rendered: an SDK engine's instance (drwave sounds) or TE's own
@@ -983,6 +1192,29 @@ static int track_block(int t, uint32_t pos)
         if (nb < end)
             py_song_start(&py_song, t, h->start_row, nb, bar, pat_len, 0, h);
     }
+    c.pos = pos;
+    c.fx = py_fx_on[t];
+    {                                           /* ECHO / COIN notes due in this block */
+        int i;
+
+        for (i = 0; i < FX_LATER; i++) {
+            fx_later *e = &later[i];
+
+            if (!e->used || e->t != t || (int32_t)(e->due - end) >= 0)
+                continue;
+            e->used = 0;
+            py_fx_extra++;
+            if (synth) {
+                if (gain && inst_take(t))
+                    py_syn_note(&syns[t], e->semis, (int)e->gain, e->hold);
+            } else {
+                drum_play(t, c.slot, e->lkey, e->semis, e->gain, e->hold, e->full,
+                          (int32_t)(e->due - pos) > 0 ? e->due - pos : 0);
+            }
+        }
+    }
+    if (!(c.fx & (FX_B(PY_FX_RETRIG) | FX_B(PY_FX_RETRIGF))))
+        rep_on[t] = 0;
     if (h->active && (int32_t)(h->start - g) > 0)
         g = h->start;                           /* the head starts inside this block */
     while (h->active && g < end && guard++ < 8) {
@@ -995,23 +1227,25 @@ static int track_block(int t, uint32_t pos)
             continue;
         }
         n = (hend < end ? hend : end) - g;
-        c.base = pos - h->start;                /* pattern clock of the block's first sample */
         c.tsp = h->tsp;
-        if (h->pat < 14) {
-            if (synth && npub[h->pat]) {
-                c.p = npub[h->pat];
-                nr_schedule(c.p, g - h->start, n, nstep, nr_swing, h->start, synth_emit, &c);
-            } else if (!synth && dpub[h->pat]) {
-                const dr_pattern *p = dpub[h->pat];
-                uint64_t step[DR_LANES];
-                int l;
+        if ((c.fx & (FX_B(PY_FX_RETRIG) | FX_B(PY_FX_RETRIGF))) && bar >= 32) {
+            uint32_t step = bar / 16, a = g - h->start, len = py_fx_fast[t] ? step / 2 : step;
+            nr_px_seg sg[3];
+            int k, i;
 
-                for (l = 0; l < DR_LANES; l++)
-                    step[l] = p->lane[l].rate < DR_RATES ? dsteps[p->lane[l].rate] : 0;
-                c.p = p;
-                dr_schedule(p, g - h->start, n, step, dr_swing, h->start, drum_emit, &c);
+            if (!rep_on[t] || rep_start[t] != h->start) {   /* captured at the press (a new pattern: again) */
+                rep_t0[t] = last_hit(h, synth, (a + step / 2) / step, step) * step;
+                rep_start[t] = h->start;
+                rep_on[t] = 1;
             }
+            k = nr_px_repeat(a, n, rep_t0[t], len, sg);
+            for (i = 0; i < k; i++)
+                sched(h, &c, synth, sg[i].src, sg[i].n, (g - pos) + sg[i].out);
+        } else {
+            sched(h, &c, synth, g - h->start, n, g - pos);
         }
+        if (c.fx & FX_B(PY_FX_FILL))
+            fill(h, &c, synth, g - h->start, n, g - pos);
         g += n;
     }
     if (synth) {

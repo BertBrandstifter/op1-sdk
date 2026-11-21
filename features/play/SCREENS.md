@@ -117,4 +117,7 @@ The chain, songs, files and help pages keep their layout but get the new header.
 - ECO lanes / rows: a slight green background (selected: a bit brighter).
 - ECO tint removed again. LANES: M / S rings 11 px, V2 and ECO in 5x7; a 5th track shows as a lane cut off at the edge (the summary column went). ROWS: V2 over ECO in 5x7.
 - ECO: black text on a green box (both play pages).
-- SONG cells: thin numerals 9 px (rows 12 px, 8 on screen). CPU guard for the 4th-6th instance: ~75 % of a block (435k).
+- SONG cells: tried as thin numerals 9 px, too blurry on the panel: back to 5x7 (rows 9 px, 10 on screen). CPU guard for the 4th-6th instance: ~75 % of a block (435k).
+- Live mode trigger effects on the black keys (FILL .. SOLO BASS; shift: all tracks), footer
+  `FX ... > T3 / ALL` while held (README "Trigger effects").
+- SONG header: number + SYN / DRM / AUD per column, a 3 px gap under it.

@@ -347,6 +347,19 @@ cue what plays next.
 | stop | pause; again: bar 1, song row 00, all cues gone |
 | shift + rec | back to editing |
 | rec, rec again | render from the cursor row (the song as written: cues are not part of it) |
+| black keys (held) | trigger effects on the cursor column's track; shift at the press: on every track (v0.17, below) |
+
+**Trigger effects** (v0.17): in live mode the 10 black keys, held, change what the pattern tracks
+play, low to high: **FILL** (now and then an extra note / hit of the pattern on a 1/16), **RANDOM**
+(SYNTH: some notes an octave up / down or a fifth up; DRUM: every hit -12..+12 semitones), **ECHO**
+(again 3 and 6 steps later, softer), **RETRIG** (the last 1/16 with a note, from the press on, over
+and over), **RETRIG FAST** (half of it; the last of the two pressed plays), **OCT UP**, **OCT
+DOWN**, **COIN** (an octave-up grace note a quarter step after each), **SOLO LEAD** (SYNTH: the
+highest note of each step; DRUM: every lane but lane 1), **SOLO BASS** (SYNTH: the lowest note;
+DRUM: lane 1 only). Plain: the cursor column's track; shift held at the press: every SYNTH / DRUM
+track. They stack (RETRIG plays with the others); released, the track plays on as written (the
+pattern's clock never stops). The footer shows what is held (`FX ECHO OCT UP > ALL`). The SYNTH
+note effects are NOTE ROLL's own (`nr_px_notes`); a render does not hear them (cues neither).
 
 A cued column finishes the chain it is playing, then jumps to the cued row (the cell blinks in a
 frame until then) and loops back *there* from then on. An AUDIO column changes at the end of the

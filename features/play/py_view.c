@@ -183,6 +183,122 @@ static int live_key(int key, int shift, const int *list, int n, int t)
     }
 }
 
+/* ------------------------------------------------------------------ live: trigger effects (v0.17)
+ * The black keys while held (low to high): FILL, RANDOM, ECHO, RETRIG, RETRIG FAST, OCT UP,
+ * OCT DOWN, COIN, SOLO LEAD, SOLO BASS on the cursor column's track; shift held at the press: on
+ * every track. py_pattern.c plays them. */
+static const uint8_t fx_keys[PY_FX_N] = { 13, 14, 15, 32, 22, 23, 24, 25, 26, 27 };
+static const char *const fx_name[PY_FX_N] = { "FILL", "RANDOM", "ECHO", "RETRIG", "RETRIG FAST", "OCT UP",
+                                              "OCT DOWN", "COIN", "SOLO LEAD", "SOLO BASS" };
+static uint8_t fx_mask[PY_FX_N];                /* the tracks key i acts on, 0 = not held */
+static uint8_t fx_all;                          /* bit i: key i was pressed with shift */
+static uint16_t fx_taken;                       /* keys whose release is ours */
+static uint32_t fx_seq[PY_FX_N], fx_count;      /* press order: RETRIG / RETRIG FAST, the last wins */
+
+static void fx_apply(void)
+{
+    int t, i;
+
+    for (t = 0; t < PS_TRACKS; t++) {
+        uint16_t m = 0;
+
+        for (i = 0; i < PY_FX_N; i++)
+            if (fx_mask[i] >> t & 1)
+                m = (uint16_t)(m | 1u << i);
+        py_fx_fast[t] = (uint8_t)((m >> PY_FX_RETRIGF & 1)
+                                  && (!(m >> PY_FX_RETRIG & 1) || fx_seq[PY_FX_RETRIGF] > fx_seq[PY_FX_RETRIG]));
+        py_fx_on[t] = m;
+    }
+}
+
+static void fx_clear(void)                      /* live mode left: the held keys stop (their releases stay ours) */
+{
+    int i;
+
+    for (i = 0; i < PY_FX_N; i++)
+        fx_mask[i] = 0;
+    fx_all = 0;
+    fx_apply();
+}
+
+/* a black key (any screen, before everything else): in live mode an effect while held; 1 = taken */
+int py_v_fx_key(int key, int down, int shown)
+{
+    int i, t, n, list[PS_TRACKS];
+
+    for (i = 0; i < PY_FX_N && fx_keys[i] != key; i++)
+        ;
+    if (i == PY_FX_N)
+        return 0;
+    if (!down) {
+        if (!(fx_taken >> i & 1))
+            return 0;
+        fx_taken = (uint16_t)(fx_taken & ~(1u << i));
+        fx_mask[i] = 0;
+        fx_all = (uint8_t)(fx_all & ~(1u << i));
+        fx_apply();
+        return 1;
+    }
+    if (!shown || py_view != PY_V_SONG || !live || help)
+        return 0;
+    fx_taken = (uint16_t)(fx_taken | 1u << i);
+    fx_seq[i] = ++fx_count;
+    t = cursor_track(list, &n);
+    if (*TE_SHIFT_HELD) {                       /* every pattern track */
+        int k;
+
+        fx_mask[i] = 0;
+        for (k = 0; k < n; k++)
+            if (py_song_is_pattern(&py_song, list[k]))
+                fx_mask[i] = (uint8_t)(fx_mask[i] | 1u << list[k]);
+        fx_all = (uint8_t)(fx_all | 1u << i);
+    } else {
+        fx_mask[i] = (uint8_t)(t >= 0 && py_song_is_pattern(&py_song, t) ? 1u << t : 0);
+    }
+    fx_apply();
+    return 1;
+}
+
+/* the footer while effects are held: FX ECHO RETRIG > T3 / > ALL */
+static const char *fx_note(const int *list, int n)
+{
+    static char msg[64];
+    int i, j = 0, k, any = 0, all = 0, one = -1;
+    const char *p;
+
+    for (i = 0; i < PY_FX_N; i++)
+        if (fx_mask[i]) {
+            if (!any)
+                for (p = "FX"; *p; p++)
+                    msg[j++] = *p;
+            any = 1;
+            if (j + 13 < (int)sizeof(msg)) {
+                msg[j++] = ' ';
+                for (p = fx_name[i]; *p; p++)
+                    msg[j++] = *p;
+            }
+            all |= fx_all >> i & 1;
+            for (k = 0; k < n; k++)
+                if (fx_mask[i] >> list[k] & 1)
+                    one = k;
+        }
+    if (!any)
+        return 0;
+    msg[j++] = ' ';
+    msg[j++] = '>';
+    msg[j++] = ' ';
+    if (all) {
+        msg[j++] = 'A';
+        msg[j++] = 'L';
+        msg[j++] = 'L';
+    } else if (one >= 0) {
+        msg[j++] = 'T';
+        msg[j++] = (char)('1' + one);
+    }
+    msg[j] = 0;
+    return msg;
+}
+
 /* a note with the loop section as it is now */
 static void loop_note(void)
 {
@@ -226,6 +342,7 @@ static void song_key(int key, int shift)
     if (key == TE_KEY_REC) {                    /* render the song from this row; shift: live mode */
         if (shift) {
             live ^= 1;
+            fx_clear();
         } else {
             rd_bars = (uint16_t)py_song_bars(s_row);
             rd_ask = 1;
@@ -1051,6 +1168,9 @@ static void song_frame(void)
     } else if (t < 0) {
         m.note = "NO TRACKS: ADD THEM ON THE LIST - TAPE";
         m.note_col = D_MUTED;
+    } else if (live && fx_note(list, n)) {
+        m.note = fx_note(list, n);
+        m.note_col = D_GREEN;
     }
     py_hdr_fill(&h, live ? "LIVE" : "SONG", -1, live ? C_RED : C_WHITE);
     slot = py_pat_slot_now(&changed);
@@ -1489,7 +1609,7 @@ static const help_line help_page[HELP_PAGES][HELP_LINES] = {
         { 0, "AND LOOPS FROM THERE - AN EMPTY CELL STOPS IT" },
         { "T1-T4", "MUTE TRACK 1-4 - SHIFT: SOLO" },
         { "BLUE, GREEN PR", "MUTE / SOLO THE CURSOR TRACK" },
-        { "BLUE / GREEN", "ROW / COLUMN" },
+        { "BLACK KEYS", "FX ON THE TRACK, SHIFT: ALL TRACKS" },
         { "STOP", "PAUSE, AGAIN: BAR 1, ROW 00" },
         { "SHIFT+REC", "BACK TO EDITING" },
         { "REC, REC", "RENDER FROM THE CURSOR ROW (NO CUES)" },

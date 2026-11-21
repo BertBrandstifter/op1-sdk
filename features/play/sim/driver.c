@@ -106,6 +106,8 @@ extern volatile uint32_t py_demos_found, py_demos_installed, py_demos_why;
 extern uint8_t DEMO[], DEMO_END[];                /* demos/SONG13.PSL (run_playtest.py) */
 extern char FB8[], FB9[], FB10[], FB11[], FB12[], FB13[];
 extern volatile uint8_t py_layout;              /* the list: 0 LANES, 1 ROWS (v0.17) */
+extern volatile uint16_t py_fx_on[8];           /* live trigger effects per track (v0.17) */
+extern volatile uint32_t py_fx_extra;
 extern void py_req_start(int row, int aud_track, int chain), py_req_stop(void);
 extern int py_pat_slot(int t);
 extern int py_pat_starved(int t);
@@ -1751,8 +1753,30 @@ int main(void)
             CHECK(23, py_song.trk[0].mute);
             press(TE_KEY_T1);
             CHECK(23, !py_song.trk[0].mute);
+            {                                                       /* v0.17: trigger effects on the black keys */
+                uint32_t extra = py_fx_extra, kt = keys_to_te;
+
+                hook_key(15, 1);                                    /* ECHO on the cursor's track (3, DRUM) */
+                dbg19[8] = py_fx_on[2];
+                dbg19[9] = py_fx_on[3];
+                CHECK(23, py_fx_on[2] == 1u << 2 && !py_fx_on[3] && keys_to_te == kt);
+                *TE_SHIFT_HELD = 1;
+                hook_key(23, 1);                                    /* shift: OCT UP on every track */
+                *TE_SHIFT_HELD = 0;
+                CHECK(23, py_fx_on[2] == ((1u << 2) | (1u << 5)) && py_fx_on[3] == 1u << 5);
+                for (b = 0; b < 2400; b++) {                        /* a bar's hits, their echoes 3 / 6 steps later */
+                    hook_volume();
+                    if (!(b % 4))
+                        py_main();
+                }
+                dbg19[10] = (int32_t)(py_fx_extra - extra);
+                CHECK(23, py_fx_extra > extra);
+                hook_frame((uint16_t *)FB7);                        /* (the footer: FX ECHO OCT UP) */
+                hook_key(15, 0);
+                hook_key(23, 0);
+                CHECK(23, !py_fx_on[2] && !py_fx_on[3] && keys_to_te == kt);
+            }
             hook_volume();
-            hook_frame((uint16_t *)FB7);
             press(TE_KEY_STOP);
             py_main();
             press(TE_KEY_STOP);

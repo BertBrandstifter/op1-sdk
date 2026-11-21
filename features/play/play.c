@@ -1201,6 +1201,8 @@ int py_key(int key, int down)
 
     if (key == TE_KEY_REC)
         rec_held = (uint8_t)down;
+    if (py_v_fx_key(key, down, on_screen() && !editor_up()))
+        return 1;                               /* live mode: the black keys are trigger effects */
     if (!down) {
         if (took(key)) {
             taken[key >> 5] &= ~(1u << (key & 31));

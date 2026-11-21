@@ -84,6 +84,7 @@ void py_v_key(int key);                         /* a key press in the song / cha
 void py_v_knob(int knob, int d);
 void py_v_frame(void);
 int py_help_on(void);                           /* the help page is shown */
+int py_v_fx_key(int key, int down, int shown);  /* live: a black key = a trigger effect; 1 = taken */
 int py_help_key(int key);                       /* speech: help on / off; any other key closes it; 1 = taken */
 void py_help_knob(int knob, int d);             /* blue turn: the page */
 void py_help_frame(void);

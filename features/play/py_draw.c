@@ -890,10 +890,9 @@ void py_d_list(const py_lm *m)
 #define S_X0        24                          /* the first column */
 #define S_COLS      8                           /* all of them: up to 4 wide, 5..8 narrow */
 #define S_RPT       312                         /* the RPT column's right edge */
-#define S_Y0        32
-#define S_RH        12
-#define S_ROWS      8
-#define S_NUM       9                           /* the cells' thin numerals (px) */
+#define S_Y0        35                          /* (a gap under the header row) */
+#define S_RH        9
+#define S_ROWS      10
 
 static int s_cw = 68;                           /* column width (py_d_song) */
 static int s_solo;                              /* a column is soloed (py_d_song) */
@@ -915,7 +914,7 @@ static void song_cell(const py_sm *m, int i, int ci, int sr, int x, int y)
         col = py_d_scale(col, 90);
     if (here) {
         gfx_rect(x + 2, y + 1, s_cw - 7, S_RH - 2, py_d_scale(col, 64));
-        tri(x + 4, y + 3, 3, 0, col);
+        tri(x + 4, y + 2, 3, 0, col);
     }
     ink = col;
     if (v == PS_EMPTY) {
@@ -923,12 +922,12 @@ static void song_cell(const py_sm *m, int i, int ci, int sr, int x, int y)
         gfx_rect(tx + 4, y + 5, 1, 1, D_EMPTY);
         gfx_rect(tx + 8, y + 5, 1, 1, D_EMPTY);
     } else if (c->type == PS_AUDIO) {
-        py_d_num(tx, y, S_NUM, v == PS_ON ? "ON" : "OF", v == PS_ON ? ink : D_MUTED);
+        gfx_text7(tx, y + 1, v == PS_ON ? "ON" : "OF", v == PS_ON ? ink : D_MUTED);
     } else if (v == PS_REST) {
-        py_d_num(tx, y, S_NUM, "OF", D_MUTED);
+        gfx_text7(tx, y + 1, "OF", D_MUTED);
     } else {
         py_d_hex2(s, v);
-        py_d_num(tx, y, S_NUM, s, v < PS_CHAINS && py_song_chain_empty(m->s, v) ? D_DISABLED : ink);
+        gfx_text7(tx, y + 1, s, v < PS_CHAINS && py_song_chain_empty(m->s, v) ? D_DISABLED : ink);
     }
     if (m->playing && c->cue == sr && (m->blink & 8))     /* cued: it jumps here */
         py_d_frame(x + 1, y, s_cw - 5, S_RH, py_d_track_col(ci));
@@ -954,7 +953,7 @@ static int song_window(const py_sm *m)
 
 void py_d_song(const py_sm *m)
 {
-    int top, left, i, r;
+    int top, left, i, r, w;
 
     s_cw = m->n ? (S_RPT - 16 - S_X0) / m->n : 68;     /* the columns share the width */
     s_cw = s_cw > 136 ? 136 : s_cw;
@@ -971,12 +970,13 @@ void py_d_song(const py_sm *m)
 
         if (col_quiet(c))
             col = py_d_scale(col, 90);
-        py_d_fmt(s, i + 1);                     /* the track's number alone (red: BUSY) */
-        gfx_text7(x + 9, 21, s, c->starved ? D_RED : col);
+        py_d_fmt(s, i + 1);                     /* the track's number and type (red: BUSY) */
+        w = gfx_text7(x + 9, 21, s, c->starved ? D_RED : col);
+        w = gfx_text7(w + 3, 21, type_tag(c->type), c->starved ? D_RED : col);
         if (i == m->col)                        /* the cursor's column */
-            gfx_rect(x + 9, 29, 5, 1, col);
-        if (c->solo)
-            py_d_text3(x + 17, 23, "S", col, 0);
+            gfx_rect(x + 9, 29, w - x - 10, 1, col);
+        if (c->solo && s_cw > 40)
+            py_d_text3(w + 3, 23, "S", col, 0);
     }
     py_d_text3(6, 23, "ROW", D_MUTED, 0);
     py_d_text3(S_RPT - py_d_w3("RPT", 1), 23, "RPT", D_MUTED, 1);
@@ -993,17 +993,17 @@ void py_d_song(const py_sm *m)
             break;
         if (sr == m->row) {
             gfx_rect(2, y - 1, S_RPT - 2, S_RH, D_PLAYROW);
-            tri(5, y + 2, 3, 0, D_TEXT);
+            tri(5, y + 1, 3, 0, D_TEXT);
         }
         py_d_hex2(s, sr);
-        gfx_text7(10, y + 1, s, sr == m->row ? D_TEXT : D_DISABLED);
+        gfx_text7(10, y, s, sr == m->row ? D_TEXT : D_DISABLED);
         if (m->loop_n >= 2 && sr >= m->loop_a && sr <= m->loop_b) {      /* the loop: a red bracket */
             gfx_rect(2, y - 1, 1, S_RH, D_RED);
             if (sr == m->loop_a) {
                 gfx_rect(2, y - 1, 3, 1, D_RED);
                 s[0] = 'X';
                 py_d_fmt(s + 1, m->loop_n);
-                gfx_text7(S_RPT - py_d_w7(s, 0), y + 1, s, D_ORANGE);
+                gfx_text7(S_RPT - py_d_w7(s, 0), y, s, D_ORANGE);
             }
             if (sr == m->loop_b)
                 gfx_rect(2, y + S_RH - 2, 3, 1, D_RED);

@@ -63,6 +63,12 @@ void py_pat_slot_sizes(uint32_t size[2]);       /* the pattern sizes a slot file
 int py_pat_slot_delete(int n);
 int py_pat_slot_now(int *changed);
 
+/* live trigger effects (v0.17): the song view's live mode, black keys low to high */
+enum { PY_FX_FILL, PY_FX_RANDOM, PY_FX_ECHO, PY_FX_RETRIG, PY_FX_RETRIGF, PY_FX_OCTUP, PY_FX_OCTDN,
+       PY_FX_COIN, PY_FX_SLEAD, PY_FX_SBASS, PY_FX_N };
+extern volatile uint16_t py_fx_on[8];           /* bit PY_FX_*: held for track t */
+extern volatile uint8_t py_fx_fast[8];          /* RETRIG FAST pressed after RETRIG */
+
 #define PY_PAT_PENDING  0x100                   /* py_list_pattern: chosen, starts when the playing one ends */
 int py_list_pattern(int t);                     /* the list row's pattern (0..13, -1 none) | PY_PAT_PENDING */                      /* a note of SYNTH track t found no engine instance (~1 s) */
 int py_pat_any(void);                           /* the song plays any P track */
