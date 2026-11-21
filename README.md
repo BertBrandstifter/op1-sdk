@@ -10,6 +10,36 @@ features below have been flashed and played on a real OP-1.
 **New: [PLAY](#new-play--songs-you-can-still-change)** — a tape screen that keeps your whole song
 as notes and sound settings instead of audio: tweak it any time, share it as a small editable file.
 
+## See it
+
+**PLAY**, the new tape screen: the track list in two layouts (tape switches), the tracker, live
+mode with trigger effects, song slots and render. Drawn by the real feature code (host preview /
+simulator bench).
+
+<table>
+<tr>
+<td><img src="images/play/lanes.png" alt="PLAY track list as lanes: four tracks side by side with engine, level, live meter, sound and pattern"><br><sub><b>Track list, LANES</b> (tape): one lane per track, live meters, M / S, voices, ECO</sub></td>
+<td><img src="images/play/rows.png" alt="PLAY track list as rows: one row per track with a wide live meter"><br><sub><b>Track list, ROWS</b> (tape again): the same tracks as rows, wide meters</sub></td>
+</tr>
+<tr>
+<td><img src="images/play/tracker.png" alt="PLAY tracker: one column per track, chains per row, a loop section"><br><sub><b>Tracker</b> (join): one column per track, each with its own playhead, a loop section</sub></td>
+<td><img src="images/play/live_fx.png" alt="PLAY tracker in live mode with trigger effects held"><br><sub><b>Live mode</b> (shift + rec): cue rows, hold black keys for trigger effects</sub></td>
+</tr>
+<tr>
+<td><img src="images/play/songs.png" alt="PLAY songs page with 16 slots"><br><sub><b>Song slots</b> (shift + join): save / load / delete a whole song with its patterns and sounds</sub></td>
+<td><img src="images/play/load_ask.png" alt="PLAY load question: per pattern and sound, keep now or take from the slot"><br><sub><b>Loading asks</b>: per pattern and per sound, keep yours or take the slot's</sub></td>
+</tr>
+<tr>
+<td><img src="images/play/render.png" alt="PLAY rendering the song into an AIFF file"><br><sub><b>Render</b> (rec): the song into an AIFF, when you want audio</sub></td>
+<td></td>
+</tr>
+</table>
+
+**Synth engine displays**: STATION 1, MONO 3, CHORD+, PARTY, HANDPAN and KALIMBA, drawn by the real
+feature code in the simulator benches (`python3 tools/test_all.py` writes them to `build/demo/`):
+
+<img src="images/overview.jpg" alt="Synth engine display overview" width="100%">
+
 ## First: check out what's already built
 
 One image ("op1plus"), composed from the feature library — build it, flash it, have fun.
@@ -83,24 +113,7 @@ So nothing is ever final:
 - **Audio only when you want it** — **rec** renders the song into an AIFF in one go, for the
   computer or as one cheap AUDIO track.
 
-<table>
-<tr>
-<td><img src="images/play/lanes.png" alt="PLAY track list as lanes: four tracks side by side with engine, level, live meter, sound and pattern"><br><sub><b>Track list, LANES</b> (tape): one lane per track, live meters, M / S, voices, ECO</sub></td>
-<td><img src="images/play/rows.png" alt="PLAY track list as rows: one row per track with a wide live meter"><br><sub><b>Track list, ROWS</b> (tape again): the same tracks as rows, wide meters</sub></td>
-</tr>
-<tr>
-<td><img src="images/play/tracker.png" alt="PLAY tracker: one column per track, chains per row, a loop section"><br><sub><b>Tracker</b> (join): one column per track, each with its own playhead, a loop section</sub></td>
-<td><img src="images/play/live_fx.png" alt="PLAY tracker in live mode with trigger effects held"><br><sub><b>Live mode</b> (shift + rec): cue rows, hold black keys for trigger effects</sub></td>
-</tr>
-<tr>
-<td><img src="images/play/songs.png" alt="PLAY songs page with 16 slots"><br><sub><b>Song slots</b> (shift + join): save / load / delete a whole song with its patterns and sounds</sub></td>
-<td><img src="images/play/load_ask.png" alt="PLAY load question: per pattern and sound, keep now or take from the slot"><br><sub><b>Loading asks</b>: per pattern and per sound, keep yours or take the slot's</sub></td>
-</tr>
-<tr>
-<td><img src="images/play/render.png" alt="PLAY rendering the song into an AIFF file"><br><sub><b>Render</b> (rec): the song into an AIFF, when you want audio</sub></td>
-<td></td>
-</tr>
-</table>
+Screens: [See it](#see-it) at the top.
 
 **How it plays:** the tape key opens a list of up to **8 tracks**, all sample-locked from bar 1,
 with level, mute, solo and master. Play and stop drive PLAY from every screen (album excepted), and the tempo is TE's tempo page, followed live:
@@ -141,14 +154,6 @@ Variants of op1plus; for the debug ones, flash op1plus again when done:
 
 Controls and internals per feature: `features/<name>/README.md`. Full catalog:
 [`docs/features.md`](docs/features.md), or `python3 tools/features.py list`.
-
-## Image samples
-
-The synth engine displays at a glance — STATION 1, MONO 3, CHORD+, PARTY, HANDPAN and KALIMBA.
-Screens drawn by the real feature code in the simulator benches (`python3 tools/test_all.py`
-writes them to `build/demo/`):
-
-<img src="images/overview.jpg" alt="Synth engine display overview" width="100%">
 
 ## Get it on your OP-1
 
