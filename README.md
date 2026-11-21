@@ -1,5 +1,6 @@
 # op1-sdk
 
+
 **Build anything on your OP-1.** New synth engines, effects, step sequencers, chord keyboards,
 quantizers, screen overlays — whatever you can imagine, in C or assembly. Test it in a simulator,
 then flash it to your Teenage Engineering OP-1 (firmware R246) in minutes.
@@ -9,6 +10,11 @@ features below have been flashed and played on a real OP-1.
 
 **New: [PLAY](#new-play--songs-you-can-still-change)** — a tape screen that keeps your whole song
 as notes and sound settings instead of audio: tweak it any time, share it as a small editable file.
+
+
+**Download latest Image: [OP1PLAY](https://github.com/BertBrandstifter/op1-sdk/releases/download/v0.3.0/op1play_21_11_2026.op1)**
+
+
 
 ## See it
 
