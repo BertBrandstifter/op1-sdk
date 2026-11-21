@@ -838,9 +838,10 @@ static void inst_free(int t)
                                                  * (sim: ACID 3 45k, MONO 3 23..37k per voice); v0.16:
                                                  * 41k (was 50k) so 6 x EST fits PY_INST_CYC and a 6th
                                                  * instance can start before anything is measured */
-#define PY_INST_CYC     348000u                 /* CYCLES per block: ~60 % of one (v0.17, the owner's
-                                                 * choice; was 250k = 43 %); TE's own 25-30 % on top:
-                                                 * heavy songs may glitch (sim: 3 ACID 3 ECO off: 201k) */
+#define PY_INST_CYC     435000u                 /* CYCLES per block: ~75 % of one (v0.17, the owner's
+                                                 * choice; was 250k = 43 %, then 60 %); TE's own 25-30 %
+                                                 * on top: heavy songs may glitch (sim: 3 ACID 3 ECO
+                                                 * off: 201k) */
 volatile uint32_t py_inst_cyc = PY_INST_CYC;    /* (the sim lowers it) */
 
 static int inst_room(void)

@@ -444,7 +444,7 @@ notes).
 Limits: up to 8 SYNTH tracks, at most 6 of them sounding at once (v0.16; v0.9: 5, v0.8: 3): the 6 engine
 instances are a pool. The 4th to 6th are taken only while PLAY's CPU allows it: its peak block
 (the last of each block parity, at least 41k cycles per sounding instance before anything is
-measured) plus one more instance's share must stay under 348k cycles (~60 % of a block since v0.17, before 250k; TE's own
+measured) plus one more instance's share must stay under 435k cycles (~75 % of a block since v0.17, before 250k; TE's own
 25-30 % on top). Heavy engines without ECO then stop at 3 (`BUSY`), light ones and ECO tracks
 reach 6. A track takes one for its first note and gives it back once its voices
 are silent, so SYNTH tracks that take turns in the song (rest cells, later columns, live cues)
