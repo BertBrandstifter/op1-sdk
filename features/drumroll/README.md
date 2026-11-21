@@ -5,7 +5,7 @@ Status: **v2.2** (2026-10-22): TE's finger screen animates the fingers for DRUM 
 the screen (`0x019ee9e8`) draws the fingers from the player's per-artist sounding bytes
 (`0x01ddc5a8 + 0x6ac + artist x 0x80 + (note - 5) % 24`), which TE's player sets at its note-on and
 clears at its note-off; DRUM ROLL's own notes (which TE no longer plays) now set and clear them the
-same way, per artist holding the pattern. **v2.1** (2026-10-17): punch-ins act on both held patterns (TE's taken over while held), repeats loop the last step with a hit. **v2.0** (2026-10-17): punch-in banks A / B / C (green press on the finger screen), 18 new arcade / time effects, shift + black always TE's step record. **v1.9** (2026-10-17): undo / redo (shift + BACK / FORWARD), also of TE's own finger screen edits. **v1.8** (2026-10-17): 12 punch-in effects, reordered (FILL FAST, GLITCH FAST, LP FAST, HP
+same way, per artist holding the pattern. **v2.5** (2026-11-21): punch-ins in one bank, the 10 of PLAY's live mode in its order (FILL, RANDOM, ECHO, RETRIG, RETRIG FAST, OCT UP, OCT DOWN, COIN, SOLO LEAD = no kick, SOLO BASS = the kick); green press TE's again. **v2.1** (2026-10-17): punch-ins act on both held patterns (TE's taken over while held), repeats loop the last step with a hit. **v2.0** (2026-10-17): punch-in banks A / B / C (green press on the finger screen), 18 new arcade / time effects, shift + black always TE's step record. **v1.9** (2026-10-17): undo / redo (shift + BACK / FORWARD), also of TE's own finger screen edits. **v1.8** (2026-10-17): 12 punch-in effects, reordered (FILL FAST, GLITCH FAST, LP FAST, HP
 FILTER left out). **v1.7** (2026-10-17): STEP REC (shift + white press: play the keyboard into the cursor step,
 the arrows move). **v1.6** (2026-10-17): the punch-in effects are the PO-20 arcade's 16 (10 on the black keys,
 6 on shift + black), shown in a window while held. **v1.5** (2026-10-17): zoom 3.5 bars (user: "this way 1/32 patterns fit"; op1.db index 4), the
@@ -136,35 +136,33 @@ length exactly; without such a lane: its longest lane). Page 4 LANE's LENGTH sti
   hand-played keys and TE's own finger notes get the sample's filter and level.
 - Recording: the finger sequencer runs while the tape records; DRUM ROLL's notes go to tape like TE's.
 
-## Punch-in effects (v2.0: three banks)
+## Punch-in effects (v2.5: one bank, PLAY's live-mode order)
 
-v2.0 (user, 2026-10-17: "to avoid accidental edits don't use shift + black keys for more punch-in
-effects any more; cycle through banks A / B / C with the green knob press in the finger sequencer
-… and add some more cool, funky arcade inspired effects"). On TE's drum finger screen the **10
-black keys** (ids 13 14 15 32 22 23 24 25 26 27, F# G# A# C# D# F# G# A# C# D# low to high) are
-punch-in effects while held (a plain black press does nothing in TE there; shift + black is TE's
-step record again, always). **Green press** on the finger screen with DRUM ROLL closed picks the
-bank, A -> B -> C (a box shows FX BANK x; the finger screen note shows FX x); with the editor open
-green press stays "next page", the bank picked plays on.
+On TE's drum finger screen the **10 black keys** (ids 13 14 15 32 22 23 24 25 26 27, F# G# A# C#
+D# F# G# A# C# D# low to high) are punch-in effects while held (a plain black press does nothing
+in TE there; shift + black is TE's step record, always). v2.5 (user, 2026-11-21: "change the effect
+order identically to the tracker live mode and remove the other punch in effects … we do not need
+multiple banks anymore"): one bank, the same 10 as PLAY's live mode, in its order; green press on
+the finger screen is TE's again (until v2.4 it picked bank A / B / C).
 
-| key | A (the PO-20) | B (arcade) | C (time + mix) |
-|---|---|---|---|
-| F# | FILL | 8-BIT: 5 bits, 11 kHz (every drum sound) | HALF TIME |
-| G# | RETRIG: the step over and over | LASER: a 1/64 roll, 2 semitones down each ("pew") | DOUBLE TIME |
-| A# | RETRIG FAST: half a step | FALL: a 1/32 roll, a semitone down each | TRIPLET: 1/16T retrigger |
-| C# | GLITCH: 1/16 pieces from random places of the bar | COIN: an octave-up grace hit a quarter step after each hit | LOOP BEAT: the beat over and over |
-| D# | RISE: a 1/32 roll, a semitone up each | RND PITCH: every hit -12..+12 semitones | BUILD: a roll 1/8 -> 1/16 -> 1/32 -> 1/64, beat by beat |
-| F# | LP SWEEP (every drum sound) | OCT UP: every hit an octave up | SOLO 1-4 |
-| G# | HP SWEEP (every drum sound) | OCT DOWN | SOLO 5-8 |
-| A# | BLINDS: 1/16 gate (every drum sound) | ECHO: two softer repeats 3 and 6 steps later | NO KICK: all but lane 1 |
-| C# | SOLO 1 | REVERSE: the bar's steps backwards | FADE: down to nothing over a bar |
-| D# | SOLO 1+2 | SHUFFLE: heavy swing (66) | CUT: silence |
+| key | effect |
+|---|---|
+| F# | FILL: extra hits now and then |
+| G# | RANDOM: every hit -12..+12 semitones |
+| A# | ECHO: two softer repeats 3 and 6 steps later |
+| C# | RETRIG: the step over and over |
+| D# | RETRIG FAST: half a step |
+| F# | OCT UP: every hit an octave up |
+| G# | OCT DOWN |
+| A# | COIN: an octave-up grace hit a quarter step after each hit |
+| C# | SOLO LEAD: every lane but lane 1 (no kick) |
+| D# | SOLO BASS: lane 1 only (the kick) |
 
-- Time effects (RETRIG, RETRIG FAST, GLITCH, RISE, LASER, FALL, TRIPLET, LOOP BEAT, BUILD, HALF /
-  DOUBLE TIME, REVERSE): the last one pressed plays, its place captured at the nearest 1/16 of the
+- RETRIG / RETRIG FAST: the last one pressed plays, its place captured at the nearest 1/16 of the
   first; the others stack. The pattern's clock never stops: released, it goes on.
-- They act on DRUM ROLL's patterns (TE plays its own); the sound effects (LP / HP SWEEP, BLINDS,
-  8-BIT) on every drum voice (`dr_punch.c`, after TE's render and DRUM ROLL's own post-process).
+- They act on DRUM ROLL's patterns (TE plays its own). The earlier banks' other effects (GLITCH,
+  RISE, the sweeps, BLINDS, 8-BIT, LASER, REVERSE, the time effects, ...) are still in `dr_punch.c`
+  and its host test, but on no key.
 - v2.1 (user: "the finger sequencer can play two patterns at the same time, the punch-in effects
   apply only to one … retrigger needs perfect timing; hit on an empty note, use the last note"):
   **both held patterns**: a held TE pattern (not yet DRUM ROLL's) is **taken over** while an effect
@@ -172,8 +170,8 @@ green press stays "next page", the bank picked plays on.
   meanwhile and DRUM ROLL plays it on its own clock; released, TE plays it again (it stays TE's,
   nothing saved). The repeat effects (RETRIG, RETRIG FAST, RISE, FALL, LASER, TRIPLET, BUILD) loop
   the **last step with a hit** from the nearest 1/16 back (up to a bar), not an empty one.
-- Window while held (as CHORD+'s panel): bank + key, the last pressed effect's pictogram and name,
-  the other held ones, "GREEN = NEXT BANK".
+- Window while held (as CHORD+'s panel): the key, the last pressed effect's pictogram and name,
+  the other held ones.
 
 ## Step record (v1.7)
 

@@ -185,6 +185,61 @@ static void draw_song(py_sm *m)
     py_d_song(m);
 }
 
+/* the README's pictures: a tidy four-track song, playing */
+static void readme(const char *dir)
+{
+    static py_lm m;
+    static py_sm sm;
+    static uint8_t top, left;
+    py_hm h;
+
+    memset(&m, 0, sizeof(m));
+    m.n = 4;
+    m.cursor = 1;
+    m.add_room = 1;
+    m.add_type = PS_SYNTH;
+    m.add_ok = 1;
+    m.cut = -1;
+    track(&m.t[0], 0, PS_SYNTH, "ACID 3", 1, 1, 0, 1, 1, -6, 0, 0, -1);
+    track(&m.t[1], 1, PS_SYNTH, "STATION 1", 2, 2, 1, 4, 0, -3, 0, 0, -1);
+    track(&m.t[2], 2, PS_SYNTH, "MONO 3", 3, 3, 0, 2, 1, -9, 0, 0, -1);
+    track(&m.t[3], 3, PS_DRUM, "DRUM", 8, 1, 1, 0, 0, -4, 0, 0, -1);
+    m.t[0].cpu = 140;
+    m.t[1].cpu = 210;
+    m.t[2].cpu = 90;
+    m.t[3].cpu = 40;
+    py_d_meter_set(0, -9 * 16, -6 * 16);
+    py_d_meter_set(1, -5 * 16, -3 * 16);
+    py_d_meter_set(2, -14 * 16, -11 * 16);
+    py_d_meter_set(3, -3 * 16, -1 * 16);
+    m.layout = 0;
+    draw_list(&m, 1);
+    save(dir, "readme_lanes");
+    m.layout = 1;
+    draw_list(&m, 1);
+    save(dir, "readme_rows");
+
+    song_model(&sm, &top, &left);
+    sm.c[0].slot = 1;
+    sm.c[1].slot = 2;
+    sm.c[2].slot = 3;
+    sm.c[3].slot = 8;
+    draw_song(&sm);
+    save(dir, "readme_tracker");
+    sm.live = 1;                                /* live mode, ECHO + OCT UP held on every track */
+    h = header("LIVE", 1);
+    h.title_col = D_RED;
+    h.bare = 1;
+    h.loop_a = sm.loop_a;
+    h.loop_b = sm.loop_b;
+    h.loop_n = sm.loop_n;
+    begin();
+    py_d_header(&h);
+    py_d_song(&sm);
+    py_d_text3(4, D_FOOT_Y, "FX ECHO OCT UP > ALL", D_GREEN, 0);
+    save(dir, "readme_live");
+}
+
 int main(int argc, char **argv)
 {
     const char *dir = argc > 1 ? argv[1] : ".";
@@ -243,5 +298,6 @@ int main(int argc, char **argv)
     s.col = 1;
     draw_song(&s);
     save(dir, "song3");
+    readme(dir);
     return 0;
 }

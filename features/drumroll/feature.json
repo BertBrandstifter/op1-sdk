@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "drumroll",
   "title": "DRUM ROLL step editor for the finger sequencer",
-  "version": "2.4",
+  "version": "2.5",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
@@ -11,7 +11,7 @@
   "prefix": [
     "dr_"
   ],
-  "summary": "The finger sequencer's step editor: shift + blue press on TE's finger screen ('(shift arrow) BLUE: EDITOR') (sequencer key, drum playmode) opens a channel-rack grid of the selected finger pattern in a TE look. A pattern edited there plays with 8 lanes, each one drum sample with its own length (1-64 steps) and rate (1/4 .. 1/32, triplets), drawn to scale with bar / beat lines, loop lines and a playhead per lane; every step has VEL, TONE, LEN, NUDGE, PROB and RATCH, every sample a filter (LP / BP / HP, cutoff, resonance) and a level. TE's finger keys start and stop the patterns: DRUM ROLL follows TE's step events, TE's compressed view shows a summary, TE's step record still works. The 14 patterns, swing and filters are kept in TE's op1.db (table sdk_drumroll); page 6 PAT sets the pattern length for all lanes (TE's length changes do the same) and clears a pattern (asks first). The black keys on TE's drum finger screen are punch-in effects while held, three banks of 10 (green press picks A / B / C): PO-20-style, arcade, time + mix.",
+  "summary": "The finger sequencer's step editor: shift + blue press on TE's finger screen ('(shift arrow) BLUE: EDITOR') (sequencer key, drum playmode) opens a channel-rack grid of the selected finger pattern in a TE look. A pattern edited there plays with 8 lanes, each one drum sample with its own length (1-64 steps) and rate (1/4 .. 1/32, triplets), drawn to scale with bar / beat lines, loop lines and a playhead per lane; every step has VEL, TONE, LEN, NUDGE, PROB and RATCH, every sample a filter (LP / BP / HP, cutoff, resonance) and a level. TE's finger keys start and stop the patterns: DRUM ROLL follows TE's step events, TE's compressed view shows a summary, TE's step record still works. The 14 patterns, swing and filters are kept in TE's op1.db (table sdk_drumroll); page 6 PAT sets the pattern length for all lanes (TE's length changes do the same) and clears a pattern (asks first). The black keys on its finger screen are punch-in effects while held: one bank of 10, the order of PLAY's live mode.",
   "license": "MIT",
   "authors": [
     "unknown"
@@ -114,7 +114,7 @@
     "TE's finger screen: changing a pattern's length sets every DRUM ROLL lane of it to that length (in its rate's steps)",
     "while open: shift + white press = STEP REC on / off: the keyboard plays drums into the cursor step (the first key replaces the step, more add; a drum without a lane gets an empty one), FORWARD / BACK = step on / back",
     "shift + BACK = undo, shift + FORWARD = redo (16 steps; in the editor and on TE's drum finger screen with it closed; TE's own finger screen edits too)",
-    "TE's drum finger screen (open or closed), the black keys held = punch-in effects of bank A / B / C (green press on the finger screen with the editor closed: next bank): A FILL RETRIG RETRIG-FAST GLITCH RISE LP-SWEEP HP-SWEEP BLINDS SOLO-1 SOLO-1+2; B 8-BIT LASER FALL COIN RND-PITCH OCT-UP OCT-DOWN ECHO REVERSE SHUFFLE; C HALF-TIME DOUBLE-TIME TRIPLET LOOP-BEAT BUILD SOLO-1-4 SOLO-5-8 NO-KICK FADE CUT; shift + black = TE's step record"
+    "TE's drum finger screen (open or closed), the black keys held = punch-in effects (one bank, PLAY's live-mode order): FILL RANDOM ECHO RETRIG RETRIG-FAST OCT-UP OCT-DOWN COIN SOLO-LEAD (no kick) SOLO-BASS (the kick); shift + black = TE's step record"
   ],
   "tests": [
     "test_dr_core.c",
@@ -224,7 +224,7 @@
       "playmode": "drum"
     }
   ],
-  "status_note": "v2.1: punch-ins on both held patterns (TE's taken over while held), repeats loop the last step with a hit; v2.0: punch-in banks A / B / C (green press), new arcade / time effects, shift + black always TE's; v1.9: undo / redo (shift + BACK / FORWARD), TE's finger screen edits too; v1.8: punch-ins reordered, FILL FAST / GLITCH FAST / LP FAST / HP FILTER left out; v1.7: STEP REC; v1.6: punch-ins = the PO-20 arcade's 16 (shift + black for 6), window while held; v1.5: zoom 3.5 bars, shift arrow in the texts, punch-in effects on the black keys (drum finger screen); v1.4: zoom 1 / 2 / 3 / 4 bars; v1.3: shift + blue press opens and closes it, no badge while closed; v1.2: playhead always shown (view follows a held pattern key, TE patterns too, view follows playback); v1.1: blue press opens it (note on the finger screen); pattern length for all lanes (page 6 PAT, follows TE's length); v1.0: DRUM ROLL is the finger sequencer's step editor on the finger screen, 14 finger patterns, DRUM ROLL patterns play with 8 lanes following TE's step events; the drum screen gesture, the engine list row and the own play / tape clock are gone; v0.9 op1.db; v0.3 / v0.1 device-tested (stand-alone)",
+  "status_note": "v2.5: punch-ins in one bank, PLAY's live-mode order (green press TE's again); v2.1: punch-ins on both held patterns (TE's taken over while held), repeats loop the last step with a hit; v2.0: punch-in banks A / B / C (green press), new arcade / time effects, shift + black always TE's; v1.9: undo / redo (shift + BACK / FORWARD), TE's finger screen edits too; v1.8: punch-ins reordered, FILL FAST / GLITCH FAST / LP FAST / HP FILTER left out; v1.7: STEP REC; v1.6: punch-ins = the PO-20 arcade's 16 (shift + black for 6), window while held; v1.5: zoom 3.5 bars, shift arrow in the texts, punch-in effects on the black keys (drum finger screen); v1.4: zoom 1 / 2 / 3 / 4 bars; v1.3: shift + blue press opens and closes it, no badge while closed; v1.2: playhead always shown (view follows a held pattern key, TE patterns too, view follows playback); v1.1: blue press opens it (note on the finger screen); pattern length for all lanes (page 6 PAT, follows TE's length); v1.0: DRUM ROLL is the finger sequencer's step editor on the finger screen, 14 finger patterns, DRUM ROLL patterns play with 8 lanes following TE's step events; the drum screen gesture, the engine list row and the own play / tape clock are gone; v0.9 op1.db; v0.3 / v0.1 device-tested (stand-alone)",
   "evidence": [
     {
       "firmware": "R246",

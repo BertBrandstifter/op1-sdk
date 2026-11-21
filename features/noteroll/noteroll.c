@@ -76,7 +76,6 @@ static uint32_t seed = 0x6d2b79f5u;
 
 /* punch-in effects (black keys on TE's synth finger screen): KeyHandler -> Seq thread */
 volatile uint32_t nr_px_held;                   /* bit i: effect i held (bench reads) */
-volatile uint8_t nr_px_bank;                    /* the black keys' bank 0..2 (A B C; green press) */
 static volatile uint16_t px_consumed;           /* black keys whose release is ours */
 static volatile uint32_t px_seq[NR_PX_KEYS], px_count;  /* press order: the last REPEAT wins */
 #define LATER       32
@@ -348,7 +347,7 @@ static void offs_due(uint32_t to)
             i++;
 }
 
-/* ---- punch-in effects, Seq thread (three banks, see nr_punch.h; as DRUM ROLL's) */
+/* ---- punch-in effects, Seq thread (one bank since v0.13: px_map; see nr_punch.h; as DRUM ROLL's) */
 static int8_t rep_key[NR_PATTERNS] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
 static uint32_t rep_t0[NR_PATTERNS], gl_seed[NR_PATTERNS], fade_t0;
 
@@ -983,9 +982,14 @@ static void after_event(int p, uint32_t before, int cleared)
 
 /* the black keys, low to high (F# G# A# C# D# F# G# A# C# D#: key ids): punch-in effects on TE's
  * synth finger screen, where a plain black press does nothing in TE (its finger player eats it, as
- * on the drum one): the 10 effects of the bank picked (green press on the finger screen, editor
- * closed: A -> B -> C); shift + black stays TE's step record */
+ * on the drum one): the 10 effects of px_map; shift + black stays TE's step record */
 static const uint8_t px_keys[10] = { 13, 14, 15, 32, 22, 23, 24, 25, 26, 27 };
+/* the effect of each black key, low to high (v0.17 of PLAY: the same order as its live mode; one
+ * bank, the others' effects are not on the keys any more) */
+static const uint8_t px_map[10] = { NR_PX_FILL, NR_PX_RAND, NR_PX_ECHO, NR_PX_RETRIG, NR_PX_RETRIGF, NR_PX_OCTUP,
+                                     NR_PX_OCTDN, NR_PX_COIN, NR_PX_SLEAD, NR_PX_SBASS };
+static const char *const px_label[10] = { "FILL", "RANDOM", "ECHO", "RETRIG", "RETRIG FAST", "OCT UP",
+                                          "OCT DOWN", "COIN", "SOLO LEAD", "SOLO BASS" };
 static int8_t px_of[10] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };  /* the effect a key holds */
 
 static int px_key(int key, int down)
@@ -999,7 +1003,7 @@ static int px_key(int key, int down)
     if (down) {
         if (*TE_SHIFT_HELD || !finger_screen())
             return 0;
-        fx = (nr_px_bank % NR_PX_BANKS) * NR_PX_BANK + i;
+        fx = px_map[i];
         px_seq[fx] = ++px_count;
         nr_px_held |= 1u << fx;
         px_of[i] = (int8_t)fx;
@@ -1190,13 +1194,6 @@ int nr_key(int key, int down)
         return 0;
     if (!nr_open) {
         nr_ask = 0;
-        if (k == 1 && !*TE_SHIFT_HELD) {        /* green press: the punch-in bank A -> B -> C */
-            nr_px_bank = (uint8_t)((nr_px_bank + 1) % NR_PX_BANKS);
-            msg = "FX BANK";
-            msg_until = now + COALESCE;
-            consumed |= 1 << k;
-            return 1;
-        }
         if (k != 0 || !*TE_SHIFT_HELD)
             return 0;
         nr_open = 1;                            /* shift + blue press: open on TE's selected pattern */
@@ -1862,34 +1859,28 @@ static void draw_px_window(void)
     static const char *const key_name[10] = { "F#", "G#", "A#", "C#", "D#", "F#", "G#", "A#", "C#", "D#" };
     static const uint16_t frame_col = GFX_RGB(0x35, 0x32, 0x38);
     int i, last = -1, x, y, x0 = 34, y0 = 22, w = 252, h = 108, r, c;
-    char bank[2] = { 0, 0 };
 
-    for (i = 0; i < NR_PX_KEYS; i++)
-        if ((nr_px_held >> i & 1) && (last < 0 || px_seq[i] > px_seq[last]))
+    for (i = 0; i < 10; i++)                    /* the key held last */
+        if ((nr_px_held >> px_map[i] & 1) && (last < 0 || px_seq[px_map[i]] > px_seq[px_map[last]]))
             last = i;
     if (last < 0)
         return;
     gfx_rect(x0, y0, w, h, frame_col);
     gfx_rect(x0 + 2, y0 + 2, w - 4, h - 4, GFX_BLACK);
     x = gfx_text(x0 + 10, y0 + 8, "PUNCH-IN", col[3], 2);
-    x = gfx_text(x + 10, y0 + 12, "BANK", c_dim, 1) + 4;
-    bank[0] = (char)('A' + last / NR_PX_BANK);
-    x = gfx_text(x, y0 + 12, bank, col[1], 1) + 6;
-    x = gfx_text(x, y0 + 12, "KEY", c_dim, 1) + 4;
-    gfx_text(x, y0 + 12, key_name[last % NR_PX_BANK], GFX_WHITE, 1);
+    x = gfx_text(x + 10, y0 + 12, "KEY", c_dim, 1) + 4;
+    gfx_text(x, y0 + 12, key_name[last], GFX_WHITE, 1);
     for (r = 0; r < 8; r++)                     /* the pictogram, 8 x 8 cells of 6 px */
         for (c = 0; c < 8; c++)
-            if (nr_px_icon[last][r] & (0x80 >> c))
+            if (nr_px_icon[px_map[last]][r] & (0x80 >> c))
                 gfx_rect(x0 + 12 + c * 6, y0 + 30 + r * 6, 5, 5, col[3]);
-    gfx_text(x0 + 74, y0 + 40, nr_px_name[last], GFX_WHITE, 3);
-    for (i = 0, x = x0 + 74, y = y0 + 64; i < NR_PX_KEYS; i++)
-        if (i != last && (nr_px_held >> i & 1)) {
+    gfx_text(x0 + 74, y0 + 40, px_label[last], GFX_WHITE, 3);
+    for (i = 0, x = x0 + 74, y = y0 + 64; i < 10; i++)
+        if (i != last && (nr_px_held >> px_map[i] & 1)) {
             x = gfx_text(x, y, "+ ", c_dim, 1);
-            x = gfx_text(x, y, nr_px_name[i], col[1], 1) + 6;
+            x = gfx_text(x, y, px_label[i], col[1], 1) + 6;
         }
-    x = gfx_text(x0 + 10, y0 + h - 12, "HOLD = ON   EDITOR CLOSED:", c_dim, 1) + 4;
-    x = gfx_text(x, y0 + h - 12, "GREEN", col[1], 1) + 4;
-    gfx_text(x, y0 + h - 12, "= NEXT BANK", c_dim, 1);
+    gfx_text(x0 + 10, y0 + h - 12, "HOLD = ON", c_dim, 1);
 }
 
 /* "UNDO  3 LEFT" for a second after shift + BACK / FORWARD */
@@ -1901,13 +1892,6 @@ static void draw_msg(void)
         return;
     gfx_rect(96, 40, 128, 26, GFX_BLACK);
     frame_rect(96, 40, 128, 26, col[3]);
-    if (msg[0] == 'F') {                        /* "FX BANK B" */
-        char b[2] = { (char)('A' + nr_px_bank % NR_PX_BANKS), 0 };
-
-        x = gfx_text(108, 49, msg, GFX_WHITE, 2);
-        gfx_text(x + 8, 47, b, col[1], 3);
-        return;
-    }
     x = gfx_shift(104, 49, col[3], 2) + 4;
     x = gfx_text(x, 49, msg, GFX_WHITE, msg[0] == 'N' ? 1 : 2);
     if (msg[0] != 'N') {
@@ -1928,16 +1912,12 @@ void nr_frame(uint16_t *buf)
         if (finger_screen()) {                  /* TE's finger screen: how to open the editor, at the */
             int x;                              /* size of the engines' "SHIFT+BLUE: PRESETS" */
 
-            char b[2] = { (char)('A' + nr_px_bank % NR_PX_BANKS), 0 };
-
             int y = gfx_h - 16;                 /* the lower left corner, clear of the case edge */
 
             gfx_rect(2, y - 2, 4 + 12 + 2 + 12 * 8 + 48, 14, GFX_BLACK);
             x = gfx_shift(4, y, c_dim, 2) + 2;  /* the shift arrow */
             x = gfx_text(x, y, "BLUE", col[0], 2);
-            x = gfx_text(x, y, ": EDITOR", c_dim, 2);
-            x = gfx_text(x + 12, y, "FX", c_dim, 2);           /* the punch-in bank */
-            gfx_text(x + 4, y, b, col[1], 2);   /* green: the knob that changes it */
+            gfx_text(x, y, ": EDITOR", c_dim, 2);
             draw_px_window();
             draw_msg();
         }

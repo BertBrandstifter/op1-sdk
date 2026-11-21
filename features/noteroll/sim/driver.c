@@ -22,7 +22,6 @@ extern volatile uint8_t nr_cpitch, nr_rec, nr_undo_n, nr_redo_n;
 extern volatile uint16_t nr_owned;
 extern volatile int16_t nr_ph_shown;
 extern volatile uint32_t nr_px_held;
-extern volatile uint8_t nr_px_bank;
 extern volatile int rq_state;
 extern char FB[];
 
@@ -563,14 +562,13 @@ int main(void)
     push(GREEN, 0);                             /* page 1 NOTE */
     hook_frame(FBN(1));                         /* screenshot: NOTE page */
 
-    /* 14: punch-in effects (the PO-20's set for the synth) on the black keys of TE's synth finger
-     * screen: plain black = effects 1-10, shift + the lower F# G# A# C# = 11-14, shift + the others
-     * stay TE's step record. Pattern 11: C E G on step 1, C5 on step 5. RETRIG from step 1: the
-     * chord every step; OCT UP: an octave higher; ARP: C E G a third of a step apart; STACCATO: a
-     * quarter step; SOLO BASS: only C of the chord; SOLO MELODY: only C5; BLINDS: C5 four times */
+    /* 14: punch-in effects on the black keys of TE's synth finger screen (one bank, low to high:
+     * FILL RANDOM ECHO RETRIG RETRIG-FAST OCT-UP OCT-DOWN COIN SOLO-LEAD SOLO-BASS); shift + black
+     * stays TE's step record. Pattern 11: C E G on step 1, C5 on step 5. RETRIG from step 1: the
+     * chord every step; OCT UP: an octave higher; SOLO BASS: only C of the chord; SOLO LEAD: only G */
     {
         nr_pattern *pt = &nr_pat[10];
-        int c60, c72, j, n0;
+        int c60, c72, n0;
 
         nr_pattern_init(pt);
         nr_add(&pt->s[0], 60, 100, 4);
@@ -586,10 +584,10 @@ int main(void)
         nlog = 0;
         FS_ARTIST(0) = 10;
         tick(3);
-        hook_key(14, 1);                        /* RETRIG */
+        hook_key(32, 1);                        /* RETRIG */
         a = nlog;
         tick(8 * 5513 / 64);
-        hook_key(14, 0);
+        hook_key(32, 0);
         c60 = count_on(a, 60, 0);
         c72 = count_on(a, 72, 0);
         CHECK(14, c60 >= 8 && c60 <= 9 && c72 == 0 && inputs == n + 2);
@@ -603,63 +601,27 @@ int main(void)
         hook_key(23, 0);
         FS_ARTIST(0) = -1;
         tick(STEPB(4));
-        hook_key(22, 1);                        /* RISING ARP */
-        a = nlog;
-        b0 = (int)block;
-        FS_ARTIST(0) = 10;
-        tick(STEPB(1) + 2);
-        i = find(a, 1, 60);
-        j = find(a, 1, 64);
-        n = find(a, 1, 67);
-        CHECK(14, i >= 0 && j >= 0 && n >= 0 && lg[i].block == (uint32_t)b0
-                  && lg[j].block >= (uint32_t)b0 + 28 && lg[j].block <= (uint32_t)b0 + 30
-                  && lg[n].block >= (uint32_t)b0 + 57 && lg[n].block <= (uint32_t)b0 + 59);
-        hook_key(22, 0);
-        FS_ARTIST(0) = -1;
-        tick(STEPB(4));
-        hook_key(25, 1);                        /* STACCATO */
-        a = nlog;
-        FS_ARTIST(0) = 10;
-        tick(STEPB(1));
-        i = find(a, 1, 60);
-        j = find(a, 0, 60);
-        CHECK(14, i >= 0 && j >= 0 && lg[j].block - lg[i].block >= STEPB(1) / 4 - 1 && lg[j].block - lg[i].block <= STEPB(1) / 4 + 1);
-        hook_key(25, 0);
-        FS_ARTIST(0) = -1;
-        tick(STEPB(4));
-        hook_key(26, 1);                        /* BLINDS (bank A) */
-        a = nlog;
-        FS_ARTIST(0) = 10;
-        tick(STEPB(8));
-        CHECK(14, count_on(a, 72, 0) == 4 && count_on(a, 60, 0) == 4);
-        hook_key(26, 0);
-        FS_ARTIST(0) = -1;
-        tick(STEPB(4));
-        push(BLUE, 1);                          /* editor closed: green press = the bank */
-        push(GREEN, 0);
-        push(GREEN, 0);
-        CHECK(14, nr_px_bank == 2 && !nr_open);
-        hook_key(25, 1);                        /* SOLO BASS (bank C) */
+        push(BLUE, 1);                          /* editor closed */
+        hook_key(27, 1);                        /* SOLO BASS */
         a = nlog;
         FS_ARTIST(0) = 10;
         tick(STEPB(8));
         CHECK(14, count_on(a, 60, 0) == 1 && count_on(a, 64, 0) == 0 && count_on(a, 67, 0) == 0
                   && count_on(a, 72, 0) == 1);  /* C5: the lowest note of its step */
-        hook_key(25, 0);
+        hook_key(27, 0);
         FS_ARTIST(0) = -1;
         tick(STEPB(4));
-        hook_key(26, 1);                        /* SOLO MELODY */
+        hook_key(26, 1);                        /* SOLO LEAD */
         a = nlog;
         FS_ARTIST(0) = 10;
         tick(STEPB(8));
-        CHECK(14, count_on(a, 60, 0) == 0 && count_on(a, 64, 0) == 0 && count_on(a, 72, 0) == 1
-                  && nr_px_held == 1u << 28);
+        CHECK(14, count_on(a, 60, 0) == 0 && count_on(a, 64, 0) == 0 && count_on(a, 67, 0) == 1
+                  && count_on(a, 72, 0) == 1 && nr_px_held == 1u << 26);    /* NR_PX_SLEAD */
         hook_frame(FBN(4));                     /* screenshot: the punch-in window */
         hook_key(26, 0);
-        push(GREEN, 0);                         /* back to bank A */
         FS_ARTIST(0) = -1;
         tick(STEPB(4));
-        CHECK(14, active == 0 && violations == 0 && !nr_px_held && inputs == n0 + 2 && nr_px_bank == 0);
+        CHECK(14, active == 0 && violations == 0 && !nr_px_held && inputs == n0 + 2);
         nr_owned &= (uint16_t)~(1 << 10);
         FS_SELECTED = 2;                        /* TE selected 11 when it started: back to 3 */
         push(BLUE, 1);                          /* open again */
@@ -793,68 +755,35 @@ int main(void)
         CHECK(16, nr_open && nr_cur == 2);
     }
 
-    /* 17: bank B (arcade), pattern 11 again (C E G on step 1, C5 on step 5): CHIP ARP UP plays the
-     * chord's notes in turn every 1/32 (C, then E half a step later); TRILL: C5 and D5 in turn;
-     * POWER UP: C5 rolled at 1/32, a semitone up each time; ECHO: C5 again 3 and 6 steps later */
+    /* 17: ECHO: C5 again 3 and 6 steps later; COIN: an octave-up grace note after each note */
     {
         nr_pattern *pt = &nr_pat[10];
-        int b0, i60, i64, j, prev;
 
         nr_pattern_init(pt);
         nr_add(&pt->s[0], 60, 100, 4);
         nr_chord(&pt->s[0], 1);
         nr_add(&pt->s[4], 72, 100, 4);
         nr_owned |= 1 << 10;
-        push(BLUE, 1);                          /* close: green press = the bank */
-        push(GREEN, 0);
-        CHECK(17, nr_px_bank == 1);
-        hook_key(13, 1);                        /* CHIP ARP UP */
-        a = nlog;
-        b0 = (int)block;
-        FS_ARTIST(0) = 10;
-        tick(STEPB(1) - 2);
-        i60 = find(a, 1, 60);
-        i64 = find(a, 1, 64);
-        CHECK(17, i60 >= 0 && i64 >= 0 && lg[i60].block == (uint32_t)b0 && lg[i64].block >= (uint32_t)b0 + 42
-                  && lg[i64].block <= (uint32_t)b0 + 44 && find(a, 1, 67) < 0);  /* 1/32 = 43 blocks */
-        hook_key(13, 0);
+        push(BLUE, 1);                          /* close */
         FS_ARTIST(0) = -1;
         tick(STEPB(4));
-        hook_key(23, 1);                        /* TRILL */
+        hook_key(15, 1);                        /* ECHO */
         a = nlog;
-        FS_ARTIST(0) = 10;
-        tick(STEPB(5) + 2);
-        CHECK(17, find(a, 1, 72) >= 0 && find(a, 1, 74) >= 0);
-        hook_key(23, 0);
-        FS_ARTIST(0) = -1;
-        tick(STEPB(4));
-        FS_ARTIST(0) = 10;
-        tick(STEPB(4) + 3);                     /* step 5: C5 */
-        hook_key(15, 1);                        /* POWER UP */
-        a = nlog;
-        tick(STEPB(2));
-        hook_key(15, 0);
-        for (i = a, j = 0, prev = 0, ok = 1; i < nlog; i++)
-            if (lg[i].on && lg[i].note >= 72 && lg[i].note <= 96) {
-                ok &= !prev || lg[i].note == prev + 1;
-                prev = lg[i].note;
-                j++;
-            }
-        CHECK(17, ok && j >= 3);
-        FS_ARTIST(0) = -1;
-        tick(STEPB(4));
-        hook_key(24, 1);                        /* ECHO */
-        a = nlog;
-        b0 = (int)block;
         FS_ARTIST(0) = 10;
         tick(STEPB(12));
-        hook_key(24, 0);
+        hook_key(15, 0);
         CHECK(17, count_on(a, 72, 0) == 3);     /* step 5, + 3, + 6 */
         FS_ARTIST(0) = -1;
         tick(STEPB(8));
-        push(GREEN, 0);
-        push(GREEN, 0);                         /* back to A */
-        CHECK(17, nr_px_bank == 0 && active == 0 && violations == 0);
+        hook_key(25, 1);                        /* COIN */
+        a = nlog;
+        FS_ARTIST(0) = 10;
+        tick(STEPB(8));
+        hook_key(25, 0);
+        CHECK(17, find(a, 1, 72) >= 0 && find(a, 1, 84) >= 0 && find(a, 1, 76) >= 0);
+        FS_ARTIST(0) = -1;
+        tick(STEPB(8));
+        CHECK(17, active == 0 && violations == 0);
         nr_owned &= (uint16_t)~(1 << 10);
         FS_SELECTED = 2;
         push(BLUE, 1);
@@ -882,10 +811,10 @@ int main(void)
         FS_ARTIST(1) = 6;
         tick(STEPB(6) + 4);                     /* step 7 */
         CHECK(18, count_on(0, 65, 1) == 1 && count_on(0, 65, 0) == 0);
-        hook_key(14, 1);                        /* RETRIG (bank A) */
+        hook_key(32, 1);                        /* RETRIG */
         a = nlog;
         tick(8 * 5513 / 64);
-        hook_key(14, 0);
+        hook_key(32, 0);
         c65 = count_on(a, 65, 0);
         c72 = count_on(a, 72, 0);
         CHECK(18, c65 >= 7 && c65 <= 9 && count_on(a, 65, 1) == 0 && c72 >= 7 && c72 <= 9 && count_on(a, 60, 0) == 0);

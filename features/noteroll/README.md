@@ -2,7 +2,7 @@
 
 Status: **v0.10** (2026-10-22): TE's finger screen animates the fingers for NOTE ROLL's patterns too
 (as DRUM ROLL v2.2: the player's per-artist sounding bytes `0x01ddc5a8 + 0x6ac + artist x 0x80 + note`,
-set at NOTE ROLL's note-on, cleared at its note-off). **v0.9** (2026-10-17): punch-ins on both held patterns, repeats loop the last step with a note. **v0.8** (2026-10-17): punch-in banks A / B / C (green press), 16 new arcade / time effects, shift + black always TE's step record. **v0.7** (2026-10-17): undo / redo (shift + BACK / FORWARD), also of TE's own finger screen edits; STEP REC octave on shift + green turn. **v0.6** (2026-10-17): the roll's rows at least 4 px (a 1 px gap always), the cursor frame one size on empty and full cells. **v0.5** (2026-10-17): 14 punch-in effects, reordered (FILL FAST, GLITCH FAST left out).
+set at NOTE ROLL's note-on, cleared at its note-off). **v0.13** (2026-11-21): punch-ins in one bank, the 10 of PLAY's live mode in its order (FILL, RANDOM, ECHO, RETRIG, RETRIG FAST, OCT UP, OCT DOWN, COIN, SOLO LEAD, SOLO BASS); green press TE's again. **v0.9** (2026-10-17): punch-ins on both held patterns, repeats loop the last step with a note. **v0.8** (2026-10-17): punch-in banks A / B / C (green press), 16 new arcade / time effects, shift + black always TE's step record. **v0.7** (2026-10-17): undo / redo (shift + BACK / FORWARD), also of TE's own finger screen edits; STEP REC octave on shift + green turn. **v0.6** (2026-10-17): the roll's rows at least 4 px (a 1 px gap always), the cursor frame one size on empty and full cells. **v0.5** (2026-10-17): 14 punch-in effects, reordered (FILL FAST, GLITCH FAST left out).
 **v0.4** (2026-10-17): the pitch cursor (shift + blue turn: any row, blue press: a note on /
 off) and STEP REC (shift + white press: play the keyboard into the cursor step, the arrows move). **v0.3** (2026-10-17): punch-in effects on the black keys of TE's synth finger screen (user:
 "also add the punch in effect to the finger in synth mode"; then the PO-20 arcade's set, shift +
@@ -101,24 +101,26 @@ the step**.
   PROB < 100 dotted, the cursor step's column lit, the cursor note white, the playhead), four knob
   columns, the step's notes + chord name, the hint line.
 
-## Punch-in effects (v0.8: three banks)
+## Punch-in effects (v0.13: one bank, PLAY's live-mode order)
 
-As DRUM ROLL's (its README: keys, banks by green press on the finger screen with the editor closed,
-shift + black = TE's step record, the window): on TE's synth finger screen, on NOTE ROLL's playing
-patterns. All note effects (`nr_punch.c`: one note in, up to 16 timed notes out).
+As DRUM ROLL's (its README: keys, shift + black = TE's step record, the window): on TE's synth finger
+screen, on NOTE ROLL's playing patterns. All note effects (`nr_punch.c`: one note in, up to 16 timed
+notes out). v0.13 (user, 2026-11-21): one bank, the same 10 as PLAY's live mode in its order; the
+other effects of the old banks B / C (arps, trill, power up / down, laser, reverse, time effects,
+FADE, ...) are no longer on the keys (still in `nr_punch.c`); green press is TE's again.
 
-| key | A (the PO-20 for the synth) | B (arcade) | C (time + solos) |
-|---|---|---|---|
-| F# | FILL | CHIP ARP UP: the step's notes in turn every 1/32 while they last (one note: with its octave) | HALF TIME |
-| G# | RETRIG | CHIP ARP DN | DOUBLE TIME |
-| A# | RETRIG FAST | POWER UP: a 1/32 roll, a semitone up each | TRIPLET |
-| C# | GLITCH | POWER DOWN | LOOP BEAT |
-| D# | RISING ARP | COIN: an octave-up grace note a quarter step after each | BUILD |
-| F# | OCT UP | TRILL: the note and a whole tone up in turn every 1/32 | SOLO CHORDS |
-| G# | OCT DOWN | ECHO: the note again 3 and 6 steps later, softer | SOLO LEAD |
-| A# | STACCATO | REVERSE: the bar's steps backwards | SOLO BASS |
-| C# | BLINDS | OCT ARP: the octave half a step after each note | SOLO MELODY |
-| D# | RANDOM | LASER: a 1/64 roll, 2 semitones down each | FADE: down to nothing over a bar |
+| key | effect |
+|---|---|
+| F# | FILL: now and then an extra note of the pattern |
+| G# | RANDOM: some notes an octave up / down or a fifth up |
+| A# | ECHO: the note again 3 and 6 steps later, softer |
+| C# | RETRIG: the step over and over |
+| D# | RETRIG FAST: half a step |
+| F# | OCT UP |
+| G# | OCT DOWN |
+| A# | COIN: an octave-up grace note a quarter step after each |
+| C# | SOLO LEAD: the highest note of each step |
+| D# | SOLO BASS: the lowest note of each step |
 
 - v0.9: as DRUM ROLL 2.1: both held patterns (a held TE pattern is taken over while any effect is
   held), the repeat effects loop the last step with a note, not an empty one.

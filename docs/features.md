@@ -131,13 +131,13 @@ Performance:
   LEN NUDGE PROB RATCH; per sample filter LP / BP / HP + level; swing; one pattern length for all
   lanes (page 6, and it follows TE's length). An edited pattern plays with all
   of that on TE's step events (finger keys start / stop it, TE's compressed view shows a summary, TE's
-  step record still works); black keys on the drum finger screen = punch-in effects in three banks (green press on the finger screen: A PO-20 set, B arcade: 8-BIT LASER FALL COIN RND PITCH OCT UP / DOWN ECHO REVERSE SHUFFLE, C time + mix: HALF / DOUBLE TIME TRIPLET LOOP BEAT BUILD SOLOs NO KICK FADE CUT; a window while held); STEP REC (shift + white: the keyboard into the cursor step, the arrows move); undo / redo shift + BACK / FORWARD (also TE's own finger screen edits); patterns kept in TE's op1.db; `features/drumroll/README.md` (v1.0
+  step record still works); black keys on the drum finger screen = punch-in effects, one bank since v2.5 (FILL, RANDOM, ECHO, RETRIG, RETRIG FAST, OCT UP / DOWN, COIN, SOLO LEAD = no kick, SOLO BASS = the kick: PLAY's live-mode order; a window while held); STEP REC (shift + white: the keyboard into the cursor step, the arrows move); undo / redo shift + BACK / FORWARD (also TE's own finger screen edits); patterns kept in TE's op1.db; `features/drumroll/README.md` (v1.0
   / v1.1 device-tested: "nice!", "really love it!"; v1.2 sim-verified)
 - `noteroll` 0.10 — NOTE ROLL, the synth finger sequencer's step editor (synth playmode, sequencer
   key with the finger sequencer picked, shift + blue press opens and closes; DRUM ROLL's handling, 5
   pages NOTE SHAPE CHORD PAT CLEAR): the selected finger pattern as a piano roll, up to 6 notes a step
   (chord shapes, inversions), per note VEL + LEN (to 16 steps, TIE), per step NUDGE PROB RATCH,
-  length 1-64, swing, transpose; a pitch cursor (shift + blue turn, blue press = note on / off); STEP REC (shift + white); undo / redo shift + BACK / FORWARD (also TE's finger screen edits); plays on TE's step events, TE keeps a summary; black keys = punch-in effects in three banks (green press: A PO-20 set, B arcade: CHIP ARP UP / DN, POWER UP / DOWN, COIN, TRILL, ECHO, REVERSE, OCT ARP, LASER, C time + solos; a window while held); op1.db;
+  length 1-64, swing, transpose; a pitch cursor (shift + blue turn, blue press = note on / off); STEP REC (shift + white); undo / redo shift + BACK / FORWARD (also TE's finger screen edits); plays on TE's step events, TE keeps a summary; black keys = punch-in effects, one bank since v0.13 (FILL, RANDOM, ECHO, RETRIG, RETRIG FAST, OCT UP / DOWN, COIN, SOLO LEAD / BASS: PLAY's live-mode order; a window while held); op1.db;
   `features/noteroll/README.md` (v0.1 sim-verified)
 - `requantize` 4.3 — SYNTH ROLL, requantize a tape take: shift + blue knob press (not in drum playmode); DRUM ROLL's look,
   NOTE ROLL's navigation (cursor = grid step + pitch row, blue press = a note on / off, green press = next page): pages NOTE

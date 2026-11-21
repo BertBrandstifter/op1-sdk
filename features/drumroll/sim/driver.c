@@ -26,7 +26,6 @@ extern volatile uint8_t dr_swing, dr_zoom, dr_ask, dr_ask_yes;
 extern volatile uint16_t dr_owned;
 extern volatile int16_t dr_ph_shown;
 extern volatile uint32_t dr_px_held;
-extern volatile uint8_t dr_px_bank;
 extern volatile uint8_t dr_rec, dr_undo_n, dr_redo_n;
 extern char FB[];
 extern volatile int rq_state;
@@ -901,12 +900,11 @@ int main(void)
     /* 18: punch-in effects (12 of the PO-20's) on the black keys of TE's drum finger screen: plain
      * black = effects 1-10, shift + the lower F# G# = 11, 12, shift + the others stay TE's step
      * record. Pattern 11: the kick (53) on step 1, key 3 (55) on steps 2..16.
-     * RETRIG from step 1: the kick every step, none of 55; + RETRIG FAST: twice a step; GLITCH:
-     * pieces from elsewhere in the bar; RISE: the kick at 1/32, one semitone up each time; SOLO 1:
+     * RETRIG from step 1: the kick every step, none of 55; + RETRIG FAST: twice a step; SOLO BASS:
      * the kick lane only; FILL: extra hits; released: as before */
     {
         dr_pattern *pt = &dr_pat[10];
-        int k53, k55, s, j;
+        int k53, k55, s;
 
         dr_pattern_init(pt);
         pt->lane[1].key = 2;
@@ -923,58 +921,26 @@ int main(void)
         nlog = 0;
         FS_ARTIST(0) = 10;
         tick(3);                                /* step 1, a few blocks in */
-        hook_key(14, 1);                        /* RETRIG */
-        CHECK(18, dr_px_held == 1 << 1 && inputs == n + 2);
+        hook_key(32, 1);                        /* RETRIG */
+        CHECK(18, dr_px_held == 1 << 1 && inputs == n + 2);    /* DR_PX_RETRIG */
         a = nlog;
         tick(8 * 5513 / 64);
         k53 = count_on(a, 53, 0);
         k55 = count_on(a, 55, 0);
         CHECK(18, k53 >= 8 && k53 <= 9 && k55 == 0);
-        hook_key(15, 1);                        /* + RETRIG FAST: the last pressed wins */
+        hook_key(22, 1);                        /* + RETRIG FAST: the last pressed wins */
         memset(FBN(5), 0, 320 * 512);
         hook_frame(FBN(5));                     /* screenshot: the punch-in window */
         a = nlog;
         tick(4 * 5513 / 64);
         CHECK(18, count_on(a, 53, 0) >= 8 && count_on(a, 53, 0) <= 9);
-        hook_key(15, 0);
-        hook_key(14, 0);
-        CHECK(18, !dr_px_held && inputs == n + 2);
-        {                                       /* a bar as it is, then a bar of GLITCH: */
-            uint32_t w0 = block, w1, kb0 = 0, kb1 = 0;      /* the kick moves (or comes more */
-            int n0, n1;                                     /* or less often) */
-
-            a = nlog;
-            tick(16 * 5513 / 64);
-            n0 = count_on(a, 53, 0);
-            i = find_on(a, 53);
-            kb0 = i >= 0 ? lg[i].block - w0 : 0;
-            hook_key(32, 1);                    /* GLITCH */
-            w1 = block;
-            a = nlog;
-            tick(16 * 5513 / 64);
-            hook_key(32, 0);
-            n1 = count_on(a, 53, 0);
-            i = find_on(a, 53);
-            kb1 = i >= 0 ? lg[i].block - w1 : 0;
-            k55 = count_on(a, 55, 0);
-            CHECK(18, n0 == 1 && (n1 != 1 || kb1 + 2 < kb0 || kb1 > kb0 + 2) && n1 + k55 >= 8);
-        }
-        tick(STEPB(64) - 3 - 44 * 5513 / 64 - 1);   /* to just before a loop start */
-        hook_key(22, 1);                        /* RISE */
-        a = nlog;
-        tick(4 * 5513 / 64);
-        for (i = a, j = 0, ok = 1; i < nlog; i++)
-            if (lg[i].on && lg[i].note == 53) {
-                ok &= lg[i].extra == j || lg[i].extra == j + 1;
-                j = lg[i].extra;
-            }
-        CHECK(18, ok && j >= 6 && count_on(a, 55, 0) == 0 && dr_px_held == 1 << 4);
         hook_key(22, 0);
-        CHECK(18, !dr_px_held);
-        hook_key(26, 1);                        /* SOLO 1 */
+        hook_key(32, 0);
+        CHECK(18, !dr_px_held && inputs == n + 2);
+        hook_key(27, 1);                        /* SOLO BASS: the kick lane only */
         a = nlog;
         tick(16 * 5513 / 64);
-        hook_key(26, 0);
+        hook_key(27, 0);
         CHECK(18, count_on(a, 55, 0) == 0 && count_on(a, 53, 0) == 1);
         a = nlog;
         tick(16 * 5513 / 64);
@@ -992,49 +958,6 @@ int main(void)
         mains(1);
         CHECK(18, dr_cur == 2);
     }
-    /* 19: the audio effects on a voice played by hand: BLINDS shuts the second half of every 1/16,
-     * LP SWEEP damps Nyquist after a bar, HP SWEEP takes DC away after one; released: untouched */
-    {
-        int b, v, z = 0, op = 0, mx = 0;
-
-        emu_on(&(te_note){ 53, -1, 1, { 0, 0, 0 }, 0 }, 0);
-        v = (next_voice + 11) % 12;
-        render_mode = 0;
-        hook_key(25, 1);                        /* BLINDS */
-        for (b = 0; b < 2 * 5513 / 64; b++) {
-            tick(1);
-            dr_te_render(VOICE(v), out, PARAMS(0));
-            for (i = 0; i < 128; i++) {
-                z += out[i] == 0;
-                op += out[i] >= 4990;
-            }
-        }
-        hook_key(25, 0);
-        CHECK(19, z > 20 * 128 && op > 20 * 128);
-        hook_key(23, 1);                        /* LP SWEEP */
-        tick(16 * 5513 / 64 + 2);
-        render_mode = 1;
-        for (b = 0; b < 4; b++)
-            dr_te_render(VOICE(v), out, PARAMS(0));
-        for (i = 0; i < 128; i++)
-            mx = out[i] > mx ? out[i] : -out[i] > mx ? -out[i] : mx;
-        hook_key(23, 0);
-        CHECK(19, mx < 3000);
-        tick(40);                               /* LP opens again */
-        hook_key(24, 1);                        /* HP SWEEP: a bar */
-        tick(16 * 5513 / 64 + 2);
-        render_mode = 0;
-        for (b = 0; b < 30; b++)
-            dr_te_render(VOICE(v), out, PARAMS(0));
-        CHECK(19, out[127] < 500 && out[127] > -500);
-        hook_key(24, 0);
-        tick(40);
-        dr_te_render(VOICE(v), out, PARAMS(0));
-        CHECK(19, (out[0] == 5000 || out[0] == 10000) && !dr_px_held);
-        emu_off(&(te_note){ 53, -1, 1, { 0, 0, 0 }, 0 });
-        tick(10);
-    }
-
     /* 20: STEP REC (shift + white press): keys play drums into the cursor step of every lane (the
      * first key clears the step, more keys add), a drum without a lane gets an empty one, FORWARD /
      * BACK move (a step passed by stays); the keys are not TE's meanwhile; off: TE's again */
@@ -1183,79 +1106,41 @@ int main(void)
         dr_sel = 0;
     }
 
-    /* 22: punch-in banks: green press on TE's finger screen (editor closed) cycles A -> B -> C (TE
-     * never sees it). Bank B: 8-BIT crushes a voice; LASER rolls the kick at 1/64, 2 semitones down
-     * each; COIN adds an octave-up hit a quarter step after each; REVERSE plays the bar's steps
-     * backwards (the kick moves to the bar's end). Bank C: DOUBLE TIME = two kicks a bar; CUT = none */
+    /* 22: more punch-ins: COIN adds an octave-up hit a quarter step after each; OCT DOWN plays
+     * every hit an octave down; SOLO LEAD leaves the kick (lane 1) out */
     {
-        int b0k, j, kb0, kb1, v;
+        int j;
 
         push(BLUE, 1);                          /* close */
         n = inputs;
-        push(GREEN, 0);
-        CHECK(22, dr_px_bank == 1 && inputs == n && !dr_open);
-        hook_key(13, 1);                        /* 8-BIT */
-        emu_on(&(te_note){ 53, -1, 1, { 0, 0, 0 }, 0 }, 0);
-        v = (next_voice + 11) % 12;
-        render_mode = 0;
-        tick(2);
-        dr_te_render(VOICE(v), out, PARAMS(0));
-        for (i = 0, ok = 1; i < 128; i++)
-            ok &= (out[i] & 0x7ff) == 0;
-        hook_key(13, 0);
-        emu_off(&(te_note){ 53, -1, 1, { 0, 0, 0 }, 0 });
-        CHECK(22, ok && dr_px_held == 0);
         nlog = 0;
         FS_ARTIST(0) = 10;                      /* pattern 11: the kick on 1, 55 on 2..16 */
         tick(3);
-        hook_key(14, 1);                        /* LASER */
+        hook_key(25, 1);                        /* COIN */
         a = nlog;
-        tick(2 * 5513 / 64);
-        hook_key(14, 0);
-        for (i = a, j = 0, b0k = 99, ok = 1; i < nlog; i++)
-            if (lg[i].on && lg[i].note == 53) {         /* each 2 semitones under the one before */
-                ok &= b0k == 99 ? lg[i].extra <= 0 : lg[i].extra == b0k - 2 || lg[i].extra == -24;
-                b0k = lg[i].extra;
-                j++;
-            }
-        CHECK(22, ok && j >= 7 && b0k <= -12);
-        hook_key(32, 1);                        /* COIN */
-        a = nlog;
-        tick(16 * 5513 / 64);
-        hook_key(32, 0);
-        for (i = a, j = 0, b0k = 0; i < nlog; i++)
+        tick(18 * 5513 / 64);                   /* (the kick comes once a bar) */
+        hook_key(25, 0);
+        for (i = a, j = 0; i < nlog; i++)
             if (lg[i].on && lg[i].note == 53)
                 j += lg[i].extra == 12;
         CHECK(22, j >= 1 && count_on(a, 53, 0) >= 2);
-        tick(400);
-        a = nlog;                               /* a bar as it is, then a bar reversed */
-        b0k = (int)block;
-        tick(16 * 5513 / 64);
-        i = find_on(a, 53);
-        kb0 = i >= 0 ? (int)lg[i].block - b0k : -1;
-        hook_key(26, 1);                        /* REVERSE */
+        hook_key(24, 1);                        /* OCT DOWN */
         a = nlog;
-        b0k = (int)block;
-        tick(16 * 5513 / 64);
-        hook_key(26, 0);
-        i = find_on(a, 53);
-        kb1 = i >= 0 ? (int)lg[i].block - b0k : -1;
-        CHECK(22, kb0 >= 0 && kb1 >= 0 && (kb1 > kb0 + 4 || kb1 + 4 < kb0) && count_on(a, 53, 0) == 1);
-        push(GREEN, 0);
-        CHECK(22, dr_px_bank == 2);
-        hook_key(14, 1);                        /* DOUBLE TIME */
+        tick(18 * 5513 / 64);
+        hook_key(24, 0);
+        for (i = a, j = 0, ok = 1; i < nlog; i++)
+            if (lg[i].on && lg[i].note == 53) {
+                ok &= lg[i].extra == -12;
+                j++;
+            }
+        CHECK(22, ok && j >= 1);
+        hook_key(26, 1);                        /* SOLO LEAD: no kick */
         a = nlog;
         tick(16 * 5513 / 64);
-        hook_key(14, 0);
-        CHECK(22, count_on(a, 53, 0) == 2);
-        hook_key(27, 1);                        /* CUT */
-        a = nlog;
-        tick(4 * 5513 / 64);
-        CHECK(22, count_on(a, 53, 0) + count_on(a, 55, 0) == 0);
+        CHECK(22, count_on(a, 53, 0) == 0 && count_on(a, 55, 0) >= 14);
         hook_frame((uint16_t *)FB);             /* the window over TE's finger screen */
-        hook_key(27, 0);
-        push(GREEN, 0);
-        CHECK(22, dr_px_bank == 0 && inputs == n);
+        hook_key(26, 0);
+        CHECK(22, inputs == n && !dr_px_held);
         FS_ARTIST(0) = -1;
         tick(800);
         CHECK(22, active == 0 && violations == 0);
@@ -1284,14 +1169,14 @@ int main(void)
         FS_ARTIST(1) = 6;
         tick(STEPB(5) + 4);                     /* step 6 */
         CHECK(23, count_on(0, 60, 1) == 1 && count_on(0, 60, 0) == 0);  /* TE plays its pattern */
-        hook_key(14, 1);                        /* RETRIG (bank A) */
+        hook_key(32, 1);                        /* RETRIG */
         a = nlog;
         tick(8 * 5513 / 64);
         c60 = count_on(a, 60, 0);
         c55 = count_on(a, 55, 0);
         c53 = count_on(a, 53, 0);
         CHECK(23, c60 >= 7 && c60 <= 9 && count_on(a, 60, 1) == 0 && c55 >= 7 && c55 <= 9 && c53 == 0);
-        hook_key(14, 0);
+        hook_key(32, 0);
         a = nlog;
         tick(16 * 5513 / 64);
         CHECK(23, count_on(a, 60, 1) >= 1 && count_on(a, 60, 0) == 0 && !(dr_owned >> 6 & 1));

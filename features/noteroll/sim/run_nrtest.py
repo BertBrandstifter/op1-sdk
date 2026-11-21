@@ -47,7 +47,7 @@ def main():
         {"STACK": STACK, "_FB": 0x03000000,
          **{s: syms[s] for s in ("_compose_init", "_nr_pat", "_nr_play", "_nr_open", "_nr_page", "_nr_cur",
                                  "_nr_cursor", "_nr_voice", "_nr_owned", "_nr_ask", "_nr_ask_yes", "_nr_ph_shown",
-                                 "_nr_fs_get_note", "_rq_state", "_dr_open", "_nr_px_held", "_nr_px_bank", "_nr_cpitch", "_nr_rec", "_nr_undo_n", "_nr_redo_n")},
+                                 "_nr_fs_get_note", "_rq_state", "_dr_open", "_nr_px_held", "_nr_cpitch", "_nr_rec", "_nr_undo_n", "_nr_redo_n")},
          **{"_" + k: syms[f"__sdk_hook_{v}"] for k, v in hooks.items()}},
     )
     segs = [(0x01E00000, code), (DRIVER_AT, driver), (0x03000000, bytes((len(SHOTS) + 1) * FB_BYTES))]

@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "noteroll",
   "title": "NOTE ROLL step editor for the synth finger sequencer",
-  "version": "0.12",
+  "version": "0.13",
   "status": "sim-verified",
   "firmware": {
     "R246": "c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9"
@@ -11,7 +11,7 @@
   "prefix": [
     "nr_"
   ],
-  "summary": "The synth finger sequencer's step editor, DRUM ROLL's twin: shift + blue press on TE's finger screen (sequencer key, synth playmode; note '(shift arrow) BLUE: EDITOR') opens a piano roll of the selected finger pattern in DRUM ROLL's look. A pattern edited there plays with chords (up to 6 notes a step, chord shapes and inversions), per note VEL and LEN (1/8 step .. 16 steps, TIE), per step NUDGE, PROB, RATCH, a length of 1-64 steps and swing, on TE's step events; TE's finger keys start and stop it, TE's compressed view shows a summary (lowest + highest note), TE's step record / delete / clear / length still work. Patterns kept in TE's op1.db (table sdk_noteroll); page 5 clears a pattern (asks first). The black keys on TE's synth finger screen are punch-in effects while held, three banks of 10 (green press picks A / B / C): PO-20-style, arcade, time + mix.",
+  "summary": "The synth finger sequencer's step editor, DRUM ROLL's twin: shift + blue press on TE's finger screen (sequencer key, synth playmode; note '(shift arrow) BLUE: EDITOR') opens a piano roll of the selected finger pattern in DRUM ROLL's look. A pattern edited there plays with chords (up to 6 notes a step, chord shapes and inversions), per note VEL and LEN (1/8 step .. 16 steps, TIE), per step NUDGE, PROB, RATCH, a length of 1-64 steps and swing, on TE's step events; TE's finger keys start and stop it, TE's compressed view shows a summary (lowest + highest note), TE's step record / delete / clear / length still work. Patterns kept in TE's op1.db (table sdk_noteroll); page 5 clears a pattern (asks first). The black keys on its finger screen are punch-in effects while held: one bank of 10, the order of PLAY's live mode.",
   "license": "MIT",
   "authors": [
     "unknown"
@@ -74,7 +74,7 @@
     "the first edit of a finger pattern makes it NOTE ROLL's; TE keeps a summary of it (lowest + highest note per step)",
     "while open: shift + blue turn = the cursor's pitch row (any note), blue press = a note there on / off; shift + white press = STEP REC on / off: the keyboard plays notes into the cursor step (the first key replaces, more add), FORWARD / BACK = step on / back",
     "shift + BACK = undo, shift + FORWARD = redo (16 steps; in the editor and on TE's synth finger screen with it closed; TE's own finger screen edits too); STEP REC octave: shift + green turn",
-    "TE's synth finger screen (open or closed), the black keys held = punch-in effects of bank A / B / C (green press on the finger screen with the editor closed: next bank): A FILL RETRIG RETRIG-FAST GLITCH RISING-ARP OCT-UP OCT-DOWN STACCATO BLINDS RANDOM; B CHIP-ARP-UP CHIP-ARP-DN POWER-UP POWER-DOWN COIN TRILL ECHO REVERSE OCT-ARP LASER; C HALF-TIME DOUBLE-TIME TRIPLET LOOP-BEAT BUILD SOLO-CHORDS SOLO-LEAD SOLO-BASS SOLO-MELODY FADE; shift + black = TE's step record"
+    "TE's synth finger screen (open or closed), the black keys held = punch-in effects (one bank, PLAY's live-mode order): FILL RANDOM ECHO RETRIG RETRIG-FAST OCT-UP OCT-DOWN COIN SOLO-LEAD SOLO-BASS; shift + black = TE's step record"
   ],
   "tests": [
     "test_nr_core.c",
@@ -183,6 +183,6 @@
       "playmode": "synth"
     }
   ],
-  "status_note": "v0.9: punch-ins on both held patterns, repeats loop the last step with a note; v0.8: punch-in banks A / B / C (green press), new arcade / time effects, shift + black always TE's; v0.7: undo / redo (shift + BACK / FORWARD), TE's finger screen edits too; v0.6: rows >= 4 px, one cursor frame size; v0.5: punch-ins reordered, FILL FAST / GLITCH FAST left out; v0.4: STEP REC + pitch cursor; v0.3: punch-ins = the PO-20 arcade's 16 for the synth (shift + black for 6), window while held; v0.2: zoom 1 / 2 / 3 / 3.5 / 4 bars, shift arrow in the texts; v0.1 (2026-10-17): NOTE ROLL, the synth finger sequencer's editor (user: 'in a similar fashion to our finger + drum roll, add a similar editor to the finger sequencer for synth tracks'); sim-verified",
+  "status_note": "v0.13: punch-ins in one bank, PLAY's live-mode order (green press TE's again); v0.9: punch-ins on both held patterns, repeats loop the last step with a note; v0.8: punch-in banks A / B / C (green press), new arcade / time effects, shift + black always TE's; v0.7: undo / redo (shift + BACK / FORWARD), TE's finger screen edits too; v0.6: rows >= 4 px, one cursor frame size; v0.5: punch-ins reordered, FILL FAST / GLITCH FAST left out; v0.4: STEP REC + pitch cursor; v0.3: punch-ins = the PO-20 arcade's 16 for the synth (shift + black for 6), window while held; v0.2: zoom 1 / 2 / 3 / 3.5 / 4 bars, shift arrow in the texts; v0.1 (2026-10-17): NOTE ROLL, the synth finger sequencer's editor (user: 'in a similar fashion to our finger + drum roll, add a similar editor to the finger sequencer for synth tracks'); sim-verified",
   "evidence": []
 }

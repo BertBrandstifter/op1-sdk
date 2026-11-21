@@ -2,7 +2,10 @@
 """PLAY screens on the host (preview.c): builds it with the host compiler, draws the sample models
 and writes build/demo/play_new_<name>.png (2x, like the sim bench's screens) and _1x.png.
 
-    python3 features/play/sim/preview.py"""
+    python3 features/play/sim/preview.py
+
+play_new_readme_*.png are the README's pictures (images/play/lanes, rows, tracker, live_fx.png:
+copy them there after a look change)."""
 
 import os, struct, subprocess, sys
 

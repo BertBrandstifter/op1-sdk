@@ -52,8 +52,8 @@ playing, about what TE's light engines cost (voices that went silent are not ren
 
 | | open with | |
 |---|---|---|
-| **DRUM ROLL** | shift + blue knob press on the finger sequencer screen (drums) | step editor for TE's finger sequencer: each of the 14 finger patterns as 8 lanes with per-sample length, rate and filter, per-step velocity, probability, ratchets; swing; the finger keys play it; kept across restarts; black keys = punch-in effects in three banks (PO-20 set, arcade: 8-bit, laser, coin, echo, reverse …, time: half / double time, build …) |
-| **NOTE ROLL** | shift + blue knob press on the finger sequencer screen (synth) | step editor for TE's synth finger sequencer, DRUM ROLL's twin: chords up to 6 notes, per-note velocity and length (ties), nudge, probability, ratchets, patterns up to 64 steps; the finger keys play it; black keys = punch-in effects in three banks (PO-20 set, arcade: chip arps, power up, coin, trill, echo …, time + solos); kept across restarts |
+| **DRUM ROLL** | shift + blue knob press on the finger sequencer screen (drums) | step editor for TE's finger sequencer: each of the 14 finger patterns as 8 lanes with per-sample length, rate and filter, per-step velocity, probability, ratchets; swing; the finger keys play it; kept across restarts; black keys = punch-in effects (fill, random, echo, retrig, retrig fast, oct up / down, coin, solo lead / bass: the order of PLAY's live mode) |
+| **NOTE ROLL** | shift + blue knob press on the finger sequencer screen (synth) | step editor for TE's synth finger sequencer, DRUM ROLL's twin: chords up to 6 notes, per-note velocity and length (ties), nudge, probability, ratchets, patterns up to 64 steps; the finger keys play it; black keys = punch-in effects (fill, random, echo, retrig, retrig fast, oct up / down, coin, solo lead / bass: the order of PLAY's live mode); kept across restarts |
 | **SYNTH ROLL** (requantize) | shift + blue knob press (tape screen) | fix a recorded take on a piano roll in DRUM ROLL's look: by default every note snaps clean to the grid (start and length), single notes or the whole take, grids to 1/32T |
 | **CHORD+** | shift + insert | chord keyboard: white keys play scale chords, held black keys modify (lower octave: min/maj, 7th, sus4, 9th, inversion; upper: power, sus2, open / wide voicing, more inversion) |
 
@@ -85,12 +85,20 @@ So nothing is ever final:
 
 <table>
 <tr>
-<td><img src="images/play/song_live.png" alt="PLAY song view in live mode: one column per track, a cue pending"><br><sub><b>Song view</b> (join): one column per track, live mode cues rows and cells while playing</sub></td>
-<td><img src="images/play/songs.png" alt="PLAY songs page with 16 slots"><br><sub><b>Song slots</b> (shift + join): save / load / delete a whole song with its patterns and sounds</sub></td>
+<td><img src="images/play/lanes.png" alt="PLAY track list as lanes: four tracks side by side with engine, level, live meter, sound and pattern"><br><sub><b>Track list, LANES</b> (tape): one lane per track, live meters, M / S, voices, ECO</sub></td>
+<td><img src="images/play/rows.png" alt="PLAY track list as rows: one row per track with a wide live meter"><br><sub><b>Track list, ROWS</b> (tape again): the same tracks as rows, wide meters</sub></td>
 </tr>
 <tr>
+<td><img src="images/play/tracker.png" alt="PLAY tracker: one column per track, chains per row, a loop section"><br><sub><b>Tracker</b> (join): one column per track, each with its own playhead, a loop section</sub></td>
+<td><img src="images/play/live_fx.png" alt="PLAY tracker in live mode with trigger effects held"><br><sub><b>Live mode</b> (shift + rec): cue rows, hold black keys for trigger effects</sub></td>
+</tr>
+<tr>
+<td><img src="images/play/songs.png" alt="PLAY songs page with 16 slots"><br><sub><b>Song slots</b> (shift + join): save / load / delete a whole song with its patterns and sounds</sub></td>
 <td><img src="images/play/load_ask.png" alt="PLAY load question: per pattern and sound, keep now or take from the slot"><br><sub><b>Loading asks</b>: per pattern and per sound, keep yours or take the slot's</sub></td>
+</tr>
+<tr>
 <td><img src="images/play/render.png" alt="PLAY rendering the song into an AIFF file"><br><sub><b>Render</b> (rec): the song into an AIFF, when you want audio</sub></td>
+<td></td>
 </tr>
 </table>
 

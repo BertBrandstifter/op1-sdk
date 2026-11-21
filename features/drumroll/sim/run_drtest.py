@@ -46,7 +46,7 @@ def main():
         {"STACK": STACK, "_FB": 0x03000000,
          **{s: syms[s] for s in ("_compose_init", "_dr_te_note_on", "_dr_te_render", "_dr_pat", "_dr_play",
                                  "_dr_open", "_dr_page", "_dr_sel", "_dr_cursor", "_dr_param", "_dr_cur", "_rq_state",
-                                 "_dr_swing", "_dr_zoom", "_dr_ask", "_dr_ask_yes", "_dr_owned", "_dr_ph_shown", "_dr_px_held", "_dr_px_bank", "_dr_rec", "_dr_undo_n", "_dr_redo_n",
+                                 "_dr_swing", "_dr_zoom", "_dr_ask", "_dr_ask_yes", "_dr_owned", "_dr_ph_shown", "_dr_px_held", "_dr_rec", "_dr_undo_n", "_dr_redo_n",
                                  "_dr_fs_get_note", "_dr_fs_set_note")},
          **{"_" + k: syms[f"__sdk_hook_{v}"] for k, v in hooks.items()}},
     )
